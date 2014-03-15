@@ -49,11 +49,16 @@ struct PersonStruct {
 	int subgraphNumber;
 };
 
+struct Query1BFS{
+	long person;
+	int depth;
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBAL STRUCTURES
 ///////////////////////////////////////////////////////////////////////////////
 char *inputDir = "all/input/outputDir-1k";
-char *queryDir = "queries";
+char *queryFile = "all/queries/1k-queries.txt";
 
 char *CSV_PERSON = "/person.csv";
 char *CSV_PERSON_KNOWS_PERSON = "/person_knows_person.csv";
@@ -65,6 +70,7 @@ long N_PERSONS = 0;
 PersonStruct *Persons;
 MAP_INT_INT CommentToPerson;
 
+vector<int> Answers1;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -143,12 +149,12 @@ void readPersonKnowsPerson(FILE *input) {
 			if (ids.size() > 0) {
 				// store the neighbors
 				//Persons[idA].adjacentPersons = ids;
-				PersonStruct person = Persons[idA];
-				person.adjacentPersonsIds = (long*)malloc(sizeof(long)*ids.size());
+				PersonStruct *person = &Persons[idA];
+				person->adjacentPersonsIds = (long*)malloc(sizeof(long)*ids.size());
 				for( int i=0,sz=ids.size(); i<sz; i++ ){
-					person.adjacentPersonsIds[i] = ids[i];
+					person->adjacentPersonsIds[i] = ids[i];
 				}
-				person.adjacents = ids.size();
+				person->adjacents = ids.size();
 				ids.clear();
 			}
 		}
@@ -322,6 +328,7 @@ void readComments(char* inputDir) {
 		comments++;
 #endif
 	}
+	free(buffer);
 
 #ifdef DEBUGGING
 	sprintf(msg, "Total replies: %ld", comments);
@@ -329,14 +336,132 @@ void readComments(char* inputDir) {
 #endif
 
 	///////////////////////////////////////////////////////////////////
-	// PROCESS THE COMMENTS OF EACH PERSON AND SORT THE EDGES BASED ON THE COMMENTS
+	// PROCESS THE COMMENTS OF EACH PERSON A
+	// TODO - SORT THE EDGES BASED ON THE COMMENTS from A -> B
+	// TODO - Leave only the min(comments A-to-B, comments B-to-A) at each edge
 	///////////////////////////////////////////////////////////////////
-	// TODO
+
 
 }
 
+///////////////////////////////////////////////////////////////////////
+// QUERY EXECUTORS
+///////////////////////////////////////////////////////////////////////
+
+void query1(int p1, int p2, int x){
+	//printf("query1: %d %d %d\n", p1, p2, x);
+
+	char *visited = (char*)malloc(N_PERSONS);
+	memset(visited, 0, N_PERSONS);
+	vector<Query1BFS> Q;
+
+	// insert the source node into the queue
+	Query1BFS source;
+	source.depth = -1;
+	source.person = p1;
+	Q.push_back(source);
+	unsigned long index=0;
+	while( index < Q.size() ){
+		Query1BFS current = Q[index];
+		index++;
+		if( visited[current.person] ){
+			continue;
+		}
+		//printf("current: %ld %d\n", current.person, current.depth);
+		visited[current.person] = 1;
+
+		if( current.person == p2 ){
+			Answers1.push_back(current.depth);
+			free(visited);
+			return;
+		}else{
+			// we must add the current neighbors into the queue if
+			// the comments are valid
+			PersonStruct *cPerson = &Persons[current.person];
+			long *adjacents = cPerson->adjacentPersonsIds;
+			if( x!=-1 ){
+				for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
+					long cAdjacent = adjacents[i];
+					if (!visited[cAdjacent]
+						&& cPerson->commentsToPerson[cAdjacent] > x
+						&& Persons[cAdjacent].commentsToPerson[current.person] > x) {
+						Query1BFS valid;
+						valid.depth = current.depth + 1;
+						valid.person = cAdjacent;
+						Q.push_back(valid);
+					}
+				}
+			} else {
+				for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
+					long cAdjacent = adjacents[i];
+					if( !visited[cAdjacent] ){
+						Query1BFS valid;
+						valid.depth = current.depth + 1;
+						valid.person = cAdjacent;
+						Q.push_back(valid);
+					}
+				}
+			} // end of neighbors processing
+		} // end if not current node is the destination
+	}
+
+	free(visited);
+	// no path found
+	Answers1.push_back(-1);
+}
+
+
+///////////////////////////////////////////////////////////////////////
+// MAIN PROGRAM
+///////////////////////////////////////////////////////////////////////
+
 void _initializations(){
 	//CommentToPerson.reserve(1<<10);
+	Answers1.reserve(2048);
+}
+
+void executeQueries(char *queriesFile){
+	///////////////////////////////////////////////////////////////////
+	// READ THE QUERIES
+	///////////////////////////////////////////////////////////////////
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, queriesFile);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open queries file!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+	char *startLine = buffer;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	while (startLine < EndOfFile) {
+		lineEnd = (char*) memchr(startLine, '\n', 100);
+
+		int queryType = atoi(startLine+5);
+		switch( queryType ){
+		case 1:
+		{
+			char *second = ((char*) memchr(startLine+7, ',', 20)) + 1;
+			*(second-1) = '\0';
+			char *third = ((char*) memchr(second, ',', 20)) + 1;
+			*(lineEnd-1) = '\0';
+			query1(atoi(startLine+7), atoi(second), atoi(third));
+			break;
+		}
+		default:
+		{
+			*lineEnd = '\0';
+			printOut(startLine);
+		}
+		}
+
+		startLine = lineEnd+1;
+	}
+	free(buffer);
+
 }
 
 int main(int argc, char** argv) {
@@ -363,6 +488,18 @@ int main(int argc, char** argv) {
 	long time_comments_end = getTime();
 	sprintf(msg, "comments process time: %ld", time_comments_end - time_global_start);
 	printOut(msg);
+#endif
+
+	executeQueries(queryFile);
+
+#ifdef DEBUGGING
+	long time_queries_end = getTime();
+	sprintf(msg, "queries process time: %ld", time_queries_end - time_global_start);
+	printOut(msg);
+
+	for(int i=0, sz=Answers1.size(); i<sz; i++){
+		printf("answer %d: %d\n", i, Answers1[i]);
+	}
 #endif
 
 	/////////////////////////////////
