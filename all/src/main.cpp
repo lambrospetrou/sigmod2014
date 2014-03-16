@@ -513,9 +513,9 @@ void query1(int p1, int p2, int x){
 			long *adjacents = cPerson->adjacentPersonsIds;
 			long *weights = cPerson->adjacentPersonWeightsSorted;
 			if( x!=-1 ){
-				for (long i = 0, sz = cPerson->adjacents; (i < sz); i++) {
+				for (long i = 0, sz = cPerson->adjacents; (i < sz) && (weights[i] > x); i++) {
 					long cAdjacent = adjacents[i];
-					if (!visited[cAdjacent] && (weights[i] > x) ){
+					if (!visited[cAdjacent] ){
 					    //&& cPerson->adjacentPersonWeights[cAdjacent] > x) {
 						Query1BFS valid;
 						valid.depth = current.depth + 1;
