@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <climits>
 #include <sys/time.h>
 
 #include <vector>
@@ -43,6 +44,8 @@ struct PersonStruct {
 	//LIST_INT adjacentPersons;
 	long *adjacentPersonsIds;
 	long adjacents;
+
+	MAP_INT_INT adjacentPersonWeights;
 
 	int subgraphNumber;
 };
@@ -321,10 +324,15 @@ void readComments(char* inputDir) {
 	startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
 	EndOfFile = buffer + lSize;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', 100);
-		idDivisor = (char*) memchr(startLine, '|', lineEnd - startLine);
+		int len = EndOfFile - startLine;
+		lineEnd = (char*) memchr(startLine, '\n', len);
+		idDivisor = (char*) memchr(startLine, '|', len);
 		*idDivisor = '\0';
-		*lineEnd = '\0';
+		if( lineEnd != NULL ){
+			*lineEnd = '\0';
+		}else{
+			lineEnd = EndOfFile;
+		}
 		long idA = atol(startLine);
 		long idB = atol(idDivisor + 1);
 
@@ -332,9 +340,20 @@ void readComments(char* inputDir) {
 		long personA = CommentToPerson[idA];
 		long personB = CommentToPerson[idB];
 
-		// increase the counter for the comments from A to B
-		PersonsComments[personA].commentsToPerson[personB]++;
+		if( personA != personB ){
+			// increase the counter for the comments from A to B
+			int a_b = PersonsComments[personA].commentsToPerson[personB] + 1;
+			PersonsComments[personA].commentsToPerson[personB] = a_b;
 
+			///////////////////////////////////////////////////////////////////
+			// - Leave only the min(comments A-to-B, comments B-to-A) at each edge
+			///////////////////////////////////////////////////////////////////
+			int b_a = PersonsComments[personB].commentsToPerson[personA];
+			if( a_b <= b_a ){
+				Persons[personA].adjacentPersonWeights[personB] = a_b;
+				Persons[personB].adjacentPersonWeights[personA] = a_b;
+			}
+		}
 		//printf("%ld %ld %ld\n", idA, idB, Persons[personA].commentsToPerson[personB] );
 
 		startLine = lineEnd + 1;
@@ -349,12 +368,14 @@ void readComments(char* inputDir) {
 	printOut(msg);
 #endif
 
+
 	///////////////////////////////////////////////////////////////////
 	// PROCESS THE COMMENTS OF EACH PERSON A
-	// TODO - SORT THE EDGES BASED ON THE COMMENTS from A -> B
-	// TODO - Leave only the min(comments A-to-B, comments B-to-A) at each edge
+	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-
+	// Now we can clear the hashmaps with the exact comments between persons
+	delete[] PersonsComments;
+	PersonsComments = NULL;
 
 }
 
@@ -392,14 +413,12 @@ void query1(int p1, int p2, int x){
 			// we must add the current neighbors into the queue if
 			// the comments are valid
 			PersonStruct *cPerson = &Persons[current.person];
-			PersonCommentsStruct *cPersonComments = &PersonsComments[current.person];
 			long *adjacents = cPerson->adjacentPersonsIds;
 			if( x!=-1 ){
 				for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
 					long cAdjacent = adjacents[i];
 					if (!visited[cAdjacent]
-						&& cPersonComments->commentsToPerson[cAdjacent] > x
-						&& PersonsComments[cAdjacent].commentsToPerson[current.person] > x) {
+					    && cPerson->adjacentPersonWeights[cAdjacent] > x) {
 						Query1BFS valid;
 						valid.depth = current.depth + 1;
 						valid.person = cAdjacent;
