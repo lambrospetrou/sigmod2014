@@ -40,19 +40,34 @@ struct PersonStruct {
 		//adjacentPersons.reserve(32);
 		adjacents = 0;
 		adjacentPersonsIds = NULL;
+		adjacentPersonWeightsSorted = NULL;
 	}
 	//LIST_INT adjacentPersons;
 	long *adjacentPersonsIds;
 	long adjacents;
 
-	MAP_INT_INT adjacentPersonWeights;
+	long *adjacentPersonWeightsSorted;
 
 	int subgraphNumber;
 };
 
 struct PersonCommentsStruct {
 	MAP_INT_INT commentsToPerson;
+	MAP_INT_INT adjacentPersonWeights;
 };
+
+int PersonCommentsComparator(const void *a, const void *b){
+	long la = *((long*)a);
+	long lb = *((long*)b);
+	long res = la - lb;
+	if( res < 0 ){
+		return -1;
+	}
+	if( res > 0 ){
+		return 1;
+	}
+	return 0;
+}
 
 struct Query1BFS{
 	long person;
@@ -99,6 +114,52 @@ long long getTime() {
 	gettimeofday(&tim, NULL);
 	long t1 = (tim.tv_sec * 1000000LL) + tim.tv_usec;
 	return t1;
+}
+
+void mergeCommentsWeights(long *weights, long a[], long low, long mid, long high, long *b, long *bWeights)
+{
+    long i = low, j = mid + 1, k = low;
+
+    while (i <= mid && j <= high) {
+    	//if (weights[i] <= weights[j]){
+    	if (weights[i] >= weights[j]){
+            b[k] = a[i];
+            bWeights[k] = weights[i];
+            k++; i++;
+        }else{
+        	b[k] = a[j];
+        	bWeights[k] = weights[j];
+        	k++; j++;
+        }
+    }
+    while (i <= mid){
+    	b[k] = a[i];
+    	bWeights[k] = weights[i];
+    	k++; i++;
+    }
+
+    while (j <= high){
+    	b[k] = a[j];
+    	bWeights[k] = weights[j];
+    	k++; j++;
+    }
+
+    k--;
+    while (k >= low) {
+        a[k] = b[k];
+        weights[k] = bWeights[k];
+        k--;
+    }
+}
+
+void mergesortComments(long* weights, long a[], long low, long high, long *b, long *bWeights)
+{
+    if (low < high) {
+        long m = ((high - low)>>1)+low;
+        mergesortComments(weights, a, low, m, b , bWeights);
+        mergesortComments(weights, a, m + 1, high, b, bWeights);
+        mergeCommentsWeights(weights, a, low, m, high, b, bWeights);
+    }
 }
 
 long countFileLines(FILE *file) {
@@ -248,6 +309,44 @@ char* getFileBytes(FILE *file, long *lSize){
 	return buffer;
 }
 
+void postProcessComments(){
+	// for each person we will get each neighbor and put our edge weight in an array
+	// to speed up look up time and then sort them
+	for( long i=0,sz=N_PERSONS; i<sz; i++ ){
+		if( Persons[i].adjacents > 0 ){
+			long adjacents = Persons[i].adjacents;
+			long *adjacentIds = Persons[i].adjacentPersonsIds;
+			MAP_INT_INT *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
+			//qsort(Persons[i].adjacentPersonsIds, N_PERSONS, sizeof(long), PersonCommentsComparator);
+			Persons[i].adjacentPersonWeightsSorted = (long*)malloc(sizeof(long)*adjacents);
+			long *weights = Persons[i].adjacentPersonWeightsSorted;
+			for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
+				weights[cAdjacent] = (*(weightsMap))[adjacentIds[cAdjacent]];
+			}
+			// now we need to sort them
+			/*
+			printf("\n\nUnsorted: \n");
+			for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
+				printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], weights[cAdjacent]);
+			}
+			 */
+			long *temp = (long*)malloc(sizeof(long)*(adjacents));
+		    long *tempWeights = (long*)malloc(sizeof(long)*(adjacents));
+			mergesortComments(weights, adjacentIds, 0, adjacents-1, temp, tempWeights);
+			free(temp);
+			free(tempWeights);
+			/*
+			printf("\nSorted: \n");
+			for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
+				printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], Persons[i].adjacentPersonWeightsSorted[cAdjacent]);
+			}
+			*/
+		}
+	}
+	// since we have all the data needed in arrays we can delete the hashmaps
+	delete[] PersonsComments;
+	PersonsComments = NULL;
+}
 
 void readComments(char* inputDir) {
 	char path[1024];
@@ -350,8 +449,8 @@ void readComments(char* inputDir) {
 			///////////////////////////////////////////////////////////////////
 			int b_a = PersonsComments[personB].commentsToPerson[personA];
 			if( a_b <= b_a ){
-				Persons[personA].adjacentPersonWeights[personB] = a_b;
-				Persons[personB].adjacentPersonWeights[personA] = a_b;
+				PersonsComments[personA].adjacentPersonWeights[personB] = a_b;
+				PersonsComments[personB].adjacentPersonWeights[personA] = a_b;
 			}
 		}
 		//printf("%ld %ld %ld\n", idA, idB, Persons[personA].commentsToPerson[personB] );
@@ -373,9 +472,7 @@ void readComments(char* inputDir) {
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	// Now we can clear the hashmaps with the exact comments between persons
-	delete[] PersonsComments;
-	PersonsComments = NULL;
+	postProcessComments();
 
 }
 
@@ -414,11 +511,12 @@ void query1(int p1, int p2, int x){
 			// the comments are valid
 			PersonStruct *cPerson = &Persons[current.person];
 			long *adjacents = cPerson->adjacentPersonsIds;
+			long *weights = cPerson->adjacentPersonWeightsSorted;
 			if( x!=-1 ){
-				for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
+				for (long i = 0, sz = cPerson->adjacents; (i < sz); i++) {
 					long cAdjacent = adjacents[i];
-					if (!visited[cAdjacent]
-					    && cPerson->adjacentPersonWeights[cAdjacent] > x) {
+					if (!visited[cAdjacent] && (weights[i] > x) ){
+					    //&& cPerson->adjacentPersonWeights[cAdjacent] > x) {
 						Query1BFS valid;
 						valid.depth = current.depth + 1;
 						valid.person = cAdjacent;
@@ -452,6 +550,10 @@ void query1(int p1, int p2, int x){
 void _initializations(){
 	//CommentToPerson.reserve(1<<10);
 	Answers1.reserve(2048);
+}
+
+void _destructor(){
+	delete[] Persons;
 }
 
 void executeQueries(char *queriesFile){
@@ -542,4 +644,6 @@ int main(int argc, char** argv) {
 			time_global_end - time_global_start,
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
+
+	_destructor();
 }
