@@ -149,7 +149,7 @@ void readPersonKnowsPerson(FILE *input) {
 			if (ids.size() > 0) {
 				// store the neighbors
 				//Persons[idA].adjacentPersons = ids;
-				PersonStruct *person = &Persons[idA];
+				PersonStruct *person = &Persons[prevId];
 				person->adjacentPersonsIds = (long*)malloc(sizeof(long)*ids.size());
 				for( int i=0,sz=ids.size(); i<sz; i++ ){
 					person->adjacentPersonsIds[i] = ids[i];
@@ -164,6 +164,16 @@ void readPersonKnowsPerson(FILE *input) {
 #ifdef DEBUGGING
 		edges++;
 #endif
+	}
+
+	// check if there are edges to be added for the last person
+	if( !ids.empty() ){
+		PersonStruct *person = &Persons[prevId];
+		person->adjacentPersonsIds = (long*) malloc(sizeof(long) * ids.size());
+		for (int i = 0, sz = ids.size(); i < sz; i++) {
+			person->adjacentPersonsIds[i] = ids[i];
+		}
+		person->adjacents = ids.size();
 	}
 
 #ifdef DEBUGGING
@@ -357,7 +367,7 @@ void query1(int p1, int p2, int x){
 
 	// insert the source node into the queue
 	Query1BFS source;
-	source.depth = -1;
+	source.depth = 0;
 	source.person = p1;
 	Q.push_back(source);
 	unsigned long index=0;
