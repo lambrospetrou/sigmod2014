@@ -11,6 +11,7 @@
 #include <climits>
 #include <sys/time.h>
 
+#include <string>
 #include <vector>
 #include <map>
 
@@ -97,7 +98,7 @@ TrieNode* TrieFind( TrieNode* root, const char* name, char name_sz );
 // GLOBAL STRUCTURES
 ///////////////////////////////////////////////////////////////////////////////
 char *inputDir = "all/input/outputDir-1k";
-char *queryFile = "all/queries/1k-queries.txt";
+char *queryFile = "all/queries/1k-queries_utf8.txt";
 
 // required for query 1
 char *CSV_PERSON = "/person.csv";
@@ -118,16 +119,17 @@ long N_PERSONS = 0;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
-MAP_INT_INT PlaceIdToIndex;
 vector<PlaceNodeStruct*> Places;
 
 vector<int> Answers1;
+vector<string> Answers3;
 
 // the two structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
 PersonCommentsStruct *PersonsComments;
 MAP_INT_INT *CommentToPerson;
 
+MAP_INT_INT *PlaceIdToIndex;
 MAP_INT_INT *OrgToPlace;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -558,7 +560,7 @@ void readPlaces(char *inputDir){
 		node->id = id;
 		node->index = places;
 		Places.push_back(node);
-		PlaceIdToIndex[id] = places;
+		(*PlaceIdToIndex)[id] = places;
 		TrieInsert(PlacesToId, name, nameDivisor-name, id, places);
 
 		//printf("%d %s\n", id, name);
@@ -614,8 +616,8 @@ void readPlacePartOfPlace(char *inputDir){
 
 		if( idA != idB ){
 			// insert the place idA into the part of place idB
-			long indexA = PlaceIdToIndex[idA];
-			long indexB = PlaceIdToIndex[idB];
+			long indexA = (*PlaceIdToIndex)[idA];
+			long indexB = (*PlaceIdToIndex)[idB];
 			Places[indexA]->placesPartOfIndex.push_back(indexB);
 		}
 		//printf("%ld %ld\n", idA, idB);
@@ -670,7 +672,7 @@ void readPersonLocatedAtPlace(char *inputDir){
 		long idPlace = atol(idDivisor+1);
 
 		// insert the place idA into the part of place idB
-		long indexPlace = PlaceIdToIndex[idPlace];
+		long indexPlace = (*PlaceIdToIndex)[idPlace];
 		Places[indexPlace]->personsThis.push_back(idPerson);
 		//printf("%ld %ld\n", idA, idB);
 
@@ -723,7 +725,7 @@ void readOrgsLocatedAtPlace(char *inputDir){
 		long idPlace = atol(idDivisor+1);
 
 		// insert the place idA into the part of place idB
-		long indexPlace = PlaceIdToIndex[idPlace];
+		long indexPlace = (*PlaceIdToIndex)[idPlace];
 		(*OrgToPlace)[idOrg] = indexPlace;
 		//printf("%ld %ld\n", idA, idB);
 
@@ -740,6 +742,11 @@ void readOrgsLocatedAtPlace(char *inputDir){
 	sprintf(msg, "Total organizations located at place: %ld", orgs);
 	printOut(msg);
 #endif
+
+	// now we can delete PlaceId to Index hashmap since no further
+	// data will come containing the PlaceId
+	delete PlaceIdToIndex;
+	PlaceIdToIndex = NULL;
 }
 
 void readPersonWorksStudyAtOrg(char *inputDir){
@@ -878,6 +885,9 @@ void query1(int p1, int p2, int x){
 	Answers1.push_back(-1);
 }
 
+void query3(int k, int h, char *name, int name_sz){
+	printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
+}
 
 ///////////////////////////////////////////////////////////////////////
 // MAIN PROGRAM
@@ -887,6 +897,7 @@ void _initializations(){
 	//CommentToPerson.reserve(1<<10);
 	//PlaceIdToIndex.reserve(2048);
 	CommentToPerson = new MAP_INT_INT();
+	PlaceIdToIndex = new MAP_INT_INT();
 	OrgToPlace = new MAP_INT_INT();
 
 	PlacesToId = TrieNode_Constructor();
@@ -894,6 +905,7 @@ void _initializations(){
 
 
 	Answers1.reserve(2048);
+	Answers3.reserve(2048);
 }
 
 void _destructor(){
@@ -930,6 +942,17 @@ void executeQueries(char *queriesFile){
 			char *third = ((char*) memchr(second, ',', 20)) + 1;
 			*(lineEnd-1) = '\0';
 			query1(atoi(startLine+7), atoi(second), atoi(third));
+			break;
+		}
+		case 3:
+		{
+			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
+			*(second - 1) = '\0';
+			char *third = ((char*) memchr(second, ',', 20)) + 1;
+			*(third - 1) = '\0';
+			*(lineEnd - 1) = '\0';
+			char *name = third+1; // to skip one space
+			query3(atoi(startLine + 7), atoi(second), name, lineEnd-1-name);
 			break;
 		}
 		default:
