@@ -88,10 +88,13 @@ char *CSV_COMMENT_REPLY_OF_COMMENT = "/comment_replyOf_comment.csv";
 long N_PERSONS = 0;
 
 PersonStruct *Persons;
-PersonCommentsStruct *PersonsComments;
-MAP_INT_INT CommentToPerson;
 
 vector<int> Answers1;
+
+// the two structures below are only used as intermediate steps while
+// reading the comments files. DO NOT USE THEM ANYWHERE
+PersonCommentsStruct *PersonsComments;
+MAP_INT_INT CommentToPerson;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -344,6 +347,7 @@ void postProcessComments(){
 		}
 	}
 	// since we have all the data needed in arrays we can delete the hashmaps
+	CommentToPerson.clear();
 	delete[] PersonsComments;
 	PersonsComments = NULL;
 }
