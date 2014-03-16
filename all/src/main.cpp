@@ -44,9 +44,11 @@ struct PersonStruct {
 	long *adjacentPersonsIds;
 	long adjacents;
 
-	MAP_INT_INT commentsToPerson;
-
 	int subgraphNumber;
+};
+
+struct PersonCommentsStruct {
+	MAP_INT_INT commentsToPerson;
 };
 
 struct Query1BFS{
@@ -68,6 +70,7 @@ char *CSV_COMMENT_REPLY_OF_COMMENT = "/comment_replyOf_comment.csv";
 long N_PERSONS = 0;
 
 PersonStruct *Persons;
+PersonCommentsStruct *PersonsComments;
 MAP_INT_INT CommentToPerson;
 
 vector<int> Answers1;
@@ -208,6 +211,7 @@ void readPersons(char* inputDir) {
 	// initialize persons
 	//Persons = malloc(sizeof(PersonStruct)*N_PERSONS);
 	Persons = new PersonStruct[N_PERSONS];
+	PersonsComments = new PersonCommentsStruct[N_PERSONS];
 
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -329,7 +333,7 @@ void readComments(char* inputDir) {
 		long personB = CommentToPerson[idB];
 
 		// increase the counter for the comments from A to B
-		Persons[personA].commentsToPerson[personB]++;
+		PersonsComments[personA].commentsToPerson[personB]++;
 
 		//printf("%ld %ld %ld\n", idA, idB, Persons[personA].commentsToPerson[personB] );
 
@@ -388,13 +392,14 @@ void query1(int p1, int p2, int x){
 			// we must add the current neighbors into the queue if
 			// the comments are valid
 			PersonStruct *cPerson = &Persons[current.person];
+			PersonCommentsStruct *cPersonComments = &PersonsComments[current.person];
 			long *adjacents = cPerson->adjacentPersonsIds;
 			if( x!=-1 ){
 				for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
 					long cAdjacent = adjacents[i];
 					if (!visited[cAdjacent]
-						&& cPerson->commentsToPerson[cAdjacent] > x
-						&& Persons[cAdjacent].commentsToPerson[current.person] > x) {
+						&& cPersonComments->commentsToPerson[cAdjacent] > x
+						&& PersonsComments[cAdjacent].commentsToPerson[current.person] > x) {
 						Query1BFS valid;
 						valid.depth = current.depth + 1;
 						valid.person = cAdjacent;
