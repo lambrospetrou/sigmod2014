@@ -26,6 +26,8 @@ using std::tr1::hash;
 #define DEBUGGING 1
 #define FILE_VBUF_SIZE 1024
 
+#define VALID_PLACE_CHARS 256
+
 ///////////////////////////////////////////////////////////////////////////////
 // structs
 ///////////////////////////////////////////////////////////////////////////////
@@ -56,23 +58,40 @@ struct PersonCommentsStruct {
 	MAP_INT_INT adjacentPersonWeights;
 };
 
-int PersonCommentsComparator(const void *a, const void *b){
-	long la = *((long*)a);
-	long lb = *((long*)b);
-	long res = la - lb;
-	if( res < 0 ){
-		return -1;
-	}
-	if( res > 0 ){
-		return 1;
-	}
-	return 0;
-}
+struct TrieNode{
+	long placeId;
+	long placeIndex;
+	char valid;
+	TrieNode* children[VALID_PLACE_CHARS];
+};
 
+struct PlaceNodeStruct{
+	long id;
+	long index;
+	vector<int> personsThis;
+	vector<int> placesPartOfIndex;
+};
+
+/////////////////////////////
+// QUERY SPECIFIC
+/////////////////////////////
 struct Query1BFS{
 	long person;
 	int depth;
 };
+
+
+///////////////////////////////////////////////////////////////////////////////
+// FUNCTION PROTOTYPES
+///////////////////////////////////////////////////////////////////////////////
+
+TrieNode* TrieNode_Constructor();
+void TrieNode_Destructor( TrieNode* node );
+TrieNode* TrieInsert( TrieNode* node, const char* name, char name_sz, long id, long index);
+TrieNode* TrieFind( TrieNode* root, const char* name, char name_sz );
+
+
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBAL STRUCTURES
@@ -80,21 +99,36 @@ struct Query1BFS{
 char *inputDir = "all/input/outputDir-1k";
 char *queryFile = "all/queries/1k-queries.txt";
 
+// required for query 1
 char *CSV_PERSON = "/person.csv";
 char *CSV_PERSON_KNOWS_PERSON = "/person_knows_person.csv";
 char *CSV_COMMENT_HAS_CREATOR = "/comment_hasCreator_person.csv";
 char *CSV_COMMENT_REPLY_OF_COMMENT = "/comment_replyOf_comment.csv";
 
+// required for query 3
+char *CSV_PLACE = "/place_utf8.csv";
+char *CSV_PLACE_PART_OF_PLACE = "/place_isPartOf_place.csv";
+char *CSV_PERSON_LOCATED_AT_PLACE = "/person_isLocatedIn_place.csv";
+char *CSV_ORGANIZATION_LOCATED_AT_PLACE = "/organisation_isLocatedIn_place.csv";
+
+char *CSV_PERSON_STUDYAT_ORG = "/person_studyAt_organisation.csv";
+char *CSV_WORKAT_ORG = "/person_workAt_organisation.csv";
+
 long N_PERSONS = 0;
 
 PersonStruct *Persons;
+TrieNode *PlacesToId;
+MAP_INT_INT PlaceIdToIndex;
+vector<PlaceNodeStruct*> Places;
 
 vector<int> Answers1;
 
 // the two structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
 PersonCommentsStruct *PersonsComments;
-MAP_INT_INT CommentToPerson;
+MAP_INT_INT *CommentToPerson;
+
+MAP_INT_INT *OrgToPlace;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -347,7 +381,9 @@ void postProcessComments(){
 		}
 	}
 	// since we have all the data needed in arrays we can delete the hashmaps
-	CommentToPerson.clear();
+	CommentToPerson->clear();
+	delete CommentToPerson;
+	CommentToPerson = NULL;
 	delete[] PersonsComments;
 	PersonsComments = NULL;
 }
@@ -388,7 +424,7 @@ void readComments(char* inputDir) {
 		long idB = atol(idDivisor + 1);
 
 		// set the person to each comment
-		CommentToPerson[idA] = idB;
+		(*CommentToPerson)[idA] = idB;
 
 		//printf("%d %d\n", idA, idB);
 
@@ -440,8 +476,8 @@ void readComments(char* inputDir) {
 		long idB = atol(idDivisor + 1);
 
 		// we have to hold the number of comments between each person
-		long personA = CommentToPerson[idA];
-		long personB = CommentToPerson[idB];
+		long personA = (*CommentToPerson)[idA];
+		long personB = (*CommentToPerson)[idB];
 
 		if( personA != personB ){
 			// increase the counter for the comments from A to B
@@ -480,6 +516,300 @@ void readComments(char* inputDir) {
 
 }
 
+
+
+void readPlaces(char *inputDir){
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_PLACE);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open place.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+	char msg[100];
+#endif
+
+	long places=0;
+	// process the whole file in memory
+	// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	char *nameDivisor;
+	while (startLine < EndOfFile) {
+		int len = EndOfFile - startLine;
+		lineEnd = (char*) memchr(startLine, '\n', len);
+		idDivisor = (char*) memchr(startLine, '|', len);
+		nameDivisor = (char*) memchr(idDivisor+1, '|', len);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		*nameDivisor = '\0';
+		long id = atol(startLine);
+		char *name = idDivisor+1;
+
+		// insert the place into the Trie for PlacesToId
+		PlaceNodeStruct *node = new PlaceNodeStruct();
+		node->id = id;
+		node->index = places;
+		Places.push_back(node);
+		PlaceIdToIndex[id] = places;
+		TrieInsert(PlacesToId, name, nameDivisor-name, id, places);
+
+		//printf("%d %s\n", id, name);
+
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		places++;
+#endif
+	}
+	// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total places: %ld", places);
+	printOut(msg);
+#endif
+
+}
+
+
+void readPlacePartOfPlace(char *inputDir){
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_PLACE_PART_OF_PLACE);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open place_isPartOf_place.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+	long places=0;
+	char msg[100];
+#endif
+
+	// process the whole file in memory
+	// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	while (startLine < EndOfFile) {
+		int len = EndOfFile - startLine;
+		lineEnd = (char*) memchr(startLine, '\n', len);
+		idDivisor = (char*) memchr(startLine, '|', len);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		long idA = atol(startLine);
+		long idB = atol(idDivisor+1);
+
+		if( idA != idB ){
+			// insert the place idA into the part of place idB
+			long indexA = PlaceIdToIndex[idA];
+			long indexB = PlaceIdToIndex[idB];
+			Places[indexA]->placesPartOfIndex.push_back(indexB);
+		}
+		//printf("%ld %ld\n", idA, idB);
+
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		places++;
+#endif
+	}
+	// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total places being part of another place: %ld", places);
+	printOut(msg);
+#endif
+
+}
+
+
+void readPersonLocatedAtPlace(char *inputDir){
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_PERSON_LOCATED_AT_PLACE);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open person_isLocatedIN_place.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+	long persons=0;
+	char msg[100];
+#endif
+
+	// process the whole file in memory
+	// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	while (startLine < EndOfFile) {
+		int len = EndOfFile - startLine;
+		lineEnd = (char*) memchr(startLine, '\n', len);
+		idDivisor = (char*) memchr(startLine, '|', len);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		long idPerson = atol(startLine);
+		long idPlace = atol(idDivisor+1);
+
+		// insert the place idA into the part of place idB
+		long indexPlace = PlaceIdToIndex[idPlace];
+		Places[indexPlace]->personsThis.push_back(idPerson);
+		//printf("%ld %ld\n", idA, idB);
+
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		persons++;
+#endif
+	}
+	// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total persons located at place: %ld", persons);
+	printOut(msg);
+#endif
+}
+
+
+void readOrgsLocatedAtPlace(char *inputDir){
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_ORGANIZATION_LOCATED_AT_PLACE);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open organization_isLocatedIn_place.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+	long orgs=0;
+	char msg[100];
+#endif
+
+	// process the whole file in memory
+	// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	while (startLine < EndOfFile) {
+		int len = EndOfFile - startLine;
+		lineEnd = (char*) memchr(startLine, '\n', len);
+		idDivisor = (char*) memchr(startLine, '|', len);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		long idOrg = atol(startLine);
+		long idPlace = atol(idDivisor+1);
+
+		// insert the place idA into the part of place idB
+		long indexPlace = PlaceIdToIndex[idPlace];
+		(*OrgToPlace)[idOrg] = indexPlace;
+		//printf("%ld %ld\n", idA, idB);
+
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		orgs++;
+#endif
+	}
+	// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total organizations located at place: %ld", orgs);
+	printOut(msg);
+#endif
+}
+
+void readPersonWorksStudyAtOrg(char *inputDir){
+	char path[1024];
+	char *paths[2] = {
+		CSV_PERSON_STUDYAT_ORG,
+		CSV_WORKAT_ORG
+	};
+
+	// we need tod this twice for the files above
+	for (int i = 0; i < 2; i++) {
+		path[0] = '\0';
+		strcat(path, inputDir);
+		strcat(path, paths[i]);
+		FILE *input = fopen(path, "r");
+		if (input == NULL) {
+			printErr("could not open person ToOrganisation file!");
+		}
+		long lSize;
+		char *buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+		long persons = 0;
+		char msg[100];
+#endif
+
+		// process the whole file in memory
+		// skip the first line
+		char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+		char *EndOfFile = buffer + lSize;
+		char *lineEnd;
+		char *idDivisor;
+		char *orgDivisor;
+		while (startLine < EndOfFile) {
+			int len = EndOfFile - startLine;
+			lineEnd = (char*) memchr(startLine, '\n', len);
+			idDivisor = (char*) memchr(startLine, '|', len);
+			orgDivisor = (char*) memchr(idDivisor+1, '|', len);
+			*idDivisor = '\0';
+			*orgDivisor = '\0';
+			long idPerson = atol(startLine);
+			long idOrg = atol(orgDivisor);
+
+			// insert the place idA into the part of place idB
+			long indexPlace = (*OrgToPlace)[idOrg];
+			Places[indexPlace]->personsThis.push_back(idPerson);
+			//printf("%ld %ld\n", idA, idB);
+
+			startLine = lineEnd + 1;
+#ifdef DEBUGGING
+			persons++;
+#endif
+		}
+		// close the comment_hasCreator_Person
+		fclose(input);
+		free(buffer);
+
+#ifdef DEBUGGING
+		sprintf(msg, "Total persons work/study at org: %ld", persons);
+		printOut(msg);
+#endif
+
+	}// end of file processing
+
+	// safe to delete this vector since we do not need it anymore
+	OrgToPlace->clear();
+	delete OrgToPlace;
+	OrgToPlace = NULL;
+}
+
 ///////////////////////////////////////////////////////////////////////
 // QUERY EXECUTORS
 ///////////////////////////////////////////////////////////////////////
@@ -516,6 +846,7 @@ void query1(int p1, int p2, int x){
 			PersonStruct *cPerson = &Persons[current.person];
 			long *adjacents = cPerson->adjacentPersonsIds;
 			long *weights = cPerson->adjacentPersonWeightsSorted;
+			// if there is comments limit
 			if( x!=-1 ){
 				for (long i = 0, sz = cPerson->adjacents; (i < sz) && (weights[i] > x); i++) {
 					long cAdjacent = adjacents[i];
@@ -528,6 +859,7 @@ void query1(int p1, int p2, int x){
 					}
 				}
 			} else {
+				// no comments limit
 				for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
 					long cAdjacent = adjacents[i];
 					if( !visited[cAdjacent] ){
@@ -553,11 +885,20 @@ void query1(int p1, int p2, int x){
 
 void _initializations(){
 	//CommentToPerson.reserve(1<<10);
+	//PlaceIdToIndex.reserve(2048);
+	CommentToPerson = new MAP_INT_INT();
+	OrgToPlace = new MAP_INT_INT();
+
+	PlacesToId = TrieNode_Constructor();
+	Places.reserve(2048);
+
+
 	Answers1.reserve(2048);
 }
 
 void _destructor(){
 	delete[] Persons;
+	TrieNode_Destructor(PlacesToId);
 }
 
 void executeQueries(char *queriesFile){
@@ -594,14 +935,13 @@ void executeQueries(char *queriesFile){
 		default:
 		{
 			*lineEnd = '\0';
-			printOut(startLine);
+			//printOut(startLine);
 		}
 		}
 
 		startLine = lineEnd+1;
 	}
 	free(buffer);
-
 }
 
 int main(int argc, char** argv) {
@@ -630,16 +970,30 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
+	readPlaces(inputDir);
+	readPlacePartOfPlace(inputDir);
+	readPersonLocatedAtPlace(inputDir);
+	readOrgsLocatedAtPlace(inputDir);
+	readPersonWorksStudyAtOrg(inputDir);
+
+#ifdef DEBUGGING
+	long time_places_end = getTime();
+	sprintf(msg, "places process time: %ld", time_places_end - time_global_start);
+	printOut(msg);
+#endif
+
+
 	executeQueries(queryFile);
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
 	sprintf(msg, "queries process time: %ld", time_queries_end - time_global_start);
 	printOut(msg);
-
+/*
 	for(int i=0, sz=Answers1.size(); i<sz; i++){
 		printf("answer %d: %d\n", i, Answers1[i]);
 	}
+*/
 #endif
 
 	/////////////////////////////////
@@ -651,3 +1005,62 @@ int main(int argc, char** argv) {
 
 	_destructor();
 }
+
+
+
+////////////////////////////////////////////////////////////////////////
+// TRIE IMPLEMENTATION
+////////////////////////////////////////////////////////////////////////
+TrieNode* TrieNode_Constructor(){
+	TrieNode* n = (TrieNode*)malloc(sizeof(TrieNode));
+	if( !n ) printErr("error allocating TrieNode");
+	n->valid = 0;
+	memset( n->children, 0, VALID_PLACE_CHARS*sizeof(TrieNode*) );
+	return n;
+}
+void TrieNode_Destructor( TrieNode* node ){
+	for( int i=0; i<VALID_PLACE_CHARS; i++ ){
+		if( node->children[i] != 0 ){
+			TrieNode_Destructor( node->children[i] );
+		}
+	}
+	free( node );
+}
+TrieNode* TrieInsert( TrieNode* node, const char* name, char name_sz, long id, long index){
+	char ptr=0;
+	int pos;
+	while( ptr < name_sz ){
+		//pos=name[ptr]-'a';
+		pos = (unsigned char)name[ptr];
+		if( node->children[pos] == 0 ){
+			node->children[pos] = TrieNode_Constructor();
+		}
+		node = node->children[pos];
+		ptr++;
+	}
+	node->valid = 1;
+	node->placeId = id;
+	node->placeIndex = index;
+	return node;
+}
+TrieNode* TrieFind( TrieNode* root, const char* name, char name_sz ){
+	int p, i, found=1;
+	for( p=0; p<name_sz; p++ ){
+		//i = word[p] -'a';
+		i = (unsigned char)name[p];
+		if( root->children[i] != 0 ){
+			root = root->children[i];
+		}else{
+			found=0;
+			break;
+		}
+	}
+	if( found && root->valid ){
+		// WE HAVE A MATCH SO return the node
+		return root;
+	}
+	return 0;
+}
+
+
+
