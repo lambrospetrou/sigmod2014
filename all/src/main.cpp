@@ -10,12 +10,21 @@
 #include <stdlib.h>
 #include <climits>
 #include <sys/time.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <string>
 #include <vector>
+#include <queue>
 #include <map>
+#include <algorithm>
+#include <iterator>
+#include <sstream>
 
 #include <tr1/unordered_map>
+
+#include <bitset>
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -25,7 +34,8 @@ using std::tr1::hash;
 #define JOIN_AGAIN(x, y) x ## y
 
 #define DEBUGGING 1
-#define FILE_VBUF_SIZE 1024
+#define FILE_VBUF_SIZE 8192
+#define FILE_BUFFER_SIZE 1<<15
 
 #define VALID_PLACE_CHARS 256
 
@@ -60,25 +70,66 @@ struct PersonCommentsStruct {
 };
 
 struct TrieNode{
+	char valid;
 	long placeId;
 	long placeIndex;
-	char valid;
+	//vector<long> sameNameIds;
 	TrieNode* children[VALID_PLACE_CHARS];
 };
 
 struct PlaceNodeStruct{
 	long id;
 	long index;
-	vector<int> personsThis;
-	vector<int> placesPartOfIndex;
+	vector<long> personsThis;
+	vector<long> placesPartOfIndex;
+};
+
+struct TagNode{
+	long id;
+	TrieNode *tagNode;
+};
+
+struct PersonTags{
+	vector<long> tags;
 };
 
 /////////////////////////////
 // QUERY SPECIFIC
 /////////////////////////////
-struct Query1BFS{
+struct QueryBFS{
+	QueryBFS(long id, long d){
+		person = id;
+		depth = d;
+	}
 	long person;
 	int depth;
+};
+
+struct Query3PQ{
+	Query3PQ(long a, long b, int ct){
+		idA = a;
+		idB = b;
+		commonTags = ct;
+	}
+	long idA;
+	long idB;
+	int commonTags;
+};
+class Query3PQ_Comparator{
+public:
+    bool operator() (Query3PQ left, Query3PQ right){
+        if( left.commonTags > right.commonTags )
+        	return false;
+        if( left.commonTags < right.commonTags )
+        	return true;
+        if( left.idA < right.idA )
+        	return false;
+        if( left.idA > right.idA )
+        	return true;
+        if( left.idB < right.idB )
+        	return false;
+        return false;
+    }
 };
 
 
@@ -115,16 +166,21 @@ char *CSV_ORGANIZATION_LOCATED_AT_PLACE = "/organisation_isLocatedIn_place.csv";
 char *CSV_PERSON_STUDYAT_ORG = "/person_studyAt_organisation.csv";
 char *CSV_WORKAT_ORG = "/person_workAt_organisation.csv";
 
+char *CSV_TAG = "/tag.csv";
+char *CSV_PERSON_HASINTEREST_TAG = "/person_hasInterest_tag.csv";
+
 long N_PERSONS = 0;
+long N_TAGS = 0;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
 vector<PlaceNodeStruct*> Places;
+PersonTags *PersonToTags;
 
 vector<int> Answers1;
 vector<string> Answers3;
 
-// the two structures below are only used as intermediate steps while
+// the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
 PersonCommentsStruct *PersonsComments;
 MAP_INT_INT *CommentToPerson;
@@ -208,6 +264,33 @@ long countFileLines(FILE *file) {
 	return lines;
 }
 
+long countFileLines(char *file){
+	//static const auto BUFFER_SIZE = 16 * 1024;
+	int fd = open(file, O_RDONLY);
+	if (fd == -1)
+		printErr("Error while opening file for line counting");
+
+	/* Advise the kernel of our access pattern.  */
+	posix_fadvise(fd, 0, 0, 1);  // FDADVICE_SEQUENTIAL
+
+	char buf[(FILE_BUFFER_SIZE) + 1];
+	long lines = 0;
+	long bytes_read;
+
+	while ( (bytes_read = read(fd, buf, FILE_BUFFER_SIZE)) > 0) {
+		if (bytes_read == -1)
+			printErr("countFileLines()::Could not read from file!");
+		if (!bytes_read)
+			break;
+		for (char *p = buf;
+				(p = (char*) memchr(p, '\n', (buf + bytes_read) - p));
+				++p)
+			++lines;
+	}
+
+	return lines;
+}
+
 long getFileSize(FILE *file){
 	fseek(file, 0, SEEK_END);
 	long lSize = ftell(file);
@@ -217,7 +300,49 @@ long getFileSize(FILE *file){
 
 //////////////////////////////////////////////////////////////////////////////
 
-void readPersonKnowsPerson(FILE *input) {
+void readPersons(char* inputDir) {
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_PERSON);
+	FILE *input;
+
+	input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open person.csv!");
+	}
+	setvbuf(input, NULL, _IOFBF, FILE_VBUF_SIZE);
+	long lines = countFileLines(input);
+	fclose(input);
+	//long lines = countFileLines(path);
+	N_PERSONS = lines - 1;
+
+#ifdef DEBUGGING
+	char msg[100];
+	sprintf(msg, "Total persons: %d", N_PERSONS);
+	printOut(msg);
+#endif
+
+	// initialize persons
+	//Persons = malloc(sizeof(PersonStruct)*N_PERSONS);
+	Persons = new PersonStruct[N_PERSONS];
+	PersonsComments = new PersonCommentsStruct[N_PERSONS];
+	PersonToTags = new PersonTags[N_PERSONS];
+}
+
+
+
+void readPersonKnowsPerson(char *inputDir){
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_PERSON_KNOWS_PERSON);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open person_knows_person!");
+	}
+	setvbuf(input, NULL, _IOFBF, FILE_VBUF_SIZE);
+
 	// obtain file size:
 	long lSize = getFileSize(input);
 
@@ -236,8 +361,8 @@ void readPersonKnowsPerson(FILE *input) {
 	long edges=0;
 
 	// the whole file is now loaded in the memory buffer.
-	vector<int> ids;
-	ids.reserve(128);
+	vector<long> ids;
+	ids.reserve(256);
 	long prevId = -1;
 	// skip the first line
 	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
@@ -257,7 +382,7 @@ void readPersonKnowsPerson(FILE *input) {
 				//Persons[idA].adjacentPersons = ids;
 				PersonStruct *person = &Persons[prevId];
 				person->adjacentPersonsIds = (long*)malloc(sizeof(long)*ids.size());
-				for( int i=0,sz=ids.size(); i<sz; i++ ){
+				for( long i=0,sz=ids.size(); i<sz; i++ ){
 					person->adjacentPersonsIds[i] = ids[i];
 				}
 				person->adjacents = ids.size();
@@ -291,45 +416,7 @@ void readPersonKnowsPerson(FILE *input) {
 	free(buffer);
 }
 
-void readPersons(char* inputDir) {
-	char path[1024];
-	path[0] = '\0';
-	strcat(path, inputDir);
-	strcat(path, CSV_PERSON);
-	FILE *input = fopen(path, "r");
-	if (input == NULL) {
-		printErr("could not open person.csv!");
-	}
-	setvbuf(input, NULL, _IOFBF, FILE_VBUF_SIZE);
-	long lines = countFileLines(input);
-	fclose(input);
-	N_PERSONS = lines - 1;
 
-#ifdef DEBUGGING
-	char msg[100];
-	sprintf(msg, "Total persons: %d", N_PERSONS);
-	printOut(msg);
-#endif
-
-	// initialize persons
-	//Persons = malloc(sizeof(PersonStruct)*N_PERSONS);
-	Persons = new PersonStruct[N_PERSONS];
-	PersonsComments = new PersonCommentsStruct[N_PERSONS];
-
-	path[0] = '\0';
-	strcat(path, inputDir);
-	strcat(path, CSV_PERSON_KNOWS_PERSON);
-	input = fopen(path, "r");
-	if (input == NULL) {
-		printErr("could not open person_knows_person!");
-	}
-	setvbuf(input, NULL, _IOFBF, FILE_VBUF_SIZE);
-
-	// import the edges
-	readPersonKnowsPerson(input);
-
-	fclose(input);
-}
 
 char* getFileBytes(FILE *file, long *lSize){
 	setvbuf(file, NULL, _IOFBF, FILE_VBUF_SIZE);
@@ -356,7 +443,6 @@ void postProcessComments(){
 			long adjacents = Persons[i].adjacents;
 			long *adjacentIds = Persons[i].adjacentPersonsIds;
 			MAP_INT_INT *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
-			//qsort(Persons[i].adjacentPersonsIds, N_PERSONS, sizeof(long), PersonCommentsComparator);
 			Persons[i].adjacentPersonWeightsSorted = (long*)malloc(sizeof(long)*adjacents);
 			long *weights = Persons[i].adjacentPersonWeightsSorted;
 			for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
@@ -382,7 +468,7 @@ void postProcessComments(){
 			*/
 		}
 	}
-	// since we have all the data needed in arrays we can delete the hashmaps
+	// since we have all the data needed in arrays we can delete the hash maps
 	CommentToPerson->clear();
 	delete CommentToPerson;
 	CommentToPerson = NULL;
@@ -509,7 +595,6 @@ void readComments(char* inputDir) {
 	printOut(msg);
 #endif
 
-
 	///////////////////////////////////////////////////////////////////
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
@@ -556,19 +641,25 @@ void readPlaces(char *inputDir){
 		char *name = idDivisor+1;
 
 		// insert the place into the Trie for PlacesToId
-		PlaceNodeStruct *node = new PlaceNodeStruct();
-		node->id = id;
-		node->index = places;
-		Places.push_back(node);
-		(*PlaceIdToIndex)[id] = places;
-		TrieInsert(PlacesToId, name, nameDivisor-name, id, places);
+		// we first insert into the trie in order to get the Place node that already exists if any
+		// for this place, or the new one that was created with this insertion.
+		// this way we will always get the same index for the same place name regardless of id
+		TrieNode *insertedPlace = TrieInsert(PlacesToId, name, nameDivisor-name, id, places);
+		// create a new Place structure only if this was a new Place and not an existing place with
+		// a different id, like Asia or Brasil
+		if( insertedPlace->placeId == id ){
+			PlaceNodeStruct *node = new PlaceNodeStruct();
+			node->id = id;
+			node->index = insertedPlace->placeIndex;
+			Places.push_back(node);
+			places++;
+		}
+		// map the place id to the place index
+		(*PlaceIdToIndex)[id] = insertedPlace->placeIndex;
 
-		//printf("%d %s\n", id, name);
+		//printf("place[%ld] name[%*s] index[%ld] idToIndex[%ld]\n", id, nameDivisor-name, name,  insertedPlace->placeIndex, (*PlaceIdToIndex)[id]);
 
 		startLine = lineEnd + 1;
-#ifdef DEBUGGING
-		places++;
-#endif
 	}
 	// close the comment_hasCreator_Person
 	fclose(input);
@@ -578,7 +669,6 @@ void readPlaces(char *inputDir){
 	sprintf(msg, "Total places: %ld", places);
 	printOut(msg);
 #endif
-
 }
 
 
@@ -618,7 +708,9 @@ void readPlacePartOfPlace(char *inputDir){
 			// insert the place idA into the part of place idB
 			long indexA = (*PlaceIdToIndex)[idA];
 			long indexB = (*PlaceIdToIndex)[idB];
-			Places[indexA]->placesPartOfIndex.push_back(indexB);
+			if( indexA != indexB ){
+				Places[indexB]->placesPartOfIndex.push_back(indexA);
+			}
 		}
 		//printf("%ld %ld\n", idA, idB);
 
@@ -674,7 +766,7 @@ void readPersonLocatedAtPlace(char *inputDir){
 		// insert the place idA into the part of place idB
 		long indexPlace = (*PlaceIdToIndex)[idPlace];
 		Places[indexPlace]->personsThis.push_back(idPerson);
-		//printf("%ld %ld\n", idA, idB);
+		//printf("person[%ld] placeId[%ld] placeIndex[%ld]\n", idPerson, idPlace, indexPlace);
 
 		startLine = lineEnd + 1;
 #ifdef DEBUGGING
@@ -686,7 +778,14 @@ void readPersonLocatedAtPlace(char *inputDir){
 	free(buffer);
 
 #ifdef DEBUGGING
-	sprintf(msg, "Total persons located at place: %ld", persons);
+
+	long c=0;
+	for(unsigned long i=0; i<Places.size(); i++){
+		c += Places[i]->personsThis.size();
+		//printf("%ld - %ld\n", i, Places[i]->personsThis.size());
+	}
+
+	sprintf(msg, "Total persons located at place: %ld found inserted[%ld]", persons, c);
 	printOut(msg);
 #endif
 }
@@ -727,7 +826,7 @@ void readOrgsLocatedAtPlace(char *inputDir){
 		// insert the place idA into the part of place idB
 		long indexPlace = (*PlaceIdToIndex)[idPlace];
 		(*OrgToPlace)[idOrg] = indexPlace;
-		//printf("%ld %ld\n", idA, idB);
+		//printf("orgId[%ld] placeId[%ld] placeIndex[%ld]\n", idOrg, idPlace, indexPlace);
 
 		startLine = lineEnd + 1;
 #ifdef DEBUGGING
@@ -763,7 +862,7 @@ void readPersonWorksStudyAtOrg(char *inputDir){
 		strcat(path, paths[i]);
 		FILE *input = fopen(path, "r");
 		if (input == NULL) {
-			printErr("could not open person ToOrganisation file!");
+			printErr("could not open personToOrganisation file!");
 		}
 		long lSize;
 		char *buffer = getFileBytes(input, &lSize);
@@ -788,12 +887,12 @@ void readPersonWorksStudyAtOrg(char *inputDir){
 			*idDivisor = '\0';
 			*orgDivisor = '\0';
 			long idPerson = atol(startLine);
-			long idOrg = atol(orgDivisor);
+			long idOrg = atol(idDivisor+1);
 
 			// insert the place idA into the part of place idB
 			long indexPlace = (*OrgToPlace)[idOrg];
 			Places[indexPlace]->personsThis.push_back(idPerson);
-			//printf("%ld %ld\n", idA, idB);
+			//printf("person[%ld] org[%ld] place[%ld]\n", idPerson, idOrg, indexPlace);
 
 			startLine = lineEnd + 1;
 #ifdef DEBUGGING
@@ -817,6 +916,88 @@ void readPersonWorksStudyAtOrg(char *inputDir){
 	OrgToPlace = NULL;
 }
 
+void readPersonHasInterestTag(char *inputDir){
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_PERSON_HASINTEREST_TAG);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open person_hasInterest_tag.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+	long personHasTag=0;
+	char msg[100];
+#endif
+
+	// process the whole file in memory
+	// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	while (startLine < EndOfFile) {
+		int len = EndOfFile - startLine;
+		lineEnd = (char*) memchr(startLine, '\n', len);
+		idDivisor = (char*) memchr(startLine, '|', len);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		long personId = atol(startLine);
+		long tagId = atol(idDivisor+1);
+
+		PersonToTags[personId].tags.push_back(tagId);
+		//printf("%ld %ld\n", idA, idB);
+
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		personHasTag++;
+#endif
+	}
+	// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
+
+	// sort the tags to make easy the comparison
+	// TODO - create signatures for the tags insteads
+	for( long i=0; i<N_PERSONS; i++ ){
+		std::stable_sort(PersonToTags[i].tags.begin(), PersonToTags[i].tags.end());
+	}
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total person tags : %ld", personHasTag);
+	printOut(msg);
+#endif
+
+}
+
+void readTags(char* inputDir) {
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_TAG);
+	FILE *input;
+
+	input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open tag.csv!");
+	}
+	setvbuf(input, NULL, _IOFBF, FILE_VBUF_SIZE);
+	long lines = countFileLines(input);
+	fclose(input);
+	//long lines = countFileLines(path);
+	N_TAGS = lines - 1;
+
+#ifdef DEBUGGING
+	char msg[100];
+	sprintf(msg, "Total tags: %d", N_TAGS);
+	printOut(msg);
+#endif
+}
+
+
 ///////////////////////////////////////////////////////////////////////
 // QUERY EXECUTORS
 ///////////////////////////////////////////////////////////////////////
@@ -826,58 +1007,60 @@ void query1(int p1, int p2, int x){
 
 	char *visited = (char*)malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
-	vector<Query1BFS> Q;
+	vector<QueryBFS> Q;
 
 	// insert the source node into the queue
-	Query1BFS source;
-	source.depth = 0;
-	source.person = p1;
-	Q.push_back(source);
+	Q.push_back(QueryBFS(p1, 0));
 	unsigned long index=0;
-	while( index < Q.size() ){
-		Query1BFS current = Q[index];
+	unsigned long size = 1;
+	while( index < size ){
+		QueryBFS current = Q[index];
 		index++;
-		if( visited[current.person] ){
-			continue;
-		}
-		//printf("current: %ld %d\n", current.person, current.depth);
-		visited[current.person] = 1;
 
-		if( current.person == p2 ){
-			Answers1.push_back(current.depth);
-			free(visited);
-			return;
-		}else{
-			// we must add the current neighbors into the queue if
-			// the comments are valid
-			PersonStruct *cPerson = &Persons[current.person];
-			long *adjacents = cPerson->adjacentPersonsIds;
-			long *weights = cPerson->adjacentPersonWeightsSorted;
-			// if there is comments limit
-			if( x!=-1 ){
-				for (long i = 0, sz = cPerson->adjacents; (i < sz) && (weights[i] > x); i++) {
-					long cAdjacent = adjacents[i];
-					if (!visited[cAdjacent] ){
-					    //&& cPerson->adjacentPersonWeights[cAdjacent] > x) {
-						Query1BFS valid;
-						valid.depth = current.depth + 1;
-						valid.person = cAdjacent;
-						Q.push_back(valid);
+		//printf("current: %ld %d\n", current.person, current.depth);
+		// mark node as visited - BLACK
+		visited[current.person] = 2;
+
+		// we must add the current neighbors into the queue if
+		// the comments are valid
+		PersonStruct *cPerson = &Persons[current.person];
+		long *adjacents = cPerson->adjacentPersonsIds;
+		long *weights = cPerson->adjacentPersonWeightsSorted;
+		// if there is comments limit
+		if (x != -1) {
+			for (long i = 0, sz = cPerson->adjacents;
+					(i < sz) && (weights[i] > x); i++) {
+				long cAdjacent = adjacents[i];
+				if (visited[cAdjacent] == 0) {
+					if (cAdjacent == p2) {
+						Answers1.push_back(current.depth + 1);
+						free(visited);
+						return;
 					}
+					visited[cAdjacent] = 1;
+					//&& cPerson->adjacentPersonWeights[cAdjacent] > x) {
+					Q.push_back(QueryBFS(cAdjacent, current.depth+1));
+					size++;
 				}
-			} else {
-				// no comments limit
-				for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
-					long cAdjacent = adjacents[i];
-					if( !visited[cAdjacent] ){
-						Query1BFS valid;
-						valid.depth = current.depth + 1;
-						valid.person = cAdjacent;
-						Q.push_back(valid);
+			}
+		} else {
+			// no comments limit
+			for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
+				long cAdjacent = adjacents[i];
+				// if node not visited and not added
+				if (visited[cAdjacent] == 0) {
+					if (cAdjacent == p2) {
+						Answers1.push_back(current.depth + 1);
+						free(visited);
+						return;
 					}
+					// mark node as added - GREY
+					visited[cAdjacent] = 1;
+					Q.push_back(QueryBFS(cAdjacent, current.depth+1));
+					size++;
 				}
-			} // end of neighbors processing
-		} // end if not current node is the destination
+			}
+		} // end of neighbors processing
 	}
 
 	free(visited);
@@ -885,8 +1068,169 @@ void query1(int p1, int p2, int x){
 	Answers1.push_back(-1);
 }
 
+int BFS_query3(long idA, long idB, int h){
+	char *visited = (char*)malloc(N_PERSONS);
+	memset(visited, 0, N_PERSONS);
+
+	vector<QueryBFS> Q;
+	long qIndex=0;
+	long qSize=1;
+	Q.push_back(QueryBFS(idA, 0));
+	while( qIndex < qSize ){
+		QueryBFS cPerson = Q[qIndex];
+		qIndex++;
+
+		// we have reached the hop limit of the query
+		// so we have to exit since the person we want to reach cannot be found
+		// in less than h-hops since he should have already be found
+		// while pushing the neighbors below. The destination node should
+		// never appear here since he will never be pushed into the Queue.
+
+		if (cPerson.depth > h) {
+			break;
+		}
+
+
+		// mark person BLACK - visited
+		visited[cPerson.person] = 2;
+
+		long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
+		for( long i=0,sz=Persons[cPerson.person].adjacents; i<sz; i++ ){
+			long cB = neighbors[i];
+			// if person is not visited and not added yet
+			if( visited[cB] == 0 ){
+				// check if this is our person
+				if( idB == cB ){
+					free(visited);
+					return cPerson.depth + 1;
+				}
+				// mark person as GREY - added
+				visited[cB] = 1;
+				Q.push_back(QueryBFS(cB, cPerson.depth+1));
+				qSize++;
+			}
+		}
+	}
+	free(visited);
+	return INT_MAX;
+}
+
 void query3(int k, int h, char *name, int name_sz){
-	printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
+	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
+
+	vector<long> persons;
+	vector<bool> visitedPersons;
+	visitedPersons.resize(N_PERSONS);
+
+	// get all the persons that are related to the place passed in
+	char *visitedPlace = (char*)malloc(Places.size());
+	memset(visitedPlace, 0, Places.size());
+	TrieNode *place = TrieFind(PlacesToId, name, name_sz);
+	long index = place->placeIndex;
+	vector<long> Q_places;
+	Q_places.push_back(index);
+	// set as added
+	visitedPlace[index] = 1;
+	long qIndex = 0;
+	long qSize = 1;
+	while(qIndex < qSize){
+		long cPlace = Q_places[qIndex];
+		qIndex++;
+		// set visited
+		visitedPlace[cPlace] = 2;
+		PlaceNodeStruct *cPlaceStruct = Places[cPlace];
+		//std::copy (cPlaceStruct->personsThis.begin(),cPlaceStruct->personsThis.end(),std::back_inserter(persons));
+		std::vector<long>::iterator cPerson=cPlaceStruct->personsThis.begin();
+		std::vector<long>::iterator end=cPlaceStruct->personsThis.end();
+		persons.reserve(persons.size()+(end-cPerson));
+		for( ; cPerson != end; cPerson++ ){
+			if( visitedPersons[*cPerson] )
+				continue;
+			visitedPersons[*cPerson] = true;
+			persons.push_back(*cPerson);
+		}
+
+		for (std::vector<long>::iterator it = cPlaceStruct->placesPartOfIndex.begin();
+				it != cPlaceStruct->placesPartOfIndex.end(); ++it){
+			// if not visited
+			if( visitedPlace[*it] == 0 ){
+				// set as added
+				visitedPlace[*it] = 1;
+				Q_places.push_back(*it);
+				qSize++;
+				//printf("added place[%ld] of [%ld]persons\n", *it, Places[*it]->personsThis.size() );
+			}
+		}
+	}
+
+	//printf("found for place [%*s] persons[%ld] index[%ld]\n", name_sz, name, persons.size(), index);
+
+	// now we have all the required persons so we have to calculate the common tags
+	// for each pair and insert them into the priority queue in order to get the maximum K later
+	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_Comparator> PQ;
+	for( long i = 0,end=persons.size()-1; i<end; ++i ){
+		long idA = persons[i];
+	//for( std::vector<long>::iterator idA = persons.begin(),end=persons.begin()+persons.size()-1; idA != end ; ++idA ){
+		//for( std::vector<long>::iterator idB = idA+1; idB != persons.end(); ++idB ){
+		for( long j = i+1, endd=persons.size(); j<endd; ++j ){
+			// TODO - WE DO NOT HAVE TO CHECK THESE PEOPLE IF THEY ARE NOT IN THE SAME SUBGRAPH
+			// we now have to calculate the common tags between these two people
+			long idB = persons[j];
+/*
+			if( (idA == 361 || idA == 812) &&(idB == 361 || idB == 812) ){
+				printf("found him");
+			}
+*/
+			int cTags = 0;
+			vector<long> &tagsA = PersonToTags[idA].tags;
+			vector<long> &tagsB = PersonToTags[idB].tags;
+			std::vector<long>::const_iterator iA = tagsA.begin();
+			std::vector<long>::const_iterator endA = tagsA.end();
+			std::vector<long>::const_iterator iB = tagsB.begin();
+			std::vector<long>::const_iterator endB = tagsB.end();
+			for( ; iA != endA && iB != endB ; ){
+				if( *iA < *iB  )
+					iA++;
+				else if ( *iB < *iA )
+					iB++;
+				else if ( *iA == *iB ){
+					cTags++;
+					iA++;
+					iB++;
+				}
+			}
+			//printf("idA[%ld] idB[%ld] common[%ld]\n", idA, idB, cTags);
+			if( idA <= idB ){
+				PQ.push(Query3PQ(idA, idB, cTags));
+			}else{
+				PQ.push(Query3PQ(idB, idA, cTags));
+			}
+		}
+	}
+
+	// now we have to pop the K most common tag pairs
+	// but we also have to check that the distance between them
+	// is below the H-hops needed by the query.
+	std::stringstream ss;
+	for( ; k>0; k-- ){
+		long idA = -1;
+		long idB = -1;
+		long cTags = -1;
+		while( !PQ.empty() ){
+			idA = PQ.top().idA;
+			idB = PQ.top().idB;
+			cTags = PQ.top().commonTags;
+			PQ.pop();
+			int distance = BFS_query3(idA, idB, h);
+			if( distance <= h ){
+				// we have an answer so exit the while
+				break;
+			}
+		}
+		//ss << idA << "|" << idB << "[" << cTags << "] ";
+		ss << idA << "|" << idB << " ";
+	}
+	Answers3.push_back(ss.str());
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -910,6 +1254,7 @@ void _initializations(){
 
 void _destructor(){
 	delete[] Persons;
+	delete[] PersonToTags;
 	TrieNode_Destructor(PlacesToId);
 }
 
@@ -968,10 +1313,10 @@ void executeQueries(char *queriesFile){
 }
 
 int main(int argc, char** argv) {
-	//if( argc != 1 ){
-	//if( argc != 3 ){
-	//printErr("Wrong number of arguments. ./binary input_dir output_dir");
-	//}
+/*
+	inputDir = argv[1];
+	queryFile = argv[2];
+*/
 
 	// MAKE GLOBAL INITIALIZATIONS
 	char msg[100];
@@ -980,6 +1325,8 @@ int main(int argc, char** argv) {
 	long long time_global_start = getTime();
 	/////////////////////////////////
 	readPersons(inputDir);
+	readPersonKnowsPerson(inputDir);
+
 #ifdef DEBUGGING
 	long time_persons_end = getTime();
 	sprintf(msg, "persons graph time: %ld", time_persons_end - time_global_start);
@@ -999,6 +1346,8 @@ int main(int argc, char** argv) {
 	readOrgsLocatedAtPlace(inputDir);
 	readPersonWorksStudyAtOrg(inputDir);
 
+	readPersonHasInterestTag(inputDir);
+
 #ifdef DEBUGGING
 	long time_places_end = getTime();
 	sprintf(msg, "places process time: %ld", time_places_end - time_global_start);
@@ -1012,12 +1361,6 @@ int main(int argc, char** argv) {
 	long time_queries_end = getTime();
 	sprintf(msg, "queries process time: %ld", time_queries_end - time_global_start);
 	printOut(msg);
-/*
-	for(int i=0, sz=Answers1.size(); i<sz; i++){
-		printf("answer %d: %d\n", i, Answers1[i]);
-	}
-*/
-#endif
 
 	/////////////////////////////////
 	long long time_global_end = getTime();
@@ -1025,6 +1368,19 @@ int main(int argc, char** argv) {
 			time_global_end - time_global_start,
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
+
+
+#endif
+
+	for(int i=0, sz=Answers1.size(); i<sz; i++){
+		//printf("answer %d: %d\n", i, Answers1[i]);
+		printf("%d\n", Answers1[i]);
+	}
+
+	for(int i=0, sz=Answers3.size(); i<sz; i++){
+		//printf("answer %d: %s\n", i, Answers3[i].c_str());
+		printf("%s\n", Answers3[i].c_str());
+	}
 
 	_destructor();
 }
@@ -1060,6 +1416,10 @@ TrieNode* TrieInsert( TrieNode* node, const char* name, char name_sz, long id, l
 		}
 		node = node->children[pos];
 		ptr++;
+	}
+	// if already exists we do not overwrite but just return the existing one
+	if( 1 == node->valid ){
+		return node;
 	}
 	node->valid = 1;
 	node->placeId = id;
