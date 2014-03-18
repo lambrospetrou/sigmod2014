@@ -33,7 +33,7 @@ using std::tr1::hash;
 #define JOIN(x, y) JOIN_AGAIN(x, y)
 #define JOIN_AGAIN(x, y) x ## y
 
-#define DEBUGGING 1
+//#define DEBUGGING 1
 #define FILE_VBUF_SIZE 8192
 #define FILE_BUFFER_SIZE 1<<15
 
@@ -46,6 +46,7 @@ using std::tr1::hash;
 typedef vector<int> LIST_INT;
 //typedef map<int, int> MAP_INT_INT;
 typedef std::tr1::unordered_map<int, int, hash<int> > MAP_INT_INT;
+typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
 
 struct PersonStruct {
 	PersonStruct() {
@@ -71,9 +72,8 @@ struct PersonCommentsStruct {
 
 struct TrieNode{
 	char valid;
-	long placeId;
-	long placeIndex;
-	//vector<long> sameNameIds;
+	long realId;
+	long vIndex;
 	TrieNode* children[VALID_PLACE_CHARS];
 };
 
@@ -84,14 +84,17 @@ struct PlaceNodeStruct{
 	vector<long> placesPartOfIndex;
 };
 
-struct TagNode{
-	long id;
-	TrieNode *tagNode;
-};
 
 struct PersonTags{
 	vector<long> tags;
 };
+
+struct TagNode{
+	long id;
+	TrieNode *tagNode;
+	vector<long> forums;
+};
+
 
 /////////////////////////////
 // QUERY SPECIFIC
@@ -132,6 +135,25 @@ public:
     }
 };
 
+struct Query4PersonStruct{
+	Query4PersonStruct(long id, int sp, int rp, double central){
+		person = id;
+		s_p = sp;
+		r_p = rp;
+		centrality = central;
+	}
+	long person;
+	int s_p;
+	int r_p;
+	double centrality;
+};
+
+bool Query4PersonStructPredicate(const Query4PersonStruct& d1, const Query4PersonStruct& d2)
+{
+	if( d1.centrality == d2.centrality )
+		return d1.person <= d2.person;
+  return d1.centrality > d2.centrality;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // FUNCTION PROTOTYPES
@@ -158,7 +180,7 @@ char *CSV_COMMENT_HAS_CREATOR = "/comment_hasCreator_person.csv";
 char *CSV_COMMENT_REPLY_OF_COMMENT = "/comment_replyOf_comment.csv";
 
 // required for query 3
-char *CSV_PLACE = "/place_utf8.csv";
+char *CSV_PLACE = "/place.csv";
 char *CSV_PLACE_PART_OF_PLACE = "/place_isPartOf_place.csv";
 char *CSV_PERSON_LOCATED_AT_PLACE = "/person_isLocatedIn_place.csv";
 char *CSV_ORGANIZATION_LOCATED_AT_PLACE = "/organisation_isLocatedIn_place.csv";
@@ -169,6 +191,10 @@ char *CSV_WORKAT_ORG = "/person_workAt_organisation.csv";
 char *CSV_TAG = "/tag.csv";
 char *CSV_PERSON_HASINTEREST_TAG = "/person_hasInterest_tag.csv";
 
+// Q4
+char *CSV_FORUM_HAS_TAG = "/forum_hasTag_tag.csv";
+char *CSV_FORUM_HAS_MEMBER = "/forum_hasMember_person.csv";
+
 long N_PERSONS = 0;
 long N_TAGS = 0;
 long N_SUBGRAPHS = 0;
@@ -178,8 +204,15 @@ TrieNode *PlacesToId;
 vector<PlaceNodeStruct*> Places;
 PersonTags *PersonToTags;
 
+vector<TagNode*> Tags;
+TrieNode *TagToIndex; // required by Q4
+
+MAP_INT_VecL Forums;
+//vector<ForumNodeStruct*> Forums;
+
 vector<int> Answers1;
 vector<string> Answers3;
+vector<string> Answers4;
 
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
@@ -188,6 +221,8 @@ MAP_INT_INT *CommentToPerson;
 
 MAP_INT_INT *PlaceIdToIndex;
 MAP_INT_INT *OrgToPlace;
+
+MAP_INT_INT *TagIdToIndex;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -650,8 +685,6 @@ void readComments(char* inputDir) {
 
 }
 
-
-
 void readPlaces(char *inputDir){
 	char path[1024];
 	path[0] = '\0';
@@ -694,15 +727,15 @@ void readPlaces(char *inputDir){
 		TrieNode *insertedPlace = TrieInsert(PlacesToId, name, nameDivisor-name, id, places);
 		// create a new Place structure only if this was a new Place and not an existing place with
 		// a different id, like Asia or Brasil
-		if( insertedPlace->placeId == id ){
+		if( insertedPlace->realId == id ){
 			PlaceNodeStruct *node = new PlaceNodeStruct();
 			node->id = id;
-			node->index = insertedPlace->placeIndex;
+			node->index = insertedPlace->vIndex;
 			Places.push_back(node);
 			places++;
 		}
 		// map the place id to the place index
-		(*PlaceIdToIndex)[id] = insertedPlace->placeIndex;
+		(*PlaceIdToIndex)[id] = insertedPlace->vIndex;
 
 		//printf("place[%ld] name[%*s] index[%ld] idToIndex[%ld]\n", id, nameDivisor-name, name,  insertedPlace->placeIndex, (*PlaceIdToIndex)[id]);
 
@@ -1020,30 +1053,178 @@ void readPersonHasInterestTag(char *inputDir){
 
 }
 
-void readTags(char* inputDir) {
+void readTags(char *inputDir){
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
 	strcat(path, CSV_TAG);
-	FILE *input;
-
-	input = fopen(path, "r");
+	FILE *input = fopen(path, "r");
 	if (input == NULL) {
 		printErr("could not open tag.csv!");
 	}
-	setvbuf(input, NULL, _IOFBF, FILE_VBUF_SIZE);
-	long lines = countFileLines(input);
-	fclose(input);
-	//long lines = countFileLines(path);
-	N_TAGS = lines - 1;
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
 
 #ifdef DEBUGGING
 	char msg[100];
-	sprintf(msg, "Total tags: %d", N_TAGS);
+#endif
+
+	long tags=0;
+	// process the whole file in memory
+	// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	char *nameDivisor;
+	while (startLine < EndOfFile) {
+		int len = EndOfFile - startLine;
+		lineEnd = (char*) memchr(startLine, '\n', len);
+		idDivisor = (char*) memchr(startLine, '|', len);
+		nameDivisor = (char*) memchr(idDivisor+1, '|', len);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		*nameDivisor = '\0';
+		long id = atol(startLine);
+		char *name = idDivisor+1;
+
+		// insert the tag into the Trie for TagToIndex
+		// we first insert into the trie in order to get the Place node that already exists if any
+		// for this place, or the new one that was created with this insertion.
+		// this way we will always get the same index for the same place name regardless of id
+		TrieNode *insertedTag = TrieInsert(TagToIndex, name, nameDivisor-name, id, tags);
+		// create a new Place structure only if this was a new Place and not an existing place with
+		// a different id, like Asia or Brazil
+		if( insertedTag->realId == id ){
+			TagNode *node = new TagNode();
+			node->id = id;
+			node->tagNode = insertedTag;
+			Tags.push_back(node);
+			tags++;
+		}
+		// map the place id to the place index
+		(*TagIdToIndex)[id] = insertedTag->vIndex;
+		//printf("tag[%ld] name[%*s] index[%ld]\n", id, nameDivisor-name, name,  insertedTag->vIndex);
+
+		startLine = lineEnd + 1;
+	}
+	// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
+
+	N_TAGS = tags;
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total tags: %ld", tags);
 	printOut(msg);
 #endif
 }
 
+void readForumHasTag(char *inputDir){
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_FORUM_HAS_TAG);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open forum_hasTag_tag.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+	long forumTags=0;
+	char msg[100];
+#endif
+
+	// process the whole file in memory
+	// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	while (startLine < EndOfFile) {
+		int len = EndOfFile - startLine;
+		lineEnd = (char*) memchr(startLine, '\n', len);
+		idDivisor = (char*) memchr(startLine, '|', len);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		long forumId = atol(startLine);
+		long tagId = atol(idDivisor+1);
+
+		// insert the forum into the tag
+		long tagIndex = (*TagIdToIndex)[tagId];
+		Tags[tagIndex]->forums.push_back(forumId);
+		//printf("%ld %ld\n", idA, idB);
+
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		forumTags++;
+#endif
+	}
+	// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total forums having tags: %ld", forumTags);
+	printOut(msg);
+#endif
+
+	// now we can delete the TagIds
+	delete TagIdToIndex;
+}
+
+void readForumHasMember(char *inputDir){
+	char path[1024];
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_FORUM_HAS_MEMBER);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open forum_hasMember_person.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+	long forumPersons=0;
+	char msg[100];
+#endif
+	// process the whole file in memory
+	// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	char *dateDivisor;
+	while (startLine < EndOfFile) {
+		int len = EndOfFile - startLine;
+		lineEnd = (char*) memchr(startLine, '\n', len);
+		idDivisor = (char*) memchr(startLine, '|', len);
+		dateDivisor = (char*) memchr(idDivisor+1, '|', len);
+		*idDivisor = '\0';
+		*dateDivisor = '\0';
+		long forumId = atol(startLine);
+		long personId = atol(idDivisor+1);
+
+		// insert the person directly into the forum members
+		Forums[forumId].push_back(personId);
+
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		forumPersons++;
+#endif
+	}
+	// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total persons members of forums: %ld", forumPersons);
+	printOut(msg);
+#endif
+}
 
 ///////////////////////////////////////////////////////////////////////
 // QUERY EXECUTORS
@@ -1132,12 +1313,9 @@ int BFS_query3(long idA, long idB, int h){
 		// in less than h-hops since he should have already be found
 		// while pushing the neighbors below. The destination node should
 		// never appear here since he will never be pushed into the Queue.
-
 		if (cPerson.depth > h) {
 			break;
 		}
-
-
 		// mark person BLACK - visited
 		visited[cPerson.person] = 2;
 
@@ -1173,7 +1351,7 @@ void query3(int k, int h, char *name, int name_sz){
 	char *visitedPlace = (char*)malloc(Places.size());
 	memset(visitedPlace, 0, Places.size());
 	TrieNode *place = TrieFind(PlacesToId, name, name_sz);
-	long index = place->placeIndex;
+	long index = place->vIndex;
 	vector<long> Q_places;
 	Q_places.push_back(index);
 	// set as added
@@ -1214,6 +1392,8 @@ void query3(int k, int h, char *name, int name_sz){
 
 	// now we have all the required persons so we have to calculate the common tags
 	// for each pair and insert them into the priority queue in order to get the maximum K later
+	// TODO - CAN BE FASTER WITH JUST A VECTOR FOR O(1) INSERTIONS
+	// TODO - AND THEN SORT THEM AND ITERATE THEM TO FIND THE TOP-K
 	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_Comparator> PQ;
 	for( long i = 0,end=persons.size()-1; i<end; ++i ){
 		long idA = persons[i];
@@ -1277,13 +1457,93 @@ void query3(int k, int h, char *name, int name_sz){
 	Answers3.push_back(ss.str());
 }
 
+void query4(int k, char *tag, int tag_sz){
+	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
+
+	long tagIndex = TrieFind(TagToIndex, tag, tag_sz)->vIndex;
+	vector<Query4PersonStruct> persons;
+	vector<long> &forums = Tags[tagIndex]->forums;
+	// TODO - consider having SET here for space issues - and also in query 3
+	vector<bool> *visitedPersons = new vector<bool>();
+	visitedPersons->resize(N_PERSONS);
+	for( int cForum=0, fsz=forums.size(); cForum<fsz; cForum++ ){
+		vector<long> &cPersons = Forums[forums[cForum]];
+		for( int cPerson=0, psz=cPersons.size(); cPerson<psz; cPerson++ ){
+			long personId = cPersons[cPerson];
+			if( (*visitedPersons)[personId] )
+				continue;
+			(*visitedPersons)[personId] = 1;
+			persons.push_back(Query4PersonStruct(personId,0,0,0.0));
+		}
+	}
+
+	// now I want to create a new graph containing only the required edges
+	// to speed up the shortest paths between all of them
+	MAP_INT_VecL newGraph;
+	for( int i=0,sz=persons.size(); i<sz; i++ ){
+		long pId = persons[i].person;
+		long *edges = Persons[pId].adjacentPersonsIds;
+		for( int j=0,szz=Persons[pId].adjacents; j<szz; j++ ){
+			if( (*visitedPersons)[edges[j]] ){
+				newGraph[pId].push_back(edges[j]);
+			}
+		}
+	}
+	// safe to delete the visitedPersons
+	delete visitedPersons;
+
+	// TODO - MAKE THE TRICK WITH THE SORTED EDGES
+
+	// now we have to calculate the shortest paths between them
+	int n_1 = persons.size()-1;
+	MAP_INT_INT visitedBFS;
+	for( int i=0,sz=persons.size(); i<sz; i++ ){
+		Query4PersonStruct &cPerson = persons[i];
+		cPerson.s_p = 0;
+		vector<QueryBFS> Q;
+		long qIndex = 0;
+		long qSize = 1;
+		Q.push_back(QueryBFS(cPerson.person, 0));
+		while( qIndex < qSize ){
+			QueryBFS c = Q[qIndex];
+			qIndex++;
+			visitedBFS[c.person] = 2;
+			cPerson.s_p += c.depth;
+			vector<long> &edges = newGraph[c.person];
+			for( int e=0,szz=edges.size(); e<szz; e++ ){
+				long eId = edges[e];
+				if( visitedBFS[eId] == 0 ){
+					visitedBFS[eId] = 1;
+					Q.push_back(QueryBFS(eId, c.depth+1));
+					qSize++;
+				}
+			}
+		}
+		// calculate the centrality for this person
+		cPerson.r_p = qSize-1;
+		if( n_1 == 0 || cPerson.s_p == 0 )
+			cPerson.centrality = 0;
+		else
+			cPerson.centrality = ((double)(cPerson.r_p * cPerson.r_p)) / (n_1 * cPerson.s_p);
+		visitedBFS.clear();
+	}
+
+	// we now just have to return the K persons with the highest centrality
+	std::sort_heap(persons.begin(), persons.end(), Query4PersonStructPredicate);
+	std::stringstream ss;
+	for( int i=0; i<k; i++ ){
+		//ss << persons[i].person << ":" << persons[i].centrality << " ";
+		ss << persons[i].person << " ";
+	}
+	Answers4.push_back(ss.str());
+}
+
+
 ///////////////////////////////////////////////////////////////////////
 // MAIN PROGRAM
 ///////////////////////////////////////////////////////////////////////
 
 void _initializations(){
-	//CommentToPerson.reserve(1<<10);
-	//PlaceIdToIndex.reserve(2048);
 	CommentToPerson = new MAP_INT_INT();
 	PlaceIdToIndex = new MAP_INT_INT();
 	OrgToPlace = new MAP_INT_INT();
@@ -1291,6 +1551,9 @@ void _initializations(){
 	PlacesToId = TrieNode_Constructor();
 	Places.reserve(2048);
 
+	TagToIndex = TrieNode_Constructor();
+	Tags.reserve(2048);
+	TagIdToIndex = new MAP_INT_INT();
 
 	Answers1.reserve(2048);
 	Answers3.reserve(2048);
@@ -1300,6 +1563,7 @@ void _destructor(){
 	delete[] Persons;
 	delete[] PersonToTags;
 	TrieNode_Destructor(PlacesToId);
+	TrieNode_Destructor(TagToIndex);
 }
 
 void executeQueries(char *queriesFile){
@@ -1342,6 +1606,15 @@ void executeQueries(char *queriesFile){
 			*(lineEnd - 1) = '\0';
 			char *name = third+1; // to skip one space
 			query3(atoi(startLine + 7), atoi(second), name, lineEnd-1-name);
+			break;
+		}
+		case 4:
+		{
+			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
+			*(second - 1) = '\0';
+			*(lineEnd - 1) = '\0';
+			char *name = second + 1; // to skip one space
+			query4(atoi(startLine + 7), name, lineEnd - 1 - name);
 			break;
 		}
 		default:
@@ -1390,14 +1663,24 @@ int main(int argc, char** argv) {
 	readOrgsLocatedAtPlace(inputDir);
 	readPersonWorksStudyAtOrg(inputDir);
 
-	readPersonHasInterestTag(inputDir);
-
 #ifdef DEBUGGING
 	long time_places_end = getTime();
 	sprintf(msg, "places process time: %ld", time_places_end - time_global_start);
 	printOut(msg);
 #endif
 
+	// Q3
+	readPersonHasInterestTag(inputDir);
+	// Q4
+	readTags(inputDir);
+	readForumHasTag(inputDir);
+	readForumHasMember(inputDir);
+
+#ifdef DEBUGGING
+	long time_tags_end = getTime();
+	sprintf(msg, "tags process time: %ld", time_tags_end - time_global_start);
+	printOut(msg);
+#endif
 
 	executeQueries(queryFile);
 
@@ -1413,8 +1696,8 @@ int main(int argc, char** argv) {
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
 
-
 #endif
+
 
 	for(int i=0, sz=Answers1.size(); i<sz; i++){
 		//printf("answer %d: %d\n", i, Answers1[i]);
@@ -1426,6 +1709,12 @@ int main(int argc, char** argv) {
 		printf("%s\n", Answers3[i].c_str());
 	}
 
+	for(int i=0, sz=Answers4.size(); i<sz; i++){
+		//printf("answer 4 %d: %s\n", i, Answers4[i].c_str());
+		printf("%s\n", Answers4[i].c_str());
+	}
+
+	// destroy the remaining indexes
 	_destructor();
 }
 
@@ -1450,7 +1739,7 @@ void TrieNode_Destructor( TrieNode* node ){
 	free( node );
 }
 TrieNode* TrieInsert( TrieNode* node, const char* name, char name_sz, long id, long index){
-	char ptr=0;
+	int ptr=0;
 	int pos;
 	while( ptr < name_sz ){
 		//pos=name[ptr]-'a';
@@ -1466,8 +1755,8 @@ TrieNode* TrieInsert( TrieNode* node, const char* name, char name_sz, long id, l
 		return node;
 	}
 	node->valid = 1;
-	node->placeId = id;
-	node->placeIndex = index;
+	node->realId = id;
+	node->vIndex = index;
 	return node;
 }
 TrieNode* TrieFind( TrieNode* root, const char* name, char name_sz ){
