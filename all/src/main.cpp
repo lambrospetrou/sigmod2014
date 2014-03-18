@@ -171,6 +171,7 @@ char *CSV_PERSON_HASINTEREST_TAG = "/person_hasInterest_tag.csv";
 
 long N_PERSONS = 0;
 long N_TAGS = 0;
+long N_SUBGRAPHS = 0;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
@@ -330,7 +331,49 @@ void readPersons(char* inputDir) {
 	PersonToTags = new PersonTags[N_PERSONS];
 }
 
-
+long calculateAndAssignSubgraphs(){
+	char *visited = (char*) malloc(N_PERSONS);
+	memset(visited, 0, N_PERSONS);
+	long currentSubgraph = 0;
+	for (long cPerson = 0, sz = N_PERSONS; cPerson < sz; cPerson++) {
+		if (visited[cPerson] != 0)
+			continue;
+		// start BFS from the current person
+		vector<long> Q;
+		Q.push_back(cPerson);
+		long qIndex = 0;
+		long qSize = 1;
+		while (qIndex < qSize) {
+			long cP = Q[qIndex];
+			qIndex++;
+			// set as visited
+			visited[cP] = 2;
+			// this person belongs to the current subgraph being traversed
+			Persons[cP].subgraphNumber = currentSubgraph;
+			long *adjacents = Persons[cP].adjacentPersonsIds;
+			for (long cAdjacent = 0, szz = Persons[cP].adjacents;
+					cAdjacent < szz; cAdjacent++) {
+				long neighbor = adjacents[cAdjacent];
+				// check if not visited nor added
+				if (visited[neighbor] == 0) {
+					// set as added
+					visited[neighbor] = 1;
+					Q.push_back(neighbor);
+					qSize++;
+				}
+			}
+		}
+		// increase the subgraphs
+		currentSubgraph++;
+	}
+	free(visited);
+#ifdef DEBUGGING
+	char msg[100];
+	sprintf(msg, "Total subgraphs: %ld", currentSubgraph);
+	printOut(msg);
+#endif
+	return currentSubgraph;
+}
 
 void readPersonKnowsPerson(char *inputDir){
 	char path[1024];
@@ -407,13 +450,17 @@ void readPersonKnowsPerson(char *inputDir){
 		person->adjacents = ids.size();
 	}
 
+	free(buffer);
+
 #ifdef DEBUGGING
 	char msg[100];
 	sprintf(msg, "Total edges: %d", edges);
 	printOut(msg);
 #endif
 
-	free(buffer);
+	// now we want to find all the subgraphs into the graph and assign each person
+	// into one of them since we will use this info into the Query 4
+	N_SUBGRAPHS = calculateAndAssignSubgraphs();
 }
 
 
@@ -1173,14 +1220,11 @@ void query3(int k, int h, char *name, int name_sz){
 	//for( std::vector<long>::iterator idA = persons.begin(),end=persons.begin()+persons.size()-1; idA != end ; ++idA ){
 		//for( std::vector<long>::iterator idB = idA+1; idB != persons.end(); ++idB ){
 		for( long j = i+1, endd=persons.size(); j<endd; ++j ){
-			// TODO - WE DO NOT HAVE TO CHECK THESE PEOPLE IF THEY ARE NOT IN THE SAME SUBGRAPH
-			// we now have to calculate the common tags between these two people
 			long idB = persons[j];
-/*
-			if( (idA == 361 || idA == 812) &&(idB == 361 || idB == 812) ){
-				printf("found him");
-			}
-*/
+			// WE DO NOT HAVE TO CHECK THESE PEOPLE IF THEY ARE NOT IN THE SAME SUBGRAPH
+			if( Persons[idA].subgraphNumber != Persons[idB].subgraphNumber )
+				continue;
+			// we now have to calculate the common tags between these two people
 			int cTags = 0;
 			vector<long> &tagsA = PersonToTags[idA].tags;
 			vector<long> &tagsB = PersonToTags[idB].tags;
