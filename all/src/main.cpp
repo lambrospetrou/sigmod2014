@@ -24,6 +24,8 @@
 
 #include <tr1/unordered_map>
 
+#include "LPBitset.h"
+
 using namespace std;
 using std::tr1::unordered_map;
 using std::tr1::hash;
@@ -1496,70 +1498,43 @@ void query4(int k, char *tag, int tag_sz){
 	// safe to delete the visitedPersons since we got the people for this tag
 	delete visitedPersons;
 
-	// MAKE THE TRICK WITH THE SORTED EDGES
-	// 1- sort the edges for each person in ascending order
-	// 2- sort the persons in descending order
-	// -->> this way we can easily remove edges from persons while BFSing
-	//		in order to reduce the steps each person traverses since the result has already been calculated
-
-	// 2----
-	//std::stable_sort(persons.begin(), persons.end(), Query4PersonStructPredicateId);
-	// 1----
-	MAP_INT_INT personIdToIndex;
-	for( int i=0,sz=persons.size(); i<sz; i++ ){
-		personIdToIndex[persons[i].person] = i;
-		//vector<long> &edges = newGraph[persons[i].person];
-		//std::stable_sort(edges.begin(), edges.end());
-	}
-
 	// now we have to calculate the shortest paths between them
 	int n_1 = persons.size()-1;
-	MAP_INT_INT *visitedBFS = new MAP_INT_INT[persons.size()];
+	MAP_INT_INT visitedBFS;
 	vector<QueryBFS> Q;
 	for( int i=0,sz=persons.size(); i<sz; i++ ){
-		//visitedBFS.clear();
+		visitedBFS.clear();
 		Q.clear();
 		Query4PersonStruct &cPerson = persons[i];
-		//cPerson.s_p = 0;
 		long qIndex = 0;
 		long qSize = 1;
 		Q.push_back(QueryBFS(cPerson.person, 0));
 		while( qIndex < qSize ){
 			QueryBFS &c = Q[qIndex];
 			qIndex++;
-			visitedBFS[i][c.person] = 2;
+			visitedBFS[c.person] = 2;
 			// update info for the current person centrality
 			cPerson.s_p += c.depth;
-
-			// EDGES TRICK GOES HERE
-			// add the shortest path to neighbor person also and remove cPerson from its neighbors
-			// to avoid calculating again the shortest path from the other side
-			if( qIndex > 1 ){
-				long neighborIndex = personIdToIndex[c.person];
-				persons[neighborIndex].s_p += c.depth;
-				persons[neighborIndex].r_p += 1;
-				// find the edge and set it as visited
-				visitedBFS[neighborIndex][cPerson.person] = 2;
-			}
 
 			// insert each unvisited neighbor of the current node
 			vector<long> &edges = newGraph[c.person];
 			for( int e=0,szz=edges.size(); e<szz; e++ ){
 				long eId = edges[e];
-				if( visitedBFS[i][eId] == 0 ){
-					visitedBFS[i][eId] = 1;
+				if( visitedBFS[eId] == 0 ){
+					visitedBFS[eId] = 1;
 					Q.push_back(QueryBFS(eId, c.depth+1));
 					qSize++;
 				}
 			}
 		}
-		// calculate the centrality for this person
-		cPerson.r_p += qSize-1;
 		// we do not have to check if n_1 == 0 since if it was the outer FOR here would not execute
 		if( cPerson.s_p == 0 )
 			cPerson.centrality = 0;
-		else
+		else{
+			// calculate the centrality for this person
+			cPerson.r_p += qSize-1;
 			cPerson.centrality = ((double)(cPerson.r_p * cPerson.r_p)) / (n_1 * cPerson.s_p);
+		}
 	}
 
 	// we now just have to return the K persons with the highest centrality
@@ -1591,6 +1566,7 @@ void _initializations(){
 
 	Answers1.reserve(2048);
 	Answers3.reserve(2048);
+	Answers4.reserve(2048);
 }
 
 void _destructor(){
