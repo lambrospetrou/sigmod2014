@@ -1350,9 +1350,9 @@ void query3(int k, int h, char *name, int name_sz){
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
 
 	vector<long> persons;
-	vector<bool> visitedPersons;
-	visitedPersons.resize(N_PERSONS);
-
+	//vector<bool> visitedPersons;
+	//visitedPersons.resize(N_PERSONS);
+	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
 	// get all the persons that are related to the place passed in
 	char *visitedPlace = (char*)malloc(Places.size());
 	memset(visitedPlace, 0, Places.size());
@@ -1375,9 +1375,10 @@ void query3(int k, int h, char *name, int name_sz){
 		std::vector<long>::iterator end=cPlaceStruct->personsThis.end();
 		persons.reserve(persons.size()+(end-cPerson));
 		for( ; cPerson != end; cPerson++ ){
-			if( visitedPersons[*cPerson] )
+			//if( visitedPersons[*cPerson] )
+			if( visitedPersons->isSet(*cPerson) )
 				continue;
-			visitedPersons[*cPerson] = true;
+			visitedPersons->set(*cPerson);
 			persons.push_back(*cPerson);
 		}
 
@@ -1393,6 +1394,8 @@ void query3(int k, int h, char *name, int name_sz){
 			}
 		}
 	}
+	free(visitedPlace);
+	delete visitedPersons;
 
 	//printf("found for place [%*s] persons[%ld] index[%ld]\n", name_sz, name, persons.size(), index);
 
