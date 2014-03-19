@@ -133,6 +133,20 @@ public:
     }
 };
 
+bool Query3PQ_Predicate(const Query3PQ &left, const Query3PQ &right){
+    if( left.commonTags > right.commonTags )
+    	return true;
+    if( left.commonTags < right.commonTags )
+    	return false;
+    if( left.idA < right.idA )
+    	return true;
+    if( left.idA > right.idA )
+    	return false;
+    if( left.idB <= right.idB )
+    	return true;
+    return false;
+}
+
 struct Query4PersonStruct{
 	Query4PersonStruct(long id, int sp, int rp, double central){
 		person = id;
@@ -1392,7 +1406,9 @@ void query3(int k, int h, char *name, int name_sz){
 	// for each pair and insert them into the priority queue in order to get the maximum K later
 	// TODO - CAN BE FASTER WITH JUST A VECTOR FOR O(1) INSERTIONS
 	// TODO - AND THEN SORT THEM AND ITERATE THEM TO FIND THE TOP-K
-	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_Comparator> PQ;
+	//priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_Comparator> PQ;
+	vector<Query3PQ> PQ;
+	PQ.reserve(persons.size());
 	for( long i = 0,end=persons.size()-1; i<end; ++i ){
 		long idA = persons[i];
 	//for( std::vector<long>::iterator idA = persons.begin(),end=persons.begin()+persons.size()-1; idA != end ; ++idA ){
@@ -1423,9 +1439,11 @@ void query3(int k, int h, char *name, int name_sz){
 			}
 			//printf("idA[%ld] idB[%ld] common[%ld]\n", idA, idB, cTags);
 			if( idA <= idB ){
-				PQ.push(Query3PQ(idA, idB, cTags));
+				//PQ.push(Query3PQ(idA, idB, cTags));
+				PQ.push_back(Query3PQ(idA, idB, cTags));
 			}else{
-				PQ.push(Query3PQ(idB, idA, cTags));
+				//PQ.push(Query3PQ(idB, idA, cTags));
+				PQ.push_back(Query3PQ(idB, idA, cTags));
 			}
 		}
 	}
@@ -1433,16 +1451,20 @@ void query3(int k, int h, char *name, int name_sz){
 	// now we have to pop the K most common tag pairs
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
+	std::sort(PQ.begin(),PQ.end(), Query3PQ_Predicate);
 	std::stringstream ss;
+	qIndex=0;
+	qSize=PQ.size();
 	for( ; k>0; k-- ){
 		long idA = -1;
 		long idB = -1;
 		long cTags = -1;
-		while( !PQ.empty() ){
-			idA = PQ.top().idA;
-			idB = PQ.top().idB;
-			cTags = PQ.top().commonTags;
-			PQ.pop();
+		while( qIndex < qSize ){
+			Query3PQ &cPair = PQ[qIndex];
+			idA = cPair.idA;
+			idB = cPair.idB;
+			cTags = cPair.commonTags;
+			qIndex++;
 			int distance = BFS_query3(idA, idB, h);
 			if( distance <= h ){
 				// we have an answer so exit the while
@@ -1527,7 +1549,7 @@ void query4(int k, char *tag, int tag_sz){
 	}
 
 	// we now just have to return the K persons with the highest centrality
-	std::sort_heap(persons.begin(), persons.end(), Query4PersonStructPredicate);
+	std::stable_sort(persons.begin(), persons.end(), Query4PersonStructPredicate);
 	std::stringstream ss;
 	for( int i=0; i<k; i++ ){
 		//ss << persons[i].person << ":" << persons[i].centrality << " ";
@@ -1696,7 +1718,7 @@ int main(int argc, char** argv) {
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
 
-/*
+
 	for(int i=0, sz=Answers1.size(); i<sz; i++){
 		//printf("answer %d: %d\n", i, Answers1[i]);
 		printf("%d\n", Answers1[i]);
@@ -1711,7 +1733,7 @@ int main(int argc, char** argv) {
 		//printf("answer 4 %d: %s\n", i, Answers4[i].c_str());
 		printf("%s\n", Answers4[i].c_str());
 	}
-*/
+
 	// destroy the remaining indexes
 	_destructor();
 }
