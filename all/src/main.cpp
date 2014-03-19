@@ -118,7 +118,7 @@ struct Query3PQ{
 };
 class Query3PQ_Comparator{
 public:
-    bool operator() (Query3PQ &left, Query3PQ &right){
+    bool operator() (const Query3PQ &left, const Query3PQ &right){
         if( left.commonTags > right.commonTags )
         	return false;
         if( left.commonTags < right.commonTags )
@@ -132,20 +132,6 @@ public:
         return true;
     }
 };
-
-bool Query3PQ_Predicate(const Query3PQ &left, const Query3PQ &right){
-    if( left.commonTags > right.commonTags )
-    	return true;
-    if( left.commonTags < right.commonTags )
-    	return false;
-    if( left.idA < right.idA )
-    	return true;
-    if( left.idA > right.idA )
-    	return false;
-    if( left.idB <= right.idB )
-    	return true;
-    return false;
-}
 
 struct Query4PersonStruct{
 	Query4PersonStruct(long id, int sp, int rp, double central){
@@ -1404,11 +1390,7 @@ void query3(int k, int h, char *name, int name_sz){
 
 	// now we have all the required persons so we have to calculate the common tags
 	// for each pair and insert them into the priority queue in order to get the maximum K later
-	// TODO - CAN BE FASTER WITH JUST A VECTOR FOR O(1) INSERTIONS
-	// TODO - AND THEN SORT THEM AND ITERATE THEM TO FIND THE TOP-K
-	//priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_Comparator> PQ;
-	vector<Query3PQ> PQ;
-	PQ.reserve(persons.size());
+	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_Comparator> PQ;
 	for( long i = 0,end=persons.size()-1; i<end; ++i ){
 		long idA = persons[i];
 	//for( std::vector<long>::iterator idA = persons.begin(),end=persons.begin()+persons.size()-1; idA != end ; ++idA ){
@@ -1439,11 +1421,9 @@ void query3(int k, int h, char *name, int name_sz){
 			}
 			//printf("idA[%ld] idB[%ld] common[%ld]\n", idA, idB, cTags);
 			if( idA <= idB ){
-				//PQ.push(Query3PQ(idA, idB, cTags));
-				PQ.push_back(Query3PQ(idA, idB, cTags));
+				PQ.push(Query3PQ(idA, idB, cTags));
 			}else{
-				//PQ.push(Query3PQ(idB, idA, cTags));
-				PQ.push_back(Query3PQ(idB, idA, cTags));
+				PQ.push(Query3PQ(idB, idA, cTags));
 			}
 		}
 	}
@@ -1451,20 +1431,17 @@ void query3(int k, int h, char *name, int name_sz){
 	// now we have to pop the K most common tag pairs
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
-	std::sort(PQ.begin(),PQ.end(), Query3PQ_Predicate);
 	std::stringstream ss;
-	qIndex=0;
-	qSize=PQ.size();
 	for( ; k>0; k-- ){
 		long idA = -1;
 		long idB = -1;
-		long cTags = -1;
-		while( qIndex < qSize ){
-			Query3PQ &cPair = PQ[qIndex];
+		//long cTags = -1;
+		while( !PQ.empty() ){
+			const Query3PQ &cPair = PQ.top();
 			idA = cPair.idA;
 			idB = cPair.idB;
-			cTags = cPair.commonTags;
-			qIndex++;
+			//cTags = cPair.commonTags;
+			PQ.pop();
 			int distance = BFS_query3(idA, idB, h);
 			if( distance <= h ){
 				// we have an answer so exit the while
