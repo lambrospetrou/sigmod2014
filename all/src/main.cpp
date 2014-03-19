@@ -25,6 +25,7 @@
 #include <tr1/unordered_map>
 
 #include "LPBitset.h"
+#include "LPThreadpool.h"
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -38,6 +39,8 @@ using std::tr1::hash;
 #define FILE_BUFFER_SIZE 1<<15
 
 #define VALID_PLACE_CHARS 256
+
+#define NUM_THREADS 4
 
 ///////////////////////////////////////////////////////////////////////////////
 // structs
@@ -204,6 +207,8 @@ char *CSV_FORUM_HAS_MEMBER = "/forum_hasMember_person.csv";
 long N_PERSONS = 0;
 long N_TAGS = 0;
 long N_SUBGRAPHS = 0;
+
+lp_threadpool* threadpool;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
@@ -1572,6 +1577,9 @@ void _initializations(){
 	Answers1.reserve(2048);
 	Answers3.reserve(2048);
 	Answers4.reserve(2048);
+
+	// Initialize the threadpool
+	threadpool = lp_threadpool_init( NUM_THREADS );
 }
 
 void _destructor(){
@@ -1579,6 +1587,8 @@ void _destructor(){
 	delete[] PersonToTags;
 	TrieNode_Destructor(PlacesToId);
 	TrieNode_Destructor(TagToIndex);
+
+	synchronize_complete(threadpool);
 }
 
 void executeQueries(char *queriesFile){
@@ -1644,6 +1654,21 @@ void executeQueries(char *queriesFile){
 	free(buffer);
 }
 
+
+//////////////////////// WORKER JOBS /////////////////////////
+
+
+void* TestWorkerFunction(int tid, void *args){
+
+	printf("tid[%d] arg[%d]\n", tid, *(int*)args);
+
+	// end of job
+	return 0;
+}
+
+//////////////////////////////////////////////////////////////
+
+
 int main(int argc, char** argv) {
 /*
 	inputDir = argv[1];
@@ -1697,7 +1722,7 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-	executeQueries(queryFile);
+	//executeQueries(queryFile);
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
@@ -1733,6 +1758,22 @@ int main(int argc, char** argv) {
 
 	// destroy the remaining indexes
 	_destructor();
+
+
+	// testing thread pool
+	int* dn = (int*)malloc(sizeof(int));
+	int* dn2 = (int*)malloc(sizeof(int));
+	int* dn3 = (int*)malloc(sizeof(int));
+	int* dn4 = (int*)malloc(sizeof(int));
+	*dn = 11;
+	*dn2 = 22;
+	*dn3 = 33;
+	*dn4 = 44;
+	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int, void*)>(TestWorkerFunction), dn );
+	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int, void*)>(TestWorkerFunction), dn2 );
+	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int, void*)>(TestWorkerFunction), dn3 );
+	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int, void*)>(TestWorkerFunction), dn4 );
+
 }
 
 
