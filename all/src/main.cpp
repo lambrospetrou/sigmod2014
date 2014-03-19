@@ -1476,6 +1476,7 @@ void query4(int k, char *tag, int tag_sz){
 
 	// now I want to create a new graph containing only the required edges
 	// to speed up the shortest paths between all of them
+	/*
 	MAP_INT_VecL newGraph;
 	for( int i=0,sz=persons.size(); i<sz; i++ ){
 		long pId = persons[i].person;
@@ -1489,6 +1490,7 @@ void query4(int k, char *tag, int tag_sz){
 	}
 	// safe to delete the visitedPersons
 	delete visitedPersons;
+	*/
 
 	// TODO - MAKE THE TRICK WITH THE SORTED EDGES
 
@@ -1509,10 +1511,12 @@ void query4(int k, char *tag, int tag_sz){
 			qIndex++;
 			visitedBFS[c.person] = 2;
 			cPerson.s_p += c.depth;
-			vector<long> &edges = newGraph[c.person];
-			for( int e=0,szz=edges.size(); e<szz; e++ ){
+			//vector<long> &edges = newGraph[c.person];
+			long *edges = Persons[c.person].adjacentPersonsIds;
+			//for( int e=0,szz=edges.size(); e<szz; e++ ){
+			for( int e=0,szz=Persons[c.person].adjacents; e<szz; e++ ){
 				long eId = edges[e];
-				if( visitedBFS[eId] == 0 ){
+				if( (*visitedPersons)[eId]==1 && visitedBFS[eId] == 0 ){
 					visitedBFS[eId] = 1;
 					Q.push_back(QueryBFS(eId, c.depth+1));
 					qSize++;
@@ -1526,6 +1530,8 @@ void query4(int k, char *tag, int tag_sz){
 		else
 			cPerson.centrality = ((double)(cPerson.r_p * cPerson.r_p)) / (n_1 * cPerson.s_p);
 	}
+
+	delete visitedPersons;
 
 	// we now just have to return the K persons with the highest centrality
 	std::stable_sort(persons.begin(), persons.end(), Query4PersonStructPredicate);
