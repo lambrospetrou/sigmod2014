@@ -24,8 +24,6 @@
 
 #include <tr1/unordered_map>
 
-#include <bitset>
-
 using namespace std;
 using std::tr1::unordered_map;
 using std::tr1::hash;
@@ -120,7 +118,7 @@ struct Query3PQ{
 };
 class Query3PQ_Comparator{
 public:
-    bool operator() (Query3PQ left, Query3PQ right){
+    bool operator() (Query3PQ &left, Query3PQ &right){
         if( left.commonTags > right.commonTags )
         	return false;
         if( left.commonTags < right.commonTags )
@@ -129,9 +127,9 @@ public:
         	return false;
         if( left.idA > right.idA )
         	return true;
-        if( left.idB < right.idB )
+        if( left.idB <= right.idB )
         	return false;
-        return false;
+        return true;
     }
 };
 
@@ -1689,6 +1687,8 @@ int main(int argc, char** argv) {
 	sprintf(msg, "queries process time: %ld", time_queries_end - time_global_start);
 	printOut(msg);
 
+#endif
+
 	/////////////////////////////////
 	long long time_global_end = getTime();
 	sprintf(msg, "Total time: micros[%lld] seconds[%.6f]",
@@ -1696,9 +1696,7 @@ int main(int argc, char** argv) {
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
 
-#endif
-
-
+/*
 	for(int i=0, sz=Answers1.size(); i<sz; i++){
 		//printf("answer %d: %d\n", i, Answers1[i]);
 		printf("%d\n", Answers1[i]);
@@ -1713,7 +1711,7 @@ int main(int argc, char** argv) {
 		//printf("answer 4 %d: %s\n", i, Answers4[i].c_str());
 		printf("%s\n", Answers4[i].c_str());
 	}
-
+*/
 	// destroy the remaining indexes
 	_destructor();
 }
