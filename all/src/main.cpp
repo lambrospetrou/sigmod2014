@@ -1706,6 +1706,8 @@ int main(int argc, char** argv) {
 
 #endif
 
+
+
 	/////////////////////////////////
 	long long time_global_end = getTime();
 	sprintf(msg, "Total time: micros[%lld] seconds[%.6f]",
