@@ -1480,9 +1480,10 @@ void query4(int k, char *tag, int tag_sz){
 	for( int i=0,sz=persons.size(); i<sz; i++ ){
 		long pId = persons[i].person;
 		long *edges = Persons[pId].adjacentPersonsIds;
+		vector<long> &newEdges = newGraph[pId];
 		for( int j=0,szz=Persons[pId].adjacents; j<szz; j++ ){
-			if( (*visitedPersons)[edges[j]] ){
-				newGraph[pId].push_back(edges[j]);
+			if( (*visitedPersons)[edges[j]] == 1 ){
+				newEdges.push_back(edges[j]);
 			}
 		}
 	}
@@ -1494,15 +1495,17 @@ void query4(int k, char *tag, int tag_sz){
 	// now we have to calculate the shortest paths between them
 	int n_1 = persons.size()-1;
 	MAP_INT_INT visitedBFS;
+	vector<QueryBFS> Q;
 	for( int i=0,sz=persons.size(); i<sz; i++ ){
+		visitedBFS.clear();
+		Q.clear();
 		Query4PersonStruct &cPerson = persons[i];
 		cPerson.s_p = 0;
-		vector<QueryBFS> Q;
 		long qIndex = 0;
 		long qSize = 1;
 		Q.push_back(QueryBFS(cPerson.person, 0));
 		while( qIndex < qSize ){
-			QueryBFS c = Q[qIndex];
+			QueryBFS &c = Q[qIndex];
 			qIndex++;
 			visitedBFS[c.person] = 2;
 			cPerson.s_p += c.depth;
@@ -1522,7 +1525,6 @@ void query4(int k, char *tag, int tag_sz){
 			cPerson.centrality = 0;
 		else
 			cPerson.centrality = ((double)(cPerson.r_p * cPerson.r_p)) / (n_1 * cPerson.s_p);
-		visitedBFS.clear();
 	}
 
 	// we now just have to return the K persons with the highest centrality
