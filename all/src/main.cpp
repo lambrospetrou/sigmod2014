@@ -1469,15 +1469,17 @@ void query4(int k, char *tag, int tag_sz){
 	vector<Query4PersonStruct> persons;
 	vector<long> &forums = Tags[tagIndex]->forums;
 	// TODO - consider having SET here for space issues - and also in query 3
-	vector<bool> *visitedPersons = new vector<bool>();
-	visitedPersons->resize(N_PERSONS);
+	//vector<bool> *visitedPersons = new vector<bool>();
+	//visitedPersons->resize(N_PERSONS);
+	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
 	for( int cForum=0, fsz=forums.size(); cForum<fsz; cForum++ ){
 		vector<long> &cPersons = Forums[forums[cForum]];
 		for( int cPerson=0, psz=cPersons.size(); cPerson<psz; cPerson++ ){
 			long personId = cPersons[cPerson];
-			if( (*visitedPersons)[personId] )
+			//if( (*visitedPersons)[personId] )
+			if( visitedPersons->isSet(personId) )
 				continue;
-			(*visitedPersons)[personId] = 1;
+			visitedPersons->set(personId);
 			persons.push_back(Query4PersonStruct(personId,0,0,0.0));
 		}
 	}
@@ -1490,7 +1492,7 @@ void query4(int k, char *tag, int tag_sz){
 		long *edges = Persons[pId].adjacentPersonsIds;
 		vector<long> &newEdges = newGraph[pId];
 		for( int j=0,szz=Persons[pId].adjacents; j<szz; j++ ){
-			if( (*visitedPersons)[edges[j]] == 1 ){
+			if( visitedPersons->isSet(edges[j]) ){
 				newEdges.push_back(edges[j]);
 			}
 		}

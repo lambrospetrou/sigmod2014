@@ -1,15 +1,15 @@
 #include "LPBitset.h"
 
-inline long getRequiredBytes(long n){
+static inline long getRequiredBytes(long n){
 	long i=n>>3; // n/8
 	return (i<<8 == n)?i:i+1;
 }
 
-inline long getByteForBit(long bit){
+static inline long getByteForBit(long bit){
 	return bit>>3; // bit/8
 }
 
-inline long getPosForBit(long bit){
+static inline long getPosForBit(long bit){
 	return 1 << (bit & 0x7); // 1 << (bit%8)
 }
 
@@ -17,6 +17,7 @@ LPBitset::LPBitset(long s){
 	this->mSize = s;
 	this->mNumBytes = getRequiredBytes(s);
 	this->mBytes = new char[this->mNumBytes];
+	memset(this->mBytes, 0, this->mNumBytes);
 }
 
 LPBitset::~LPBitset(){
@@ -28,7 +29,7 @@ void LPBitset::set(long indexBit){
 }
 
 bool LPBitset::isSet(long indexBit) const{
-	return this->mBytes[getByteForBit(indexBit)] & getPosForBit(indexBit);
+	return (this->mBytes[getByteForBit(indexBit)] & getPosForBit(indexBit) ) > 0;
 }
 
 void LPBitset::clear(long indexBit){
