@@ -1,0 +1,1444 @@
+/*
+ * main.cpp
+ *
+ *  Created on: Mar 14, 2014
+ *      Author: lambros
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <list>
+//#include "sorted_list.h"
+//#include "stoiva.h"
+#include <vector>
+#include <stack>
+#include <map>
+#include <time.h>
+#include <tr1/unordered_map>
+
+using namespace std;
+using std::tr1::unordered_map;
+using std::tr1::hash;
+
+#define JOIN(x, y) JOIN_AGAIN(x, y)
+#define JOIN_AGAIN(x, y) x ## y
+
+#define DEBUGGING 1
+#define FILE_VBUF_SIZE 1024
+
+#define ALPHABET_SIZE 10
+#define CHAR_TO_INDEX(c) ((int)c - (int)'0')
+
+#define ARRAY_SIZE(a) sizeof(a)/sizeof(a[0])
+typedef struct trie_node trie_node_t;
+
+long N_SUBGRAPHS = 0;
+
+char **births;
+typedef struct trie trie_t;
+typedef struct list_el node_l;
+struct trie_node {
+	int value; /* Used to mark leaf nodes */
+	trie_t **array;
+	int birth;
+	int tag;
+
+	node_l *dates;
+	//trie_node_t *father;
+	long is_subgraph;
+
+	trie_node_t *children[ALPHABET_SIZE];
+};
+std::vector<trie_node_t> v;
+trie_node_t *getNode(void);
+void initialize(trie_t *pTrie);
+void insert(trie_t *pTrie, char key[], char *, int x);
+int search(trie_t *pTrie, char key[]);
+
+typedef std::tr1::unordered_map<int, int, hash<int> > MAP_INT_INT;
+
+struct PersonStruct {
+	PersonStruct() {
+		subgraphNumber = -1;
+		//adjacentPersons.reserve(32);
+		adjacents = 0;
+		adjacentPersonsIds = NULL;
+	}
+	//LIST_INT adjacentPersons;
+	long *adjacentPersonsIds;
+	long adjacents;
+
+	MAP_INT_INT commentsToPerson;
+
+	int subgraphNumber;
+};
+
+PersonStruct *Persons;
+struct trie {
+	trie_node_t *root;
+	unsigned int count;
+};
+typedef struct trie trie_t;
+typedef struct {
+	trie_t *T;
+} subgraph;
+
+typedef struct komvos1 node_query2;
+typedef struct {
+	node_query2* head;
+	node_query2* tail;
+	unsigned int size;
+} stack_query2;
+
+struct komvos1 {
+	trie_node_t *t_node;
+	//subgraph * subg[10]; //dokimastiko to 10
+	struct komvos1 *next;
+	//struct komvos1 *father;
+};
+stack_query2 * CreateStack_q2();
+node_query2 * CreateNode_q2(trie_node_t* s);
+void Push_q2(node_query2* ch, stack_query2 *S);
+int IsEmpty_q2(stack_query2 * S);
+void DeleteStack_q2(stack_query2 *S);
+void Delete_q2(node_query2 * n, stack_query2 * S);
+
+stack_query2 * CreateStack_q2() {
+	stack_query2 * S = (stack_query2 *) malloc(sizeof(stack_query2));
+	//μήνυμα λάθους εαν δεν υπάρχει διαθέσημη μνήμη
+	if (!(S)) {
+		printf("Αδύνατη η δέσμευση χώρο0υ στην συνάρτηση CreateList()");
+		exit(-1);                                //Τερματισμός προγράμματος!
+	}
+
+	S->head = NULL;         //Ο δείκτης αυτός δεν δείχνει πουθενά-»αδεια στοίβα.
+	S->size = 0;                 //Το μέγεθος της στοίβας αρχικοποιήτε με μηδέν.
+	return S;              //Επιστροφή της διεύθυνσης της δημιουργημένης στοίβας
+
+}
+
+node_query2 * CreateNode_q2(trie_node_t* s) {
+	int i = 0;
+
+//δέσμευση χώρου και έλεγχος αν έγεινε επιτυχής δέσμευση:
+	node_query2 * n = (node_query2 *) malloc(sizeof(node_query2));
+
+	if (!(n)) {
+		printf("Αδύνατη η δέσμευση χώρου στην συνάρτηση CreateNode()");
+		exit(-1);
+	}
+
+	/*αρχικοποίηση των πεδίων του κόμβου*/
+	n->next = NULL;
+	//n->father = NULL;
+	n->t_node = s;
+	return n;       //επιστροφή του κόμβου
+}
+void Push_q2(trie_node_t* ch, stack_query2 *S) {
+	node_query2 * k = NULL;
+
+	if (!(ch)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Push\n");
+		exit(-1);
+	}
+
+	if (!(S)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Push\n");
+		exit(-1);
+	}
+
+	//δημιουργεία κόμβου με την λέξη στην οποία δίχνει ο δίκτης ch
+	k = CreateNode_q2(ch);
+
+	k->next = S->head;
+	S->head = k;
+	(S->size)++;
+	return;
+}
+
+int IsEmpty_q2(stack_query2 * S) {
+	//έλεγχος για το αν περάστηκε null δείκτης
+	if (!(S)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Isempty\n");
+		return 0;
+	}
+	return (S->size == 0);
+}
+trie_node_t* Pop_q2(stack_query2 * S) {
+	node_query2 * n;
+	trie_node_t* m;
+	if (!(S)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Pop\n");
+		exit(-1);
+	}
+	if (IsEmpty_q2(S))
+		return NULL;
+
+	n = S->head;
+	S->head = n->next;
+	m = n->t_node;
+	n->next = NULL;
+	(S->size)--;
+	return m;
+}
+
+struct komvos {
+	int s;
+	//subgraph * subg[10]; //dokimastiko to 10
+	struct komvos *next;
+	struct komvos *father;
+};
+typedef struct komvos node;
+
+typedef struct {
+	node * head;
+	unsigned int size;
+} stack1;
+
+stack1 * CreateStack();
+node * CreateNode(int s);
+void Push(int ch, stack1 *S);
+void PushN(char * ch, node *n, stack1 *S);
+int IsEmpty(stack1 * S);
+//void Pop(stack1 * S);
+node * Top(stack1 *S);
+void DisplayStack(stack1 * S);
+void DeleteStack(stack1 *S);
+void Delete(node * n, stack1 * S);
+struct list_el {
+	unsigned int real_id;
+	unsigned int id;
+	unsigned int birth;
+	unsigned int mark;
+	unsigned int tag;
+	struct list_el * next;
+};
+
+node_l *head;
+
+char is_friend(int id, int m) {
+	if (id == m)
+		return 1;
+	int i = 0;
+	for (i = 0; i < Persons[id].adjacents; i++)
+		if (Persons[id].adjacentPersonsIds[i] == m)
+
+			return 1;
+	return 0;
+
+}
+char in_list(int id, vector<int>*my_friends) {
+
+	int i = 0;
+	for (i = 0; i < my_friends->size(); i++) {
+		if (my_friends->at(i) == id)
+			return 1;
+	}
+	return 0;
+}
+
+void second_pass(node_l *head1, vector<int> *my_friends, int id) {
+	node_l *m = head1;
+
+	int sum = 0;
+	while (m) {
+		if (in_list(m->mark, my_friends)) {
+			sum++;
+			m->mark = id;
+			m->id = sum;
+		}
+		m = m->next;
+	}
+}
+
+void first_pass(node_l *head1, vector<int> *my_friends, int id) {
+	node_l *m = head1;
+
+	while (m) {
+		if (is_friend(id, m->real_id))
+			my_friends->push_back(m->mark);
+
+		m = m->next;
+	}
+}
+void make_passes(node_l *head1, int id) {
+
+	vector<int> my_friends;
+	first_pass(head1, &my_friends, id);
+	second_pass(head1, &my_friends, id);
+
+}
+
+void addNode(node_l **head1, int date, int tag) {
+
+	node_l *n = (*head1);
+	node_l *curr, *new_t;
+	new_t = (node_l *) malloc(sizeof(node_l));
+	if (new_t == NULL) {
+		printf("Memory not available to create link. Exiting.\n");
+		exit (EXIT_FAILURE);
+	}
+	new_t->birth = date;
+	new_t->tag = tag;
+	if ((*head1) == NULL) {
+		(*head1) = new_t;
+		new_t->next = NULL;
+		return;
+	}
+	if (new_t->birth > (*head1)->birth) {
+		new_t->next = (*head1);
+		(*head1) = new_t;
+		return;
+	}
+	curr = (*head1);
+	while ((curr->next != NULL)) {
+		if ((new_t->birth > curr->next->birth)) {
+			if ((new_t->birth <= curr->birth)) {
+				new_t->next = curr->next;
+				curr->next = new_t;
+
+				return;
+			}
+		}
+		curr = curr->next;
+	}
+	curr->next = new_t;
+	new_t->next = NULL;
+
+	return;
+}
+
+void addNode(node_l **head1, unsigned int id, int date, int tag, int real_id) {
+
+	node_l *n = (*head1);
+	node_l *curr, *new_t;
+	new_t = (node_l *) malloc(sizeof(node_l));
+	if (new_t == NULL) {
+		printf("Memory not available to create link. Exiting.\n");
+		exit (EXIT_FAILURE);
+	}
+	new_t->real_id = real_id;
+	new_t->id = id;
+	new_t->birth = date;
+	new_t->tag = tag;
+	new_t->mark = real_id;
+	if ((*head1) == NULL) {
+		(*head1) = new_t;
+		new_t->next = NULL;
+
+		return;
+	}
+	if (new_t->birth < (*head1)->birth) {
+		new_t->next = (*head1);
+		(*head1) = new_t;
+		return;
+	}
+	curr = (*head1);
+	while ((curr->next != NULL)) {
+		if ((new_t->birth < curr->next->birth)) {
+			if ((new_t->birth >= curr->birth)) {
+				new_t->next = curr->next;
+				curr->next = new_t;
+				return;
+			}
+		}
+		curr = curr->next;
+	}
+	curr->next = new_t;
+	new_t->next = NULL;
+
+	return;
+}
+
+void addNode(unsigned int id, int date, int tag) {
+	//printf("%d", id);
+
+	node_l *curr, *new_t;
+	new_t = (node_l *) malloc(sizeof(node_l));
+	if (new_t == NULL) {
+		printf("Memory not available to create link. Exiting.\n");
+		exit (EXIT_FAILURE);
+	}
+	new_t->id = id;
+	new_t->birth = date;
+	new_t->tag = tag;
+	if (head == NULL) {
+		head = new_t;
+		new_t->next = NULL;
+		return;
+	}
+	if (new_t->id > head->id) {
+		new_t->next = head;
+		head = new_t;
+		return;
+	}
+	curr = head;
+	while ((curr->next != NULL)) {
+		if ((new_t->id > curr->next->id)) {
+			if ((new_t->id <= curr->id)) {
+				new_t->next = curr->next;
+				curr->next = new_t;
+				return;
+			}
+		}
+		curr = curr->next;
+	}
+
+	curr->next = new_t;
+	new_t->next = NULL;
+	return;
+	//}
+}
+
+void delNode(int a) {
+	int done = 0;
+	node_l *curr, *prev;
+	curr = head;
+
+	if (head == NULL) {
+		return;
+	}
+
+	if (head->id == a) {
+		free(head);
+		head = head->next;
+		done = 1;
+		return;
+	}
+
+	while ((curr->next != NULL)) {
+		if (curr->next->id == a) {
+			prev = curr->next;
+			free(prev);
+			curr->next = prev->next;
+			done = 1;
+		}
+		if (curr->next != NULL) {
+			curr = curr->next;
+		}
+	}
+	if (done == 0) {
+	}
+}
+
+trie_node_t *getNode(void) {
+	trie_node_t *pNode = NULL;
+
+	pNode = (trie_node_t *) malloc(sizeof(trie_node_t));
+//pNode->array=NULL;
+	if (pNode) {
+		int i;
+
+		pNode->value = 0;
+		pNode->is_subgraph = 0;
+		pNode->dates = NULL;
+		for (i = 0; i < ALPHABET_SIZE; i++) {
+			pNode->children[i] = NULL;
+		}
+	}
+
+	return pNode;
+}
+
+// Initializes trie (root is dummy node)
+void initialize(trie_t *pTrie) {
+	pTrie->root = getNode();
+	pTrie->count = 0;
+}
+
+// If not present, inserts key into trie
+// If the key is prefix of trie node, just marks leaf node
+void insert(trie_t *pTrie, char key[], char *tag, int birth, int id) {
+	int level;
+//int tag=0;
+//int date=0;
+	int length = strlen(key);
+	int index;
+	int tag1 = atoi(tag);
+	trie_node_t *pCrawl;
+//trie_node_t *father;
+	pTrie->count++;
+	pCrawl = pTrie->root;
+
+	for (level = 0; level < length; level++) {
+		index = CHAR_TO_INDEX(key[level]);
+		if (!pCrawl->children[index]) {
+			pCrawl->children[index] = getNode();
+		}
+
+		pCrawl = pCrawl->children[index];
+	}
+	addNode(&pCrawl->dates, 1, birth, tag1, id);
+
+// mark last node as leaf
+	if (pCrawl->value == 0) {
+		pCrawl->birth = birth;
+		pCrawl->tag = tag1;
+	}
+
+	pCrawl->value++;
+
+}
+
+// Returns non zero, if key presents in trie
+int search(trie_t *pTrie, char key[]) {
+	int level;
+	int length = strlen(key);
+	int index;
+	trie_node_t *pCrawl;
+
+	pCrawl = pTrie->root;
+
+	for (level = 0; level < length; level++) {
+		index = CHAR_TO_INDEX(key[level]);
+
+		if (!pCrawl->children[index]) {
+			return 0;
+		}
+
+		pCrawl = pCrawl->children[index];
+	}
+	pCrawl->is_subgraph++;
+//printf("%d\n", pCrawl->is_subgraph++);
+	if (0 != pCrawl && pCrawl->value)
+		return pCrawl->value;
+}
+
+/*Η συνάρτηση CreateStack() δεσμεύει χόρο για δομή στοίβα , αρχικοποιά τις τιμές της και επιστρέφει την διεύθυνσή της.*/
+stack1 * CreateStack() {
+
+	stack1 * S = (stack1 *) malloc(sizeof(stack1));
+//μήνυμα λάθους εαν δεν υπάρχει διαθέσημη μνήμη
+	if (!(S)) {
+		printf("Αδύνατη η δέσμευση χώρο0υ στην συνάρτηση CreateList()");
+		exit(-1);                            //Τερματισμός προγράμματος!
+	}
+	S->head = NULL; //Ο δείκτης αυτός δεν δείχνει πουθενά-»αδεια στοίβα.
+	S->size = 0;         //Το μέγεθος της στοίβας αρχικοποιήτε με μηδέν.
+	return S;      //Επιστροφή της διεύθυνσης της δημιουργημένης στοίβας
+}
+
+/*Η συνάρτηση CreateNode() δεσμεύει χόρο για κόμβο , αρχικοποιά τις τιμές του και επιστρέφει την διεύθυνσή του.
+ Παίρνει σαν παράμετρο δείκτη προς συμβολοσειρά, η οποία θα είναι το βασικό δεδομένο που θα κρατά ο κόμβος*/
+node * CreateNode(int s) {
+	int i = 0;
+
+//δέσμευση χώρου και έλεγχος αν έγεινε επιτυχής δέσμευση:
+	node * n = (node *) malloc(sizeof(node));
+
+	/*
+	 if (!(s))                                           //έλεγχος για το αν περάστηκε null δείκτης
+	 {
+	 printf("Δόθηκε null δείκτης στην CreateNode() ");
+	 assert(s);
+	 }
+	 */      //έλεγχος για το αν δεσμέυτηκε μνήμη
+	if (!(n)) {
+		printf("Αδύνατη η δέσμευση χώρου στην συνάρτηση CreateNode()");
+		exit(-1);
+	}
+
+	/*αρχικοποίηση των πεδίων του κόμβου*/
+	n->next = NULL;
+	n->father = NULL;
+//	n->subgraph=NULL;
+//while (1)
+//{
+	n->s = s;
+//if (s[i]=='\0')
+// break;
+// i++;
+//}
+	return n;      //επιστροφή του κόμβου
+}
+
+/*Η συνάρτηση Push τοποθετεί ένα κόμβο ο οποίος περιέχει μια λέξη (που περνά σαν παράμετρος (μέσω δείκτη προς αυτήν)) στην κορυφή της στοίβας, που περνά επίσης σαν παράμετρος*/
+void Push(int ch, stack1 *S) {
+	node * k = NULL;
+//printf("%d",ch);
+	/*έλεγχος για το αν περάστηκαν null δείκτες
+	 if (!(ch))
+	 {
+	 printf("Δόθηκε null δείκτης προς χαρακτήρα στην συνάρτηση Push ");
+	 assert(k);
+	 }
+	 */if (!(S)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Push\n");
+		exit(-1);
+	}
+
+//δημιουργεία κόμβου με την λέξη στην οποία δίχνει ο δίκτης ch
+	k = CreateNode(ch);
+// if (IsEmpty(S)){
+	k->next = S->head;
+	S->head = k;
+	(S->size)++;
+	return;
+
+}
+
+/*Η συνάρτηση IsEmpty() ελέγχει εαν η στοίβα είναι άδεια!*/
+int IsEmpty(stack1 * S) {
+//έλεγχος για το αν περάστηκε null δείκτης
+	if (!(S)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Isempty\n");
+		return 0;
+	}
+//θα επιστρέψει 1 το size είναι 0 kai 0 εαν το size είναι ανισο του 0
+	return (S->size == 0);
+}
+
+/*Η συνάρτηση Pop epistrefei kai αφαιρεί () τον κόμβο κορυφής της στοίβας*/
+int Pop(stack1 * S) {
+//δείκτης που θα κρατήσει τον κόμβο που θα διαγραφεί
+	node * n;
+//έλεγχος για το αν περάστηκε null δείκτης
+	if (!(S)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Pop\n");
+		exit(-1);
+	}
+//Εαν η στοίβα είναι άδεια, δεν υπάρχει κάτι να διαγραφεί.
+	if (IsEmpty(S))
+		return -1;
+
+	n = S->head;
+//η κορυφή πλέον είναι  το στοιχείο που έδειχνε πριν ο κόμβος κορυφής είτε αυτός είναι κόμβος είτε το null
+	S->head = n->next;
+	(S->size)--;
+//αποδέσμευση του κόμβου
+	int m = n->s;
+	n->next = NULL;
+	free(n);
+//ενημέρωση του μεγέθους της λίστας
+	return m;
+}
+
+/* Η συνάρτηση Top() επιστρέφει δείκτη προς τον κόμβο κορυφής χωρίς να τον αφερεί. Επιστρέφει null εαν είναι άδεια η λίστα*/
+node * Top(stack1 * S) {
+
+//έλεγχος για το αν περάστηκε null δείκτης προς στοίβα
+	if (!(S)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Top\n");
+		exit(-1);
+	}
+
+	return (S->head);
+}
+
+/*Η συνάρτηση DisplayStack() τυπώνει τα περιεχόμενα της στοίβας στην οποία δίχνει ο δείκτης που περνά σαν παράμετρος, ή εμφανίζει το κατάλληλο μήνυμα εαν αυτή είναι κενή */
+void DisplayStack(stack1 * S) {
+
+//δείκτης προς node που θα με βοηθήσει να διατρέξω την στοίβα για να την τυπώσω
+	node * n;
+//δείκτης προς χαρακτήρα που θα με βοηθησει να διατρέξω τo string  για να το τυπώσω
+	int s;
+
+//έλεγχος για το αν περάστηκε  null δείκτης
+	if (!(S)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Top\n");
+		exit(-1);
+	}
+
+// έλεγχος για το αν δόθηκε άδεια στοίβσ
+	if (IsEmpty(S)) {
+		printf("\nH στοίβα είναι άδεια.\n");
+		return;
+	}
+
+	n = S->head;
+	printf("\nΈναρξη τυπώματος \n");
+	s = n->s;
+
+//με τον ακόλουθο βρόγχο διασχίζει την λίστα και τυπώνει τα περιεχόμενα κάθε κόμβου
+	while (n) {
+		printf("%d", n->s);
+		printf("\n");
+		n = n->next; //παίρνει τον επόμενο κόμβο για να τυπώσει το περιεχόμενο του. Σε περίπτωση που πάρει  null τερματίζεται η επανάληψη
+	}
+	printf("\nΤέλος τυπώματος\n");
+	return;
+}
+
+/*Διαγραφή της λίστας που περνά σαν παράμετρος.Ουσιαστηκά καλειται συνεχώς η Pop() μέχρι να μην έχει στοιχεία-κόμβους, και έπειτα γίνεται ο δείκτης προς λίστα free.*/
+void DeleteStack(stack1 *S) {
+
+	if (!(S))
+		printf("Δόθηκε δείκτης NULL στην συνάρτηση Delete stack1 \n");
+
+	while (S->head)
+		Pop(S);
+
+	free(S);
+}
+
+/*Η συνάρτηση PushN() τοποθετεί κόμβο με την λέξη στην οποία δίχνει ο 'ch' δίκτης, στην στοίβα S και κάνει το πεδίο father να δίχνει προς τον κόμβο 'n'*/
+void PushN(char * ch, node *n, stack1 *S) { //έλεγχος για το αν περάστηκαν null δείκτες
+	node * k = NULL;
+
+	if (!(ch)) {
+		printf("Δόθηκε null δείκτης προς χαρακτήρα στην συνάρτηση Push ");
+		exit(-1);
+	}
+	if (!(S)) {
+		printf("\nΔόθηκε null δείκτης στην συνάρτηση Push\n");
+		exit(-1);
+	}
+	if (!(n)) {
+		("\nΔόθηκε null δείκτης στην συνάρτηση Push\n");
+		exit(-1);
+	}
+//k = CreateNode(ch);
+
+//εισαγωγή κόμβου στην κορυφή της λίστας και ενημέρωση του πεδίου που κρατά το μέγεθος της λίστας
+	k->next = S->head;
+	S->head = k;
+	k->father = n;
+	(S->size)++;
+}
+
+/*Η Delete() διαγραφει τον κόμβο που περνιέται σαν παράμετρος 'n' απο την λίστα *S. Δεν συμβαδίζει με την φιλοσοφία της στοίβας, αφού
+ στην στοίβα οι αφερέσεις στοιχείων γίνοντε μόνο απο την κορυφή.Η ύπαρξη ομως του delete() βελτιώνει τον χρόνο εκτέλεσης του προγράμματος, αφού
+ μειώνει συνεχώς το μέγεθος της λίστας που κρατά το λεξικό, και επιπλέον αποτρέπει την περίπτωση η ίδια λέξη να εξετασθεί πάνω απο 1 φορά*/
+void Delete(node * n, stack1 * S) {
+
+//Ο δίκτης προς κόμβο θα χρησιμεύση στην "διάσχιση" της λίστας
+	node * k = NULL;
+	if ((!(n)) || (!(S))) {
+		printf("Δόθηκε null δίκτης στη συνάρτηση Delete");
+		return;
+	}
+
+	k = S->head;
+//Όταν φθάσει σε κόμβο του οποίου ο επομενος είναι αυτός που θα διαγραφεί, τερματίζεται ο βρόγχος, γίνεται τακτοποίηση των δεικτών, και γίνεται free ο κόμβος που πρέπει να διαγραφεί.
+	while (k->next != n)
+		k = k->next;
+	k->next = n->next;
+	free(n);
+//ενημερώνεται το μέγεθος της λίστας.
+	(S->size)--;
+	return;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// structs
+///////////////////////////////////////////////////////////////////////////////
+
+typedef vector<int> LIST_INT;
+//typedef map<int, int> MAP_INT_INT;
+LIST_INT tags;
+
+///////////////////////////////////////////////////////////////////////////////
+// GLOBAL STRUCTURES
+///////////////////////////////////////////////////////////////////////////////
+char *inputDir = "/outputDir-1k";
+char *queryDir = "queries";
+struct trie *Tags;
+char *CSV_PERSON = "outputDir-1k/person.csv";
+char *CSV_PERSON_KNOWS_PERSON = "outputDir-1k/person_knows_person.csv";
+char *CSV_COMMENT_HAS_CREATOR = "outputDir-1k/comment_hasCreator_person.csv";
+char *CSV_COMMENT_REPLY_OF_COMMENT = "outputDir-1k/comment_replyOf_comment.csv";
+char *CSV_TAG = "outputDir-1k/.csv";
+long N_PERSONS = 0;
+
+MAP_INT_INT CommentToPerson;
+
+///////////////////////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////////////////////////////
+// UTILS
+/////////////////////////////////////////////////////////////////////////////
+
+void printOut(char* msg) {
+	fprintf(stdout, "out:: %s\n", msg);
+}
+
+void printErr(char* msg) {
+	fprintf(stderr, "err:: %s", msg);
+	exit(1);
+}
+
+// returns microseconds
+long long getTime() {
+	struct timeval tim;
+	gettimeofday(&tim, NULL);
+	long t1 = (tim.tv_sec * 1000000LL) + tim.tv_usec;
+	return t1;
+}
+
+long countFileLines(FILE *file) {
+	long lines = 0;
+	while (EOF != (fscanf(file, "%*[^\n]"), fscanf(file, "%*c")))
+		++lines;
+	return lines;
+}
+
+long getFileSize(FILE *file) {
+	fseek(file, 0, SEEK_END);
+	long lSize = ftell(file);
+	rewind(file);
+	return lSize;
+}
+
+char* getFileBytes(FILE *file, long *lSize) {
+	setvbuf(file, NULL, _IOFBF, FILE_VBUF_SIZE);
+// obtain file size:
+	*lSize = getFileSize(file);
+// allocate memory to contain the whole file:
+	char* buffer = (char*) malloc(sizeof(char) * *lSize);
+	if (buffer == NULL) {
+		printErr("getFileBytes:: No memory while reading file!!!");
+	}
+// copy the file into the buffer:
+	size_t result = fread(buffer, 1, *lSize, file);
+	if (result != *lSize) {
+		printErr("getFileBytes:: Could not read the whole file in memory!!!");
+	}
+	return buffer;
+}
+
+long calculateAndAssignSubgraphs() {
+	char *visited = (char*) malloc(N_PERSONS);
+	memset(visited, 0, N_PERSONS);
+	long currentSubgraph = 0;
+	for (long cPerson = 0, sz = N_PERSONS; cPerson < sz; cPerson++) {
+		if (visited[cPerson] != 0)
+			continue;
+		// start BFS from the current person
+		vector<long> Q;
+		Q.push_back(cPerson);
+		long qIndex = 0;
+		long qSize = 1;
+		while (qIndex < qSize) {
+			long cP = Q[qIndex];
+			qIndex++;
+			// set as visited
+			visited[cP] = 2;
+			// this person belongs to the current subgraph being traversed
+			Persons[cP].subgraphNumber = currentSubgraph;
+			long *adjacents = Persons[cP].adjacentPersonsIds;
+			for (long cAdjacent = 0, szz = Persons[cP].adjacents;
+					cAdjacent < szz; cAdjacent++) {
+				long neighbor = adjacents[cAdjacent];
+				// check if not visited nor added
+				if (visited[neighbor] == 0) {
+					// set as added
+					visited[neighbor] = 1;
+					Q.push_back(neighbor);
+					qSize++;
+				}
+			}
+		}
+		// increase the subgraphs
+		currentSubgraph++;
+	}
+	free(visited);
+#ifdef DEBUGGING
+	char msg[100];
+	sprintf(msg, "Total subgraphs: %ld", currentSubgraph);
+	printOut(msg);
+#endif
+	return currentSubgraph;
+}
+
+void readPersonKnowsPerson(char *inputDir) {
+	char path[1024];
+	path[0] = '\0';
+//	strcat(path, inputDir);
+	strcat(path, CSV_PERSON_KNOWS_PERSON);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open person_knows_person!");
+	}
+	setvbuf(input, NULL, _IOFBF, FILE_VBUF_SIZE);
+
+// obtain file size:
+	long lSize = getFileSize(input);
+
+// allocate memory to contain the whole file:
+	char* buffer = (char*) malloc(sizeof(char) * lSize);
+	if (buffer == NULL) {
+		printErr(
+				"readPersonKnowsPerson:: No memory while reading Person_Knows_Person!!!");
+	}
+
+// copy the file into the buffer:
+	size_t result = fread(buffer, 1, lSize, input);
+	if (result != lSize) {
+		printErr(
+				"readPersonKnowsPerson:: Could not read the whole file in memory!!!");
+	}
+
+	long edges = 0;
+
+// the whole file is now loaded in the memory buffer.
+	vector<long> ids;
+	ids.reserve(256);
+	long prevId = -1;
+// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	while (startLine < EndOfFile) {
+		char *lineEnd = (char*) memchr(startLine, '\n', 100);
+		char *idDivisor = (char*) memchr(startLine, '|', lineEnd - startLine);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		long idA = atol(startLine);
+		long idB = atol(idDivisor + 1);
+		//printf("%d %d\n", idA, idB);
+
+		if (idA != prevId) {
+			if (ids.size() > 0) {
+				// store the neighbors
+				//Persons[idA].adjacentPersons = ids;
+				PersonStruct *person = &Persons[prevId];
+				person->adjacentPersonsIds = (long*) malloc(
+						sizeof(long) * ids.size());
+				for (long i = 0, sz = ids.size(); i < sz; i++) {
+					person->adjacentPersonsIds[i] = ids[i];
+				}
+				person->adjacents = ids.size();
+				ids.clear();
+			}
+		}
+		prevId = idA;
+		ids.push_back(idB);
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		edges++;
+#endif
+	}
+
+// check if there are edges to be added for the last person
+	if (!ids.empty()) {
+		PersonStruct *person = &Persons[prevId];
+		person->adjacentPersonsIds = (long*) malloc(sizeof(long) * ids.size());
+		for (int i = 0, sz = ids.size(); i < sz; i++) {
+			person->adjacentPersonsIds[i] = ids[i];
+		}
+		person->adjacents = ids.size();
+	}
+
+	free(buffer);
+
+#ifdef DEBUGGING
+	char msg[100];
+	sprintf(msg, "Total edges: %d", edges);
+	printOut(msg);
+#endif
+
+// now we want to find all the subgraphs into the graph and assign each person
+// into one of them since we will use this info into the Query 4
+	N_SUBGRAPHS = calculateAndAssignSubgraphs();
+}
+
+int count_ch(int num) {
+	int i = 0;
+	if (num == 0)
+		return 1;
+	while (num > 0) {
+		num /= 10;
+		i++;
+	}
+	return i;
+}
+
+void fix_tries(trie_node_t *root, int birth, int k);
+
+void answer_query_two(int birth, int k) {
+	fix_tries(Tags->root, birth, k);
+}
+
+
+
+
+//vriskei to megalitero component.
+int normalize(node_l *root, int birth) {
+	int i;
+	int sum = 1;
+
+	while (root->birth < birth) {
+
+		root = root->next;
+		if (root == NULL)
+			return 0;
+	}
+
+	node_l *head = root;
+	node_l *m = root;
+	node_l *cur = root;
+
+	while (cur) {
+		cur->mark = cur->real_id;
+		make_passes(root, cur->real_id);
+
+
+		cur = cur->next;
+	}
+	cur = root;
+	int max_id = 0;
+
+	while (cur) {
+	if (max_id <= cur->id) {
+			max_id = cur->id;
+		}
+		cur = cur->next;
+	}
+
+	return max_id;
+
+
+}
+//Poly proxiri thelei veltiosi, idika to sorting
+void fix_tries(trie_node_t *root, int birth, int k) {
+	int i = 0;
+	int m;
+	int count = 0;
+
+	stack_query2 *S = CreateStack_q2();
+	Push_q2(root, S);
+	node_l *sorted = NULL;
+	while (!IsEmpty_q2(S)) {
+		root = Pop_q2(S);
+		if (root->dates != NULL) {
+			m = normalize(root->dates, birth);
+			addNode(&sorted, m, root->tag);
+			node_l *d = root->dates;
+			while (d) {
+				d->mark = d->real_id;
+				d = d->next;
+			}
+		}
+		for (i = 0; i < 10; i++) {
+			if (root->children[i])
+				Push_q2(root->children[i], S);
+		}
+	}
+
+	printf("\n");
+//tipoma twn apotelesmatwn
+	while (sorted) {
+		printf("tag : %d plithos: %d \n", sorted->tag, sorted->birth);
+		sorted = sorted->next;
+		count++;
+		if (count == k)
+			break;
+	}
+
+	printf("\n");
+	return;
+}
+void read_interest_tag(char **births) {
+
+	FILE *input1 = fopen("outputDir-1k/person_hasInterest_tag.csv", "r");
+	if (input1 == NULL) {
+		printErr("could not open person_hasInterest_tag.csv!");
+	}
+	int size2 = 0;
+	long lSize;
+	char *buffer = getFileBytes(input1, &lSize);
+	int p;
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	char subgr[30];
+	int size = 0;
+	char result[200] = { };
+	char str_sub[200] = { };
+	int sum = 0;
+	Tags = (trie_t*) malloc(sizeof(struct trie));
+	initialize(Tags);
+	while (startLine < EndOfFile) {
+		lineEnd = (char*) memchr(startLine, '\n', 1000);
+		long idA = atol(startLine);
+		*lineEnd = '\0';
+		startLine = (char*) memchr(startLine, '|', lineEnd - startLine);
+
+		size2 = count_ch(Persons[idA].subgraphNumber);
+		size = (strlen(startLine + 1) + 8 + size2) + 1;
+		// (char )= malloc(sizeof(char)*size);
+		int num = Persons[idA].subgraphNumber;
+		int i = 1;
+		subgr[size2] = '\0';
+		if (num != 0)
+
+			while (num < 0) {
+				subgr[size2 - i] = num % 10;
+				num /= 10;
+				i++;
+			}
+		else
+			subgr[0] = '0';
+		strcpy(result, startLine + 1);
+		strcat(result, subgr);
+
+
+		insert(Tags, result, startLine + 1, atoi(births[idA]), idA);
+
+		startLine = lineEnd + 1;
+
+	}
+
+
+}
+
+void readPersons(char* inputDir) {
+
+	char path[1024];
+	path[0] = '\0';
+//strcat(path, inputDir);
+//strcat(path, CSV_PERSON);
+	FILE *input = fopen(CSV_PERSON, "r");
+
+	if (input == NULL) {
+		printErr("could not open person.csv!");
+	}
+//char *buffer = getFileBytes(input, &lSize);
+	setvbuf(input, NULL, _IOFBF, FILE_VBUF_SIZE);
+	long lines = countFileLines(input);
+//fclose(input);
+	N_PERSONS = lines - 1;
+	fclose(input);
+
+	FILE *input1 = fopen(CSV_PERSON, "r");
+
+	long lSize;
+	char *buffer = getFileBytes(input1, &lSize);
+	int p;
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	int k;
+	births = (char **) malloc(sizeof(char *) * N_PERSONS);
+	if (!births) {
+		printf("cannot allocate memmory line 585");
+		exit(0);
+	}
+	int i = 0;
+	for (i = 0; i < N_PERSONS; i++) {
+		births[i] = (char*) malloc(sizeof(char) * 9);
+		if (!births[i]) {
+			printf("cannot allocate memmory line 585");
+			exit(0);
+		}
+	}
+	for (k = 0; k < N_PERSONS; k++) {
+		lineEnd = (char*) memchr(startLine, '\n', 1000);
+		//temp=startLine;
+		long idA = atol(startLine);
+		for (i = 0; i < 4; i++) {
+			//	startLine = idDivisor;
+			startLine = (char*) memchr(startLine + 1, '|', lineEnd - startLine);
+		}
+		//
+		//printf("%d\n",idA);
+		p = idDivisor - startLine;
+		sprintf(births[idA], "%c%c%c%c%c%c%c%c\0", *(startLine + 1),
+				*(startLine + 2), *(startLine + 3), *(startLine + 4),
+				*(startLine + 6), *(startLine + 7), *(startLine + 9),
+				*(startLine + 10));
+
+		startLine = lineEnd + 1;
+
+	}
+
+//ok with birthdays
+
+#ifdef DEBUGGING
+	char msg[100];
+	sprintf(msg, "Total persons: %d", N_PERSONS);
+	printOut(msg);
+#endif
+
+// initialize persons
+//Persons = malloc(sizeof(PersonStruct)*N_PERSONS);
+	Persons = new PersonStruct[N_PERSONS];
+
+}
+
+void readComments(char* inputDir) {
+	char path[1024];
+
+///////////////////////////////////////////////////////////////////
+// READ THE COMMENTS AGAINST EACH PERSON
+///////////////////////////////////////////////////////////////////
+	path[0] = '\0';
+//strcat(path, inputDir);
+//strcat(path, CSV_COMMENT_HAS_CREATOR);
+	FILE *input = fopen(CSV_COMMENT_HAS_CREATOR, "r");
+	if (input == NULL) {
+		printErr("could not open comment_hasCreator_person.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+	char msg[100];
+	long comments = 0;
+#endif
+
+// process the whole file in memory
+// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *idDivisor;
+	while (startLine < EndOfFile) {
+		lineEnd = (char*) memchr(startLine, '\n', 100);
+		idDivisor = (char*) memchr(startLine, '|', lineEnd - startLine);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		long idA = atol(startLine);
+		long idB = atol(idDivisor + 1);
+
+		// set the person to each comment
+		CommentToPerson[idA] = idB;
+
+		//printf("%d %d\n", idA, idB);
+
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		comments++;
+#endif
+	}
+// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total comments: %ld", comments);
+	printOut(msg);
+#endif
+
+///////////////////////////////////////////////////////////////////
+// READ THE COMMENT REPLIES TO HAVE THE COMMENTS FOR EACH PERSON
+///////////////////////////////////////////////////////////////////
+	path[0] = '\0';
+//strcat(path, inputDir);
+//strcat(path, CSV_COMMENT_REPLY_OF_COMMENT);
+	input = fopen(CSV_COMMENT_REPLY_OF_COMMENT, "r");
+	if (input == NULL) {
+		printErr("could not open comment_replyOf_Comment.csv!");
+	}
+	buffer = getFileBytes(input, &lSize);
+
+#ifdef DEBUGGING
+	comments = 0;
+#endif
+	int kati = 1;
+// process the whole file in memory
+// skip the first line
+	startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	EndOfFile = buffer + lSize;
+	while (startLine < EndOfFile) {
+		lineEnd = (char*) memchr(startLine, '\n', 100);
+		idDivisor = (char*) memchr(startLine, '|', lineEnd - startLine);
+		*idDivisor = '\0';
+		*lineEnd = '\0';
+		long idA = atol(startLine);
+		long idB = atol(idDivisor + 1);
+
+		// we have to hold the number of comments between each person
+		long personA = CommentToPerson[idA];
+		long personB = CommentToPerson[idB];
+
+		// increase the counter for the comments from A to B
+		if (kati) {
+			kati = 0;
+			Persons[0].commentsToPerson[401]++;
+		}
+
+		if (personA != 0 && personB != 401)
+			Persons[personA].commentsToPerson[personB]++;
+
+		//printf("%ld %ld %ld\n", idA, idB, Persons[personA].commentsToPerson[personB] );
+
+		startLine = lineEnd + 1;
+#ifdef DEBUGGING
+		comments++;
+#endif
+	}
+
+#ifdef DEBUGGING
+	sprintf(msg, "Total replies: %ld", comments);
+	printOut(msg);
+#endif
+
+///////////////////////////////////////////////////////////////////
+// PROCESS THE COMMENTS OF EACH PERSON AND SORT THE EDGES BASED ON THE COMMENTS
+///////////////////////////////////////////////////////////////////
+// TODO
+
+}
+
+void _initializations() {
+//CommentToPerson.reserve(1<<10);
+}
+//set subgraphs using DFS
+/*
+ int set_SubGraph() {
+ int max_id = -1;
+ int i = 0;
+ int j = 0;
+ int temp = 0;
+ int grammi_i = 0;
+ int grammi_j = 0;
+ stack1 *s = CreateStack();
+ for (i = 0; i < N_PERSONS; i++) {
+
+ if (Persons[i].subgraphNumber == -1) {
+ max_id++;
+ if (!IsEmpty(s)) {
+ printf("eprepe na itan ofkeri\n");
+ exit(0);
+ }
+ Push(i, s);
+ while (!IsEmpty(s)) {
+
+ temp = Pop(s);
+ //printf("%d",max_id);
+ if (temp == -1) {
+ printf("Provlima, set_SubGraph");
+ exit(-1);
+ }
+
+ if (Persons[temp].subgraphNumber == -1) {
+
+ Persons[temp].subgraphNumber = max_id;
+ //printf("person %d at subgraph %d\n",temp,max_id);
+ for (j = 0; j < Persons[temp].adjacents; j++)
+ if (Persons[Persons[temp].adjacentPersonsIds[j]].subgraphNumber
+ == -1)
+ Push(Persons[temp].adjacentPersonsIds[j], s);
+
+ }
+
+ }
+
+ }
+
+ }
+
+ return max_id;
+ }*/
+
+void answer_queries_2() {
+///////////////////////////////////////////////////////////////////
+// READ THE QUERIES
+///////////////////////////////////////////////////////////////////
+	char path[1024];
+	path[0] = '\0';
+//strcat(path, queriesFile);
+	FILE *input = fopen("queries_2.txt", "r");
+	if (input == NULL) {
+		printErr("could not open queries file!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+	char *startLine = buffer;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	int num = 0;
+	while (startLine < EndOfFile) {
+		//	printf("aaaa");
+		lineEnd = (char*) memchr(startLine, '\n', 100);
+		if (num == 99)
+			//		printf("wait!!");
+			int queryType = atoi(startLine + 5);
+
+		char *second = ((char*) memchr(startLine, '(', 20)) + 1;
+		*(second - 1) = '\0';
+	//	char *third = ((char*) memchr(second, ',', 20)) + 1;
+		*(lineEnd - 1) = '\0';
+
+		int k = 0;
+		int date = 0;
+		int i;
+
+		while (*second != ',') {
+			k = k * 10 + (*second) - '0';
+			second++;
+		}
+		second += 2;
+
+		for (i = 0; i < 10; i++) {
+
+			if (*second != '-')
+				date = date * 10 + (*second) - '0';
+			second++;
+
+		}
+		num++;
+		//printf("#####QUERY %d #####",num);
+		answer_query_two(date, k);
+
+		//printf("%s %s\n", second, third);
+		//answer_query_two(atoi(startLine+7), atoi(second), atoi(third));
+
+		//default:
+
+		startLine = lineEnd + 1;
+
+	}
+	free(buffer);
+}
+
+int main(int argc, char** argv) {
+//if( argc != 1 ){
+//if( argc != 3 ){
+//printErr("Wrong number of arguments. ./binary input_dir output_dir");
+//}
+
+// MAKE GLOBAL INITIALIZATIONS
+	char msg[100];
+	_initializations();
+
+	long long time_global_start = getTime();
+/////////////////////////////////
+	readPersons(inputDir);
+	readPersonKnowsPerson(inputDir);
+#ifdef DEBUGGING
+	long time_persons_end = getTime();
+	sprintf(msg, "persons graph time: %ld",
+			time_persons_end - time_global_start);
+	printOut(msg);
+#endif
+
+	readComments(inputDir);
+#ifdef DEBUGGING
+	long time_comments_end = getTime();
+	sprintf(msg, "comments process time: %ld",
+			time_comments_end - time_global_start);
+	printOut(msg);
+#endif
+
+
+	read_interest_tag(births);
+
+	long time_tags_end = getTime();
+	sprintf(msg, "Tags process time: %ld", time_tags_end - time_global_start);
+	printOut(msg);
+/////////////////////////////////
+	struct timeval before;
+	struct timeval after;
+	srand (time(NULL));double
+	dtime = 0;
+	gettimeofday(&before, NULL);
+	answer_queries_2();
+	gettimeofday(&after, NULL);
+	long long time_global_end = getTime();
+	sprintf(msg, "Total time: micros[%lld] seconds[%.6f]",
+			time_global_end - time_global_start,
+			(time_global_end - time_global_start) / 1000000.0);
+	printOut(msg);
+
+	dtime = (after.tv_sec + after.tv_usec / 1E6)
+			- (before.tv_sec + before.tv_usec / 1E6);
+	printf("time for queries : %f\n", dtime);
+
+
+}

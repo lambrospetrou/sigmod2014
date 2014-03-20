@@ -24,19 +24,18 @@
 
 #include <tr1/unordered_map>
 
-#include "LPBitset.h"
-#include "LPThreadpool.h"
+#include "lplibs/LPBitset.h"
+#include "lplibs/LPThreadpool.h"
 
 using namespace std;
 using std::tr1::unordered_map;
 using std::tr1::hash;
 
-#define JOIN(x, y) JOIN_AGAIN(x, y)
-#define JOIN_AGAIN(x, y) x ## y
-
 //#define DEBUGGING 1
-#define FILE_VBUF_SIZE 8192
+#define FILE_VBUF_SIZE 1<<20
 #define FILE_BUFFER_SIZE 1<<15
+
+#define CACHE_LINE_SIZE 64
 
 #define VALID_PLACE_CHARS 256
 
@@ -66,7 +65,7 @@ struct PersonStruct {
 	long *adjacentPersonWeightsSorted;
 
 	int subgraphNumber;
-};
+} __attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
 
 struct PersonCommentsStruct {
 	MAP_INT_INT commentsToPerson;
@@ -78,25 +77,25 @@ struct TrieNode{
 	long realId;
 	long vIndex;
 	TrieNode* children[VALID_PLACE_CHARS];
-};
+} __attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
 
 struct PlaceNodeStruct{
 	long id;
 	long index;
 	vector<long> personsThis;
 	vector<long> placesPartOfIndex;
-};
+}__attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
 
 
 struct PersonTags{
 	vector<long> tags;
-};
+}__attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
 
 struct TagNode{
 	long id;
 	TrieNode *tagNode;
 	vector<long> forums;
-};
+} __attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
 
 
 /////////////////////////////
@@ -109,7 +108,7 @@ struct QueryBFS{
 	}
 	long person;
 	int depth;
-};
+};  // Aligned for cache lines;
 
 struct Query3PQ{
 	Query3PQ(long a, long b, int ct){
@@ -120,7 +119,7 @@ struct Query3PQ{
 	long idA;
 	long idB;
 	int commonTags;
-};
+};  // Aligned for cache lines;
 class Query3PQ_Comparator{
 public:
     bool operator() (const Query3PQ &left, const Query3PQ &right){
@@ -149,7 +148,7 @@ struct Query4PersonStruct{
 	int s_p;
 	int r_p;
 	double centrality;
-};
+};  // Aligned for cache lines;
 
 bool Query4PersonStructPredicate(const Query4PersonStruct& d1, const Query4PersonStruct& d2)
 {
@@ -207,6 +206,7 @@ char *CSV_FORUM_HAS_MEMBER = "/forum_hasMember_person.csv";
 long N_PERSONS = 0;
 long N_TAGS = 0;
 long N_SUBGRAPHS = 0;
+long N_QUERIES = 0;
 
 lp_threadpool* threadpool;
 
@@ -222,8 +222,11 @@ MAP_INT_VecL Forums;
 //vector<ForumNodeStruct*> Forums;
 
 vector<int> Answers1;
+vector<string> Answers2;
 vector<string> Answers3;
 vector<string> Answers4;
+
+vector<string> Answers;
 
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
@@ -329,8 +332,7 @@ long countFileLines(char *file){
 			printErr("countFileLines()::Could not read from file!");
 		if (!bytes_read)
 			break;
-		for (char *p = buf;
-				(p = (char*) memchr(p, '\n', (buf + bytes_read) - p));
+		for (char *p = buf;(p = (char*)memchr(p, '\n', (buf + bytes_read) - p));
 				++p)
 			++lines;
 	}
@@ -343,6 +345,20 @@ long getFileSize(FILE *file){
 	long lSize = ftell(file);
 	rewind(file);
 	return lSize;
+}
+
+// converts the date into an integer representing that date
+// e.g 1990-07-31 = 19900731
+static inline int getDateAsInt(char *date, int date_sz){
+	int dateNum = 0;
+	for (int i = 0; i < date_sz; i++) {
+		if (date[i] != '-') {
+			// dateNum = dateNum*8 + dateNum*2 = dateNum * 10
+			dateNum = (dateNum << 3) + (dateNum << 1);
+			dateNum += date[i] - '0';
+		}
+	}
+	return dateNum;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1241,8 +1257,10 @@ void readForumHasMember(char *inputDir){
 // QUERY EXECUTORS
 ///////////////////////////////////////////////////////////////////////
 
-void query1(int p1, int p2, int x){
+void query1(int p1, int p2, int x, long qid){
 	//printf("query1: %d %d %d\n", p1, p2, x);
+
+	int answer=-1;
 
 	char *visited = (char*)malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
@@ -1272,12 +1290,14 @@ void query1(int p1, int p2, int x){
 				long cAdjacent = adjacents[i];
 				if (visited[cAdjacent] == 0) {
 					if (cAdjacent == p2) {
-						Answers1.push_back(current.depth + 1);
-						free(visited);
-						return;
+						//Answers1.push_back(current.depth + 1);
+						//printf("q1: [%d]", current.depth + 1);
+						//free(visited);
+						//return;
+						answer = current.depth - 1;
+						break;
 					}
 					visited[cAdjacent] = 1;
-					//&& cPerson->adjacentPersonWeights[cAdjacent] > x) {
 					Q.push_back(QueryBFS(cAdjacent, current.depth+1));
 					size++;
 				}
@@ -1289,9 +1309,12 @@ void query1(int p1, int p2, int x){
 				// if node not visited and not added
 				if (visited[cAdjacent] == 0) {
 					if (cAdjacent == p2) {
-						Answers1.push_back(current.depth + 1);
-						free(visited);
-						return;
+						//Answers1.push_back(current.depth + 1);
+						//printf("q1: [%d]", current.depth + 1);
+						//free(visited);
+						//return;
+						answer = current.depth + 1;
+						break;
 					}
 					// mark node as added - GREY
 					visited[cAdjacent] = 1;
@@ -1300,11 +1323,23 @@ void query1(int p1, int p2, int x){
 				}
 			}
 		} // end of neighbors processing
+		// check if an answer has been found
+		if( answer != -1 ){
+			break;
+		}
 	}
 
 	free(visited);
 	// no path found
-	Answers1.push_back(-1);
+	//Answers1.push_back(-1);
+	//printf("q1: [%d]", answer);
+	std::stringstream ss;
+	ss << answer;
+	Answers[qid] = ss.str();
+}
+
+void query2(int k, char *date, int date_sz, long qid){
+	//printf("query 2: k[%d] date[%*s] dateNum[%d]\n", k, date_sz, date, getDateAsInt(date, date_sz));
 }
 
 int BFS_query3(long idA, long idB, int h){
@@ -1351,7 +1386,7 @@ int BFS_query3(long idA, long idB, int h){
 	return INT_MAX;
 }
 
-void query3(int k, int h, char *name, int name_sz){
+void query3(int k, int h, char *name, int name_sz, long qid){
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
 
 	vector<long> persons;
@@ -1467,10 +1502,12 @@ void query3(int k, int h, char *name, int name_sz){
 		//ss << idA << "|" << idB << "[" << cTags << "] ";
 		ss << idA << "|" << idB << " ";
 	}
-	Answers3.push_back(ss.str());
+	//Answers3.push_back(ss.str());
+	//printf("q3: [%s]\n", ss.str().c_str());
+	Answers[qid] = ss.str();
 }
 
-void query4(int k, char *tag, int tag_sz){
+void query4(int k, char *tag, int tag_sz, long qid){
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
 
 	long tagIndex = TrieFind(TagToIndex, tag, tag_sz)->vIndex;
@@ -1554,8 +1591,66 @@ void query4(int k, char *tag, int tag_sz){
 		//ss << persons[i].person << ":" << persons[i].centrality << " ";
 		ss << persons[i].person << " ";
 	}
-	Answers4.push_back(ss.str());
+	//Answers4.push_back(ss.str());
+	//printf("%s\n", ss.str().c_str());
+	Answers[qid] = ss.str();
 }
+
+
+//////////////////////// WORKER JOBS /////////////////////////
+
+struct Query1WorkerStruct{
+	int p1;
+	int p2;
+	int x;
+	long qid;
+};
+void* Query1WorkerFunction(int tid, void *args){
+	Query1WorkerStruct *qArgs = (Query1WorkerStruct*)args;
+	//printf("tid[%d] [%d]\n", tid, *(int*)args);
+	query1(qArgs->p1, qArgs->p2, qArgs->x, qArgs->qid);
+
+	free(qArgs);
+	// end of job
+	return 0;
+}
+
+struct Query3WorkerStruct{
+	int k;
+	int h;
+	char *name;
+	int name_sz;
+	long qid;
+};
+void* Query3WorkerFunction(int tid, void *args){
+	Query3WorkerStruct *qArgs = (Query3WorkerStruct*)args;
+	//printf("tid[%d] [%d]\n", tid, *(int*)args);
+	query3(qArgs->k, qArgs->h, qArgs->name, qArgs->name_sz, qArgs->qid);
+
+	free(qArgs->name);
+	free(qArgs);
+	// end of job
+	return 0;
+}
+
+struct Query4WorkerStruct{
+	int k;
+	char *tag;
+	int tag_sz;
+	long qid;
+};
+void* Query4WorkerFunction(int tid, void *args){
+	Query4WorkerStruct *qArgs = (Query4WorkerStruct*)args;
+	//printf("tid[%d] [%d]\n", tid, *(int*)args);
+	query4(qArgs->k, qArgs->tag, qArgs->tag_sz, qArgs->qid);
+
+	free(qArgs->tag);
+	free(qArgs);
+	// end of job
+	return 0;
+}
+
+//////////////////////////////////////////////////////////////
 
 
 ///////////////////////////////////////////////////////////////////////
@@ -1575,6 +1670,7 @@ void _initializations(){
 	TagIdToIndex = new MAP_INT_INT();
 
 	Answers1.reserve(2048);
+	Answers2.reserve(2048);
 	Answers3.reserve(2048);
 	Answers4.reserve(2048);
 
@@ -1587,17 +1683,19 @@ void _destructor(){
 	delete[] PersonToTags;
 	TrieNode_Destructor(PlacesToId);
 	TrieNode_Destructor(TagToIndex);
-
-	synchronize_complete(threadpool);
 }
 
-void executeQueries(char *queriesFile){
+void readQueries(char *queriesFile){
 	///////////////////////////////////////////////////////////////////
 	// READ THE QUERIES
 	///////////////////////////////////////////////////////////////////
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, queriesFile);
+
+	N_QUERIES = countFileLines(path);
+	Answers.resize(N_QUERIES);
+
 	FILE *input = fopen(path, "r");
 	if (input == NULL) {
 		printErr("could not open queries file!");
@@ -1605,12 +1703,12 @@ void executeQueries(char *queriesFile){
 	long lSize;
 	char *buffer = getFileBytes(input, &lSize);
 
+	long qid=0;
 	char *startLine = buffer;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	while (startLine < EndOfFile) {
 		lineEnd = (char*) memchr(startLine, '\n', 100);
-
 		int queryType = atoi(startLine+5);
 		switch( queryType ){
 		case 1:
@@ -1619,7 +1717,24 @@ void executeQueries(char *queriesFile){
 			*(second-1) = '\0';
 			char *third = ((char*) memchr(second, ',', 20)) + 1;
 			*(lineEnd-1) = '\0';
-			query1(atoi(startLine+7), atoi(second), atoi(third));
+			//query1(atoi(startLine+7), atoi(second), atoi(third));
+
+			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*)malloc(sizeof(Query1WorkerStruct));
+			qwstruct->p1 = atoi(startLine+7);
+			qwstruct->p2 = atoi(second);
+			qwstruct->x = atoi(third);
+			qwstruct->qid = qid;
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(Query1WorkerFunction), (void*)qwstruct );
+
+			break;
+		}
+		case 2:
+		{
+			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
+			*(second - 1) = '\0';
+			*(lineEnd - 1) = '\0';
+			char *date = second + 1; // to skip one space
+			query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
 			break;
 		}
 		case 3:
@@ -1630,7 +1745,19 @@ void executeQueries(char *queriesFile){
 			*(third - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *name = third+1; // to skip one space
-			query3(atoi(startLine + 7), atoi(second), name, lineEnd-1-name);
+			int name_sz = lineEnd-1-name;
+			//query3(atoi(startLine + 7), atoi(second), name, name_sz);
+
+			char *placeName = (char*)malloc(name_sz+1);
+			strncpy(placeName, name, name_sz+1);
+			Query3WorkerStruct *qwstruct = (Query3WorkerStruct*)malloc(sizeof(Query3WorkerStruct));
+			qwstruct->k = atoi(startLine+7);
+			qwstruct->h = atoi(second);
+			qwstruct->name = placeName;
+			qwstruct->name_sz = name_sz;
+			qwstruct->qid = qid;
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(Query3WorkerFunction), qwstruct );
+
 			break;
 		}
 		case 4:
@@ -1639,7 +1766,18 @@ void executeQueries(char *queriesFile){
 			*(second - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *name = second + 1; // to skip one space
-			query4(atoi(startLine + 7), name, lineEnd - 1 - name);
+			int tag_sz = lineEnd - 1 - name;
+			//query4(atoi(startLine + 7), name, tag_sz);
+
+			char *tagName = (char*)malloc(tag_sz+1);
+			strncpy(tagName, name, tag_sz+1);
+			Query4WorkerStruct *qwstruct = (Query4WorkerStruct*)malloc(sizeof(Query4WorkerStruct));
+			qwstruct->k = atoi(startLine+7);
+			qwstruct->tag = tagName;
+			qwstruct->tag_sz = tag_sz;
+			qwstruct->qid = qid;
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(Query4WorkerFunction), qwstruct );
+
 			break;
 		}
 		default:
@@ -1648,25 +1786,11 @@ void executeQueries(char *queriesFile){
 			//printOut(startLine);
 		}
 		}
-
 		startLine = lineEnd+1;
+		qid++;
 	}
 	free(buffer);
 }
-
-
-//////////////////////// WORKER JOBS /////////////////////////
-
-
-void* TestWorkerFunction(int tid, void *args){
-
-	printf("tid[%d] arg[%d]\n", tid, *(int*)args);
-
-	// end of job
-	return 0;
-}
-
-//////////////////////////////////////////////////////////////
 
 
 int main(int argc, char** argv) {
@@ -1680,6 +1804,15 @@ int main(int argc, char** argv) {
 	_initializations();
 
 	long long time_global_start = getTime();
+
+	// add queries into the pool
+	readQueries(queryFile);
+#ifdef DEBUGGING
+	long time_queries_end = getTime();
+	sprintf(msg, "queries file time: %ld", time_queries_end - time_global_start);
+	printOut(msg);
+#endif
+
 	/////////////////////////////////
 	readPersons(inputDir);
 	readPersonKnowsPerson(inputDir);
@@ -1691,6 +1824,7 @@ int main(int argc, char** argv) {
 #endif
 
 	readComments(inputDir);
+
 #ifdef DEBUGGING
 	long time_comments_end = getTime();
 	sprintf(msg, "comments process time: %ld", time_comments_end - time_global_start);
@@ -1722,28 +1856,33 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-	//executeQueries(queryFile);
+	// start workers
+	lp_threadpool_startjobs(threadpool);
+	synchronize_complete(threadpool);
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
 	sprintf(msg, "queries process time: %ld", time_queries_end - time_global_start);
 	printOut(msg);
-
 #endif
-
 
 
 	/////////////////////////////////
 	long long time_global_end = getTime();
-	sprintf(msg, "Total time: micros[%lld] seconds[%.6f]",
+	sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]",
 			time_global_end - time_global_start,
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
 
-
+/*
 	for(int i=0, sz=Answers1.size(); i<sz; i++){
 		//printf("answer %d: %d\n", i, Answers1[i]);
 		printf("%d\n", Answers1[i]);
+	}
+
+	for(int i=0, sz=Answers2.size(); i<sz; i++){
+		//printf("answer %d: %s\n", i, Answers3[i].c_str());
+		printf("%s\n", Answers2[i].c_str());
 	}
 
 	for(int i=0, sz=Answers3.size(); i<sz; i++){
@@ -1755,25 +1894,15 @@ int main(int argc, char** argv) {
 		//printf("answer 4 %d: %s\n", i, Answers4[i].c_str());
 		printf("%s\n", Answers4[i].c_str());
 	}
+*/
+	for(long i=0, sz=Answers.size(); i<sz; i++){
+		//printf("answer %d: %d\n", i, Answers1[i]);
+		printf("%s\n", Answers[i].c_str());
+	}
+
 
 	// destroy the remaining indexes
 	_destructor();
-
-
-	// testing thread pool
-	int* dn = (int*)malloc(sizeof(int));
-	int* dn2 = (int*)malloc(sizeof(int));
-	int* dn3 = (int*)malloc(sizeof(int));
-	int* dn4 = (int*)malloc(sizeof(int));
-	*dn = 11;
-	*dn2 = 22;
-	*dn3 = 33;
-	*dn4 = 44;
-	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int, void*)>(TestWorkerFunction), dn );
-	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int, void*)>(TestWorkerFunction), dn2 );
-	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int, void*)>(TestWorkerFunction), dn3 );
-	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int, void*)>(TestWorkerFunction), dn4 );
-
 }
 
 

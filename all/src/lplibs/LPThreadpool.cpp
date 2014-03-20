@@ -2,6 +2,52 @@
 
 // THREADPOOL STRUCTURE
 
+// adds jobs in the threadpool queue without concurrency controls
+// SHOULD BE USED CAREFULLY ONLY WHEN WORKERS ARE SLEEPING
+void lp_threadpool_addjob_nolock( lp_threadpool* pool, void *(*func)(int, void *), void* args ){
+
+	// ENTER POOL CRITICAL SECTION
+	//pthread_mutex_lock( &pool->mutex_pool );
+	//////////////////////////////////////
+
+	lp_tpjob *njob = (lp_tpjob*)malloc( sizeof(lp_tpjob) );
+	if( !njob ){
+		perror( "Could not create a lp_tpjob...\n" );
+		return;
+	}
+	njob->args = args;
+	njob->func = func;
+	njob->next = 0;
+
+	// empty job queue
+	if( pool->pending_jobs == 0 ){
+		pool->jobs_head = njob;
+		pool->jobs_tail = njob;
+	}else{
+		pool->jobs_tail->next = njob;
+		pool->jobs_tail = njob;
+	}
+
+	pool->pending_jobs++;
+
+	//fprintf( stderr, "job added [%d]\n", pool->pending_jobs );
+
+	// EXIT POOL CRITICAL SECTION
+	//pthread_mutex_unlock( &pool->mutex_pool );
+	//////////////////////////////////////
+
+	// signal any worker_thread that new job is available
+	//pthread_cond_signal( &pool->cond_jobs );
+}
+
+// signals sleeping workers to wake up
+void lp_threadpool_startjobs(lp_threadpool* pool){
+	for( int i=0,sz=pool->nthreads; i<sz; i++ ){
+		pool->initialSleepThreads[i] = 1;
+	}
+}
+
+
 void inline lp_threadpool_addjob( lp_threadpool* pool, void *(*func)(int, void *), void* args ){
 
 	// ENTER POOL CRITICAL SECTION
@@ -91,6 +137,10 @@ void* lp_tpworker_thread( void* _pool ){
 
 	fprintf( stderr, "thread[%d] entered worker_thread infite\n", _tid );
 
+	// _tid-1 because tids are from 1-NUM_THREADS
+	// the value will change when the startJobs function will be called
+	while( pool->initialSleepThreads[_tid-1]==0 ){}
+
     lp_tpjob njob;
 
 	for(;;){
@@ -122,11 +172,14 @@ lp_threadpool* lp_threadpool_init( int threads ){
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*threads);
 	for( int i=0; i<threads; i++ ){
 		pthread_create( &worker_threads[i], NULL, reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
-		fprintf( stderr, "[%p] thread[%d] added\n", worker_threads[i] );
+		fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
 
 //		CPU_SET( (i % 24)+1 , &cpuset );
 //		pthread_setaffinity_np( worker_threads[i], sizeof(cpu_set_t), &cpuset );
 	}
+
+	pool->initialSleepThreads = (char*)malloc(threads);
+	memset(pool->initialSleepThreads, 0, threads);
 
 	pool->worker_threads = worker_threads;
 
