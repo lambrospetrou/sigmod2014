@@ -197,6 +197,20 @@ bool DescendingIntPredicate(int a, int b) {
 	return a >= b;
 }
 
+struct Q2ResultNode{
+	Q2ResultNode(long tag, long person){
+		tagId = tag;
+		people = person;
+	}
+	long tagId;
+	long people;
+};
+
+bool Q2ResultListPredicate(Q2ResultNode a, Q2ResultNode b) {
+	return a.people >= b.people;
+	// check for tag name too
+}
+
 bool Q2ListNodePredicate(Q2ListNode* a, Q2ListNode* b) {
 	return a->birth >= b->birth;
 }
@@ -204,6 +218,8 @@ bool Q2ListNodePredicate(Q2ListNode* a, Q2ListNode* b) {
 bool Q2ListPredicate(TagSubStruct* a, TagSubStruct* b) {
 	return a->people.size() >= b->people.size();
 }
+
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // FUNCTION PROTOTYPES
@@ -1556,13 +1572,15 @@ void query2(int k, char *date, int date_sz, long qid) {
 	unsigned int queryBirth = getDateAsInt(date, date_sz);
 	long minComponentSize = 0;
 
-	list<long> resultPeople;
-	list<long> resultTag;
+	//list<long> resultPeople;
+	//list<long> resultTag;
+
+	list<Q2ResultNode> results;
 
 	for (long i = 0, sz = TagSubFinals.size(); i < sz; i++) {
 		vector<Q2ListNode*> &people = TagSubFinals[i]->people;
 		long currentTagSize = people.size();
-		/*
+
 		// do not need to process further in other tags
 		if (currentTagSize < minComponentSize) {
 			break;
@@ -1572,35 +1590,31 @@ void query2(int k, char *date, int date_sz, long qid) {
 		if (people[0]->birth < queryBirth) {
 			continue;
 		}
-		*/
+
 
 		// TODO - CALL NORMALIZE FOR THE COMPONENTS
 		long largestTagComponent = findTagLargestComponent(people, queryBirth, minComponentSize);
 
 		// we have to check if the current tag should be in the results
 		if (i < k) {
-			resultPeople.push_back(largestTagComponent);
-			resultTag.push_back(TagSubFinals[i]->tagId);
+			results.push_back(Q2ResultNode(TagSubFinals[i]->tagId, largestTagComponent));
 			if (i == k - 1) {
-				resultPeople.sort(DescendingIntPredicate);
-				resultTag.sort(DescendingIntPredicate);
-				minComponentSize = resultPeople.back();
+				results.sort(Q2ResultListPredicate);
+				minComponentSize = results.back().people;
 			}
 			// NOT NEEDED - initialized above
 			//minComponentSize = 0;
 		} else {
 			// we need to discard another result only if this tag has larger component than our minimum
-			if (largestTagComponent > resultPeople.back()) {
+			if (largestTagComponent > results.back().people) {
 				char found = 0;
-				for (list<long>::iterator itPerson = resultPeople.begin(), end =
-						resultPeople.end(), itTag=resultTag.begin(); itPerson != end; itPerson++, itTag++) {
-					if (*itPerson < largestTagComponent) {
+				for (list<Q2ResultNode>::iterator itPerson = results.begin(), end =
+						results.end(); itPerson != end; itPerson++) {
+					if ( (*itPerson).people < largestTagComponent) {
 						// insert here
-						resultPeople.insert(itPerson,largestTagComponent);
-						resultTag.insert(itTag, TagSubFinals[i]->tagId);
+						results.insert(itPerson, Q2ResultNode(TagSubFinals[i]->tagId,largestTagComponent));
 						// discard the last one - min
-						resultPeople.pop_back();
-						resultTag.pop_back();
+						results.pop_back();
 						found = 1;
 						if (largestTagComponent < minComponentSize)
 							minComponentSize = largestTagComponent;
@@ -1610,9 +1624,8 @@ void query2(int k, char *date, int date_sz, long qid) {
 				if (!found) {
 					// we did not find minimum so check if the last one is equal
 					// and insert this one too
-					if (resultPeople.back() == largestTagComponent) {
-						resultPeople.push_back(largestTagComponent);
-						resultTag.push_back(TagSubFinals[i]->tagId);
+					if (results.back().people == largestTagComponent) {
+						results.push_back(Q2ResultNode(TagSubFinals[i]->tagId,largestTagComponent));
 					}
 				}
 			}					// end if this is a valid tag
@@ -1622,12 +1635,9 @@ void query2(int k, char *date, int date_sz, long qid) {
 
 	// print the K ids from the sorted list - according to the tag names for ties
 	printf("\nq2 [%ld]", qid);
-	list<long>::iterator peopleIt = resultPeople.begin();
-	for( list<long>::iterator end=resultTag.end(), itTag=resultTag.begin(); itTag != end; itTag++ ){
-		printf("%ld[%ld] ", *itTag, *peopleIt);
-		peopleIt++;
+	for( list<Q2ResultNode>::iterator end=results.end(), itTag=results.begin(); itTag != end; itTag++ ){
+		printf("%ld[%ld] ", (*itTag).tagId, (*itTag).people);
 	}
-
 }
 
 int BFS_query3(long idA, long idB, int h) {
