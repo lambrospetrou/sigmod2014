@@ -57,6 +57,7 @@ typedef vector<int> LIST_INT;
 //typedef map<int, int> MAP_INT_INT;
 typedef std::tr1::unordered_map<int, int, hash<int> > MAP_INT_INT;
 typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
+typedef std::tr1::unordered_map<long, char*, hash<long> > MAP_LONG_STRING;
 
 struct PersonStruct {
 	PersonStruct() {
@@ -206,11 +207,6 @@ struct Q2ResultNode{
 	long people;
 };
 
-bool Q2ResultListPredicate(Q2ResultNode a, Q2ResultNode b) {
-	return a.people >= b.people;
-	// check for tag name too
-}
-
 bool Q2ListNodePredicate(Q2ListNode* a, Q2ListNode* b) {
 	return a->birth >= b->birth;
 }
@@ -293,6 +289,7 @@ MAP_INT_INT *PlaceIdToIndex;
 MAP_INT_INT *OrgToPlace;
 
 MAP_INT_INT *TagIdToIndex;
+MAP_LONG_STRING TagIdToName;
 
 // TODO
 int *PersonBirthdays;
@@ -1247,13 +1244,13 @@ void readTags(char *inputDir) {
 		*nameDivisor = '\0';
 		long id = atol(startLine);
 		char *name = idDivisor + 1;
+		int name_sz = nameDivisor - name;
 
 		// insert the tag into the Trie for TagToIndex
 		// we first insert into the trie in order to get the Place node that already exists if any
 		// for this place, or the new one that was created with this insertion.
 		// this way we will always get the same index for the same place name regardless of id
-		TrieNode *insertedTag = TrieInsert(TagToIndex, name, nameDivisor - name,
-				id, tags);
+		TrieNode *insertedTag = TrieInsert(TagToIndex, name, name_sz, id, tags);
 		// create a new Place structure only if this was a new Place and not an existing place with
 		// a different id, like Asia or Brazil
 		if (insertedTag->realId == id) {
@@ -1266,6 +1263,12 @@ void readTags(char *inputDir) {
 		// map the place id to the place index
 		(*TagIdToIndex)[id] = insertedTag->vIndex;
 		//printf("tag[%ld] name[%*s] index[%ld]\n", id, nameDivisor-name, name,  insertedTag->vIndex);
+
+		// TODO - SAVE THE TAG NAME
+		char *tagName = (char*)malloc(name_sz+1);
+		strncpy(tagName, name, name_sz);
+		tagName[name_sz] = '\0';
+		TagIdToName[id] = tagName;
 
 		startLine = lineEnd + 1;
 	}
@@ -1601,7 +1604,7 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	MAP_INT_INT components;
 	MAP_INT_INT visitedBFS;
 	vector<long> componentsIds;
-	vector<QueryBFS> Q;
+	vector<long> Q;
 	long currentCluster = -1;
 	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
 		if( visitedBFS[people[i]->personId] == 0 ){
@@ -1611,11 +1614,11 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 			Q2ListNode *cPerson = people[i];
 			long qIndex = 0;
 			long qSize = 1;
-			Q.push_back(QueryBFS(cPerson->personId, 0));
+			Q.push_back(cPerson->personId);
 			while (qIndex < qSize) {
-				QueryBFS &c = Q[qIndex];
+				long c = Q[qIndex];
 				qIndex++;
-				visitedBFS[c.person] = 2;
+				visitedBFS[c] = 2;
 
 				//components[c.depth]++;
 				components[currentCluster]++;
@@ -1623,12 +1626,12 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 				//printf("c[%ld] [%ld]\n", currentCluster, components[currentCluster] );
 
 				// insert each unvisited neighbor of the current node
-				vector<long> &edges = newGraph[c.person];
+				vector<long> &edges = newGraph[c];
 				for (int e = 0, szz = edges.size(); e < szz; e++) {
 					long eId = edges[e];
 					if (visitedBFS[eId] == 0) {
 						visitedBFS[eId] = 1;
-						Q.push_back(QueryBFS(eId, 0));
+						Q.push_back(eId);
 						qSize++;
 					}
 				}
@@ -1646,6 +1649,15 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 		}
 	}
 	return maxComponent;
+}
+
+bool Q2ResultListPredicate(Q2ResultNode &a, Q2ResultNode &b) {
+	if( a.people > b.people )
+		return true;
+	if( a.people < b.people )
+		return false;
+	return strcmp( TagIdToName[a.tagId], TagIdToName[b.tagId] ) <= 0;
+	// check for tag name too
 }
 
 void query2(int k, char *date, int date_sz, long qid) {
@@ -1712,14 +1724,18 @@ void query2(int k, char *date, int date_sz, long qid) {
 				}
 			}					// end if this is a valid tag
 		}					// end if we have more than k results
-
 	} // end for each tag component
 
 	// print the K ids from the sorted list - according to the tag names for ties
-	printf("\nq2 [%ld]", qid);
+	results.sort(Q2ResultListPredicate);
+	std::stringstream ss;
+	//printf("\nq2 [%ld]", qid);
 	for( list<Q2ResultNode>::iterator end=results.end(), itTag=results.begin(); itTag != end; itTag++ ){
-		printf("%ld[%ld] ", (*itTag).tagId, (*itTag).people);
+		//printf("%ld[%ld] ", (*itTag).tagId, (*itTag).people);
+		//printf("%ld ", TagIdToName[(*itTag).tagId]);
+		ss << TagIdToName[(*itTag).tagId] << " ";
 	}
+	Answers[qid] = ss.str().c_str();
 }
 
 int BFS_query3(long idA, long idB, int h) {
@@ -2201,6 +2217,7 @@ void readQueries(char *queriesFile) {
 	Answers.resize(N_QUERIES);
 
 	// initialize the vars for the job assignments
+	/*
 	vector<Query1WorkerStruct*> vec1;
 	vec1.reserve(BATCH_Q1 << 1);
 	vector<Query2WorkerStruct*> vec2;
@@ -2209,6 +2226,7 @@ void readQueries(char *queriesFile) {
 	vec3.reserve(BATCH_Q3 << 1);
 	vector<Query4WorkerStruct*> vec4;
 	vec4.reserve(BATCH_Q4 << 1);
+	*/
 	char prevQType = -1;
 	long qid = 0;
 
@@ -2227,9 +2245,11 @@ void readQueries(char *queriesFile) {
 		int queryType = atoi(startLine + 5);
 
 		// check if we need to add a batch of jobs
+		/*
 		if (prevQType != queryType && prevQType != -1) {
-			//addPoolJobs(prevQType, vec1, vec2, vec3, vec4);
+			addPoolJobs(prevQType, vec1, vec2, vec3, vec4);
 		}
+		*/
 
 		// handle the new query
 		switch (queryType) {
@@ -2238,7 +2258,7 @@ void readQueries(char *queriesFile) {
 			*(second - 1) = '\0';
 			char *third = ((char*) memchr(second, ',', 20)) + 1;
 			*(lineEnd - 1) = '\0';
-			//query1(atoi(startLine+7), atoi(second), atoi(third), qid);
+			query1(atoi(startLine+7), atoi(second), atoi(third), qid);
 /*
 			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(
 					sizeof(Query1WorkerStruct));
@@ -2269,7 +2289,7 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = third + 1; // to skip one space
 			int name_sz = lineEnd - 1 - name;
-			//query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
+			query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
 /*
 			char *placeName = (char*) malloc(name_sz + 1);
 			strncpy(placeName, name, name_sz + 1);
@@ -2293,7 +2313,7 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = second + 1; // to skip one space
 			int tag_sz = lineEnd - 1 - name;
-			//query4(atoi(startLine + 7), name, tag_sz, qid);
+			query4(atoi(startLine + 7), name, tag_sz, qid);
 /*
 			char *tagName = (char*) malloc(tag_sz + 1);
 			strncpy(tagName, name, tag_sz + 1);
@@ -2325,10 +2345,10 @@ void readQueries(char *queriesFile) {
 }
 
 int main(int argc, char** argv) {
-	/*
-	 inputDir = argv[1];
-	 queryFile = argv[2];
-	 */
+
+	inputDir = argv[1];
+	queryFile = argv[2];
+
 
 	// MAKE GLOBAL INITIALIZATIONS
 	char msg[100];
@@ -2402,7 +2422,6 @@ int main(int argc, char** argv) {
 	long time_queries_end = getTime();
 	sprintf(msg, "queries process time: %ld", time_queries_end - time_global_start);
 	printOut(msg);
-#endif
 
 	/////////////////////////////////
 	long long time_global_end = getTime();
@@ -2410,6 +2429,11 @@ int main(int argc, char** argv) {
 			time_global_end - time_global_start,
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
+
+
+#endif
+
+
 
 	/*
 	 for(int i=0, sz=Answers1.size(); i<sz; i++){
