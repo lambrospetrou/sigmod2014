@@ -44,7 +44,7 @@ struct lp_threadpool{
 
 
 void lp_threadpool_destroy(lp_threadpool* pool);
-lp_threadpool* lp_threadpool_init( int threads );
+lp_threadpool* lp_threadpool_init( int threads, int cores );
 void lp_threadpool_addjob( lp_threadpool* pool, void *(*func)(int, void *), void* args );
 void lp_threadpool_addjob_nolock( lp_threadpool* pool, void *(*func)(int, void *), void* args);
 //lp_tpjob* lp_threadpool_fetchjob( lp_threadpool* pool );

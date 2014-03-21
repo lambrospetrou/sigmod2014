@@ -39,7 +39,14 @@ using std::tr1::hash;
 
 #define VALID_PLACE_CHARS 256
 
-#define NUM_THREADS 4
+#define WORKER_THREADS 4
+#define NUM_THREADS 5
+#define NUM_CORES 4
+
+#define BATCH_Q1 500
+#define BATCH_Q2 20
+#define BATCH_Q3 10
+#define BATCH_Q4 2
 
 ///////////////////////////////////////////////////////////////////////////////
 // structs
@@ -1294,7 +1301,7 @@ void query1(int p1, int p2, int x, long qid){
 						//printf("q1: [%d]", current.depth + 1);
 						//free(visited);
 						//return;
-						answer = current.depth - 1;
+						answer = current.depth + 1;
 						break;
 					}
 					visited[cAdjacent] = 1;
@@ -1607,8 +1614,24 @@ struct Query1WorkerStruct{
 };
 void* Query1WorkerFunction(int tid, void *args){
 	Query1WorkerStruct *qArgs = (Query1WorkerStruct*)args;
-	//printf("tid[%d] [%d]\n", tid, *(int*)args);
+	//printf("tid[%d] [%d]\n", tid, qArgs->qid);
 	query1(qArgs->p1, qArgs->p2, qArgs->x, qArgs->qid);
+
+	free(qArgs);
+	// end of job
+	return 0;
+}
+
+struct Query2WorkerStruct{
+	int k;
+	char *date;
+	int date_sz;
+	long qid;
+};
+void* Query2WorkerFunction(int tid, void *args){
+	Query2WorkerStruct *qArgs = (Query2WorkerStruct*)args;
+	//printf("tid[%d] [%d]\n", tid, *(int*)args);
+	query2(qArgs->k, qArgs->date, qArgs->date_sz, qArgs->qid);
 
 	free(qArgs);
 	// end of job
@@ -1650,6 +1673,42 @@ void* Query4WorkerFunction(int tid, void *args){
 	return 0;
 }
 
+struct QueryWorkerStruct{
+	void** query_worker_struct;
+	char query_type;
+	int numOfJobs;
+};
+
+void* QueryWorkerFunction(int tid, void *args){
+	QueryWorkerStruct* qworker = (QueryWorkerStruct*)args;
+	switch(qworker->query_type){
+	case 1:
+		for (int i = 0, sz = qworker->numOfJobs; i < sz; i++) {
+			Query1WorkerFunction(tid, qworker->query_worker_struct[i]);
+		}
+		break;
+	case 2:
+		for (int i = 0, sz = qworker->numOfJobs; i < sz; i++) {
+			Query2WorkerFunction(tid, qworker->query_worker_struct[i]);
+		}
+		break;
+	case 3:
+		for (int i = 0, sz = qworker->numOfJobs; i < sz; i++) {
+			Query3WorkerFunction(tid, qworker->query_worker_struct[i]);
+		}
+		break;
+	case 4:
+		for (int i = 0, sz = qworker->numOfJobs; i < sz; i++) {
+			Query4WorkerFunction(tid, qworker->query_worker_struct[i]);
+		}
+		break;
+	}
+	free(qworker->query_worker_struct);
+	free(qworker);
+	// end of job
+	return 0;
+}
+
 //////////////////////////////////////////////////////////////
 
 
@@ -1675,7 +1734,7 @@ void _initializations(){
 	Answers4.reserve(2048);
 
 	// Initialize the threadpool
-	threadpool = lp_threadpool_init( NUM_THREADS );
+	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES );
 }
 
 void _destructor(){
@@ -1683,6 +1742,70 @@ void _destructor(){
 	delete[] PersonToTags;
 	TrieNode_Destructor(PlacesToId);
 	TrieNode_Destructor(TagToIndex);
+}
+
+void addPoolJobs(char prevQType, vector<Query1WorkerStruct*> &vec1,
+		vector<Query2WorkerStruct*> &vec2, vector<Query3WorkerStruct*> &vec3,
+		vector<Query4WorkerStruct*> &vec4){
+	switch(prevQType){
+	case 1:
+	{
+		long totalJobsAssigned=0, totalJobs=vec1.size();
+		int i;
+		while(totalJobsAssigned < totalJobs){
+			QueryWorkerStruct* qws = (QueryWorkerStruct*)malloc(sizeof(QueryWorkerStruct));
+			qws->query_type = 1;
+			qws->query_worker_struct = (void**)malloc(sizeof(Query1WorkerStruct*)*BATCH_Q1);
+			for( i=0; i<BATCH_Q1 && totalJobsAssigned<totalJobs; i++ ){
+				qws->query_worker_struct[i] = vec1[totalJobsAssigned];
+				totalJobsAssigned++;
+			}
+			qws->numOfJobs = i;
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(QueryWorkerFunction), (void*)qws );
+		}
+		vec1.clear();
+	}
+		break;
+	case 2:
+
+		break;
+	case 3:
+	{
+			long totalJobsAssigned=0, totalJobs=vec3.size();
+			int i;
+			while(totalJobsAssigned < totalJobs){
+				QueryWorkerStruct* qws = (QueryWorkerStruct*)malloc(sizeof(QueryWorkerStruct));
+				qws->query_type = 3;
+				qws->query_worker_struct = (void**)malloc(sizeof(Query3WorkerStruct*)*BATCH_Q3);
+				for( i=0; i<BATCH_Q3 && totalJobsAssigned<totalJobs; i++ ){
+					qws->query_worker_struct[i] = vec3[totalJobsAssigned];
+					totalJobsAssigned++;
+				}
+				qws->numOfJobs = i;
+				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(QueryWorkerFunction), (void*)qws );
+			}
+			vec3.clear();
+		}
+		break;
+	case 4:
+	{
+			long totalJobsAssigned=0, totalJobs=vec4.size();
+			int i;
+			while(totalJobsAssigned < totalJobs){
+				QueryWorkerStruct* qws = (QueryWorkerStruct*)malloc(sizeof(QueryWorkerStruct));
+				qws->query_type = 4;
+				qws->query_worker_struct = (void**)malloc(sizeof(Query4WorkerStruct*)*BATCH_Q4);
+				for( i=0; i<BATCH_Q4 && totalJobsAssigned<totalJobs; i++ ){
+					qws->query_worker_struct[i] = vec4[totalJobsAssigned];
+					totalJobsAssigned++;
+				}
+				qws->numOfJobs = i;
+				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(QueryWorkerFunction), (void*)qws );
+			}
+			vec4.clear();
+		}
+		break;
+	}
 }
 
 void readQueries(char *queriesFile){
@@ -1693,8 +1816,17 @@ void readQueries(char *queriesFile){
 	path[0] = '\0';
 	strcat(path, queriesFile);
 
+	// COUNT THE NUMBER OF QUERIES
 	N_QUERIES = countFileLines(path);
 	Answers.resize(N_QUERIES);
+
+	// initialize the vars for the job assignments
+	vector<Query1WorkerStruct*> vec1; vec1.reserve(BATCH_Q1<<1);
+	vector<Query2WorkerStruct*> vec2; vec2.reserve(BATCH_Q2<<1);
+	vector<Query3WorkerStruct*> vec3; vec3.reserve(BATCH_Q3<<1);
+	vector<Query4WorkerStruct*> vec4; vec4.reserve(BATCH_Q4<<1);
+	char prevQType = -1;
+	long qid=0;
 
 	FILE *input = fopen(path, "r");
 	if (input == NULL) {
@@ -1703,13 +1835,19 @@ void readQueries(char *queriesFile){
 	long lSize;
 	char *buffer = getFileBytes(input, &lSize);
 
-	long qid=0;
 	char *startLine = buffer;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	while (startLine < EndOfFile) {
 		lineEnd = (char*) memchr(startLine, '\n', 100);
 		int queryType = atoi(startLine+5);
+
+		// check if we need to add a batch of jobs
+		if( prevQType != queryType && prevQType != -1 ){
+			//addPoolJobs(prevQType, vec1, vec2, vec3, vec4);
+		}
+
+		// handle the new query
 		switch( queryType ){
 		case 1:
 		{
@@ -1724,6 +1862,7 @@ void readQueries(char *queriesFile){
 			qwstruct->p2 = atoi(second);
 			qwstruct->x = atoi(third);
 			qwstruct->qid = qid;
+			vec1.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(Query1WorkerFunction), (void*)qwstruct );
 
 			break;
@@ -1734,7 +1873,7 @@ void readQueries(char *queriesFile){
 			*(second - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *date = second + 1; // to skip one space
-			query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
+			//query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
 			break;
 		}
 		case 3:
@@ -1756,6 +1895,7 @@ void readQueries(char *queriesFile){
 			qwstruct->name = placeName;
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
+			vec3.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
@@ -1776,6 +1916,7 @@ void readQueries(char *queriesFile){
 			qwstruct->tag = tagName;
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
+			vec4.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(Query4WorkerFunction), qwstruct );
 
 			break;
@@ -1787,9 +1928,12 @@ void readQueries(char *queriesFile){
 		}
 		}
 		startLine = lineEnd+1;
+		prevQType = queryType;
 		qid++;
 	}
 	free(buffer);
+
+	//addPoolJobs(prevQType, vec1, vec2, vec3, vec4);
 }
 
 

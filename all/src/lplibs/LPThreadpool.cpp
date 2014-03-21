@@ -115,7 +115,6 @@ void inline lp_threadpool_fetchjob( lp_threadpool* pool, lp_tpjob *njob ){
 	njob->func = job->func;
 
 	free( job );
-	//st_mempool_free( st_main_pool, job );
 
 	// pool unlock
 	pthread_mutex_unlock( &pool->mutex_pool );
@@ -152,7 +151,7 @@ void* lp_tpworker_thread( void* _pool ){
 	}
 	return 0;
 }
-lp_threadpool* lp_threadpool_init( int threads ){
+lp_threadpool* lp_threadpool_init( int threads, int cores ){
 	lp_threadpool* pool = (lp_threadpool*)malloc( sizeof(lp_threadpool) );
 	pool->workers_ids = 1; // threads start from 1 to NTHREADS
 	pool->nthreads = threads;
@@ -169,13 +168,23 @@ lp_threadpool* lp_threadpool_init( int threads ){
 	// lock pool in order to prevent worker threads to start before initializing the whole pool
 	pthread_mutex_lock( &pool->mutex_pool );
 
+	cpu_set_t mask;
+	CPU_ZERO(&mask);
+	CPU_SET( 0 , &mask);
+	if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &mask) != 0){
+		fprintf(stderr, "Error setting thread affinity\n");
+	}
+
+
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*threads);
 	for( int i=0; i<threads; i++ ){
 		pthread_create( &worker_threads[i], NULL, reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
 		fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
 
-//		CPU_SET( (i % 24)+1 , &cpuset );
-//		pthread_setaffinity_np( worker_threads[i], sizeof(cpu_set_t), &cpuset );
+		CPU_SET( (i % cores) , &mask);
+		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0){
+			fprintf(stderr, "Error setting thread affinity\n");
+		}
 	}
 
 	pool->initialSleepThreads = (char*)malloc(threads);
