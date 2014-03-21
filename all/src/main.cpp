@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include <string>
+#include <list>
 #include <vector>
 #include <queue>
 #include <map>
@@ -72,53 +73,73 @@ struct PersonStruct {
 	long *adjacentPersonWeightsSorted;
 
 	int subgraphNumber;
-} __attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
+}__attribute__((aligned(CACHE_LINE_SIZE)));
+// Aligned for cache lines;
 
 struct PersonCommentsStruct {
 	MAP_INT_INT commentsToPerson;
 	MAP_INT_INT adjacentPersonWeights;
 };
 
-struct TrieNode{
+struct TrieNode {
 	char valid;
 	long realId;
 	long vIndex;
 	TrieNode* children[VALID_PLACE_CHARS];
-} __attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
+}__attribute__((aligned(CACHE_LINE_SIZE)));
+// Aligned for cache lines;
 
-struct PlaceNodeStruct{
+struct PlaceNodeStruct {
 	long id;
 	long index;
 	vector<long> personsThis;
 	vector<long> placesPartOfIndex;
-}__attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
+}__attribute__((aligned(CACHE_LINE_SIZE)));
+// Aligned for cache lines;
 
-
-struct PersonTags{
+struct PersonTags {
 	vector<long> tags;
-}__attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
+}__attribute__((aligned(CACHE_LINE_SIZE)));
+// Aligned for cache lines;
 
-struct TagNode{
+struct TagNode {
 	long id;
 	TrieNode *tagNode;
 	vector<long> forums;
-} __attribute__((aligned(CACHE_LINE_SIZE)));  // Aligned for cache lines;
+}__attribute__((aligned(CACHE_LINE_SIZE)));
+// Aligned for cache lines;
 
+// final sorted lists
+struct Q2ListNode {
+	long personId;
+	unsigned int birth;
+	unsigned int component_size; // maximum cluster from this date - NOT USED YET
+	//unsigned int maxBirth; // [0] of the sorted list
+	//unsigned int peopleBelow;
+};
+
+// intermediate tree map
+struct TagSubStruct {
+	long tagId;
+	long subId;
+	vector<Q2ListNode*> people;
+};
 
 /////////////////////////////
 // QUERY SPECIFIC
 /////////////////////////////
-struct QueryBFS{
-	QueryBFS(long id, long d){
+struct QueryBFS {
+	QueryBFS(long id, long d) {
 		person = id;
 		depth = d;
 	}
 	long person;
 	int depth;
-};  // Aligned for cache lines;
+};
+// Aligned for cache lines;
 
-struct Query3PQ{
-	Query3PQ(long a, long b, int ct){
+struct Query3PQ {
+	Query3PQ(long a, long b, int ct) {
 		idA = a;
 		idB = b;
 		commonTags = ct;
@@ -126,26 +147,27 @@ struct Query3PQ{
 	long idA;
 	long idB;
 	int commonTags;
-};  // Aligned for cache lines;
-class Query3PQ_Comparator{
+};
+// Aligned for cache lines;
+class Query3PQ_Comparator {
 public:
-    bool operator() (const Query3PQ &left, const Query3PQ &right){
-        if( left.commonTags > right.commonTags )
-        	return false;
-        if( left.commonTags < right.commonTags )
-        	return true;
-        if( left.idA < right.idA )
-        	return false;
-        if( left.idA > right.idA )
-        	return true;
-        if( left.idB <= right.idB )
-        	return false;
-        return true;
-    }
+	bool operator()(const Query3PQ &left, const Query3PQ &right) {
+		if (left.commonTags > right.commonTags)
+			return false;
+		if (left.commonTags < right.commonTags)
+			return true;
+		if (left.idA < right.idA)
+			return false;
+		if (left.idA > right.idA)
+			return true;
+		if (left.idB <= right.idB)
+			return false;
+		return true;
+	}
 };
 
-struct Query4PersonStruct{
-	Query4PersonStruct(long id, int sp, int rp, double central){
+struct Query4PersonStruct {
+	Query4PersonStruct(long id, int sp, int rp, double central) {
 		person = id;
 		s_p = sp;
 		r_p = rp;
@@ -155,19 +177,32 @@ struct Query4PersonStruct{
 	int s_p;
 	int r_p;
 	double centrality;
-};  // Aligned for cache lines;
+};
+// Aligned for cache lines;
 
-bool Query4PersonStructPredicate(const Query4PersonStruct& d1, const Query4PersonStruct& d2)
-{
-	if( d1.centrality == d2.centrality )
+bool Query4PersonStructPredicate(const Query4PersonStruct& d1,
+		const Query4PersonStruct& d2) {
+	if (d1.centrality == d2.centrality)
 		return d1.person <= d2.person;
 	return d1.centrality > d2.centrality;
 }
 
-bool Query4PersonStructPredicateId(const Query4PersonStruct& d1, const Query4PersonStruct& d2)
-{
+bool Query4PersonStructPredicateId(const Query4PersonStruct& d1,
+		const Query4PersonStruct& d2) {
 	// sort in descending order
 	return d1.person >= d2.person;
+}
+
+bool DescendingIntPredicate(int a, int b) {
+	return a >= b;
+}
+
+bool Q2ListNodePredicate(Q2ListNode* a, Q2ListNode* b) {
+	return a->birth >= b->birth;
+}
+
+bool Q2ListPredicate(TagSubStruct* a, TagSubStruct* b) {
+	return a->people.size() >= b->people.size();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -175,12 +210,10 @@ bool Query4PersonStructPredicateId(const Query4PersonStruct& d1, const Query4Per
 ///////////////////////////////////////////////////////////////////////////////
 
 TrieNode* TrieNode_Constructor();
-void TrieNode_Destructor( TrieNode* node );
-TrieNode* TrieInsert( TrieNode* node, const char* name, char name_sz, long id, long index);
-TrieNode* TrieFind( TrieNode* root, const char* name, char name_sz );
-
-
-
+void TrieNode_Destructor(TrieNode* node);
+TrieNode* TrieInsert(TrieNode* node, const char* name, char name_sz, long id,
+		long index);
+TrieNode* TrieFind(TrieNode* root, const char* name, char name_sz);
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBAL STRUCTURES
@@ -245,7 +278,11 @@ MAP_INT_INT *OrgToPlace;
 
 MAP_INT_INT *TagIdToIndex;
 
+// TODO
 int *PersonBirthdays;
+typedef std::tr1::unordered_map<unsigned long, TagSubStruct*, hash<unsigned long> > MAP_LONG_TSPTR;
+MAP_LONG_TSPTR TagSubBirthdays;
+vector<TagSubStruct*> TagSubFinals;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -270,50 +307,54 @@ long long getTime() {
 	return t1;
 }
 
-void mergeCommentsWeights(long *weights, long a[], long low, long mid, long high, long *b, long *bWeights)
-{
-    long i = low, j = mid + 1, k = low;
+void mergeCommentsWeights(long *weights, long a[], long low, long mid,
+		long high, long *b, long *bWeights) {
+	long i = low, j = mid + 1, k = low;
 
-    while (i <= mid && j <= high) {
-    	//if (weights[i] <= weights[j]){
-    	if (weights[i] >= weights[j]){
-            b[k] = a[i];
-            bWeights[k] = weights[i];
-            k++; i++;
-        }else{
-        	b[k] = a[j];
-        	bWeights[k] = weights[j];
-        	k++; j++;
-        }
-    }
-    while (i <= mid){
-    	b[k] = a[i];
-    	bWeights[k] = weights[i];
-    	k++; i++;
-    }
+	while (i <= mid && j <= high) {
+		//if (weights[i] <= weights[j]){
+		if (weights[i] >= weights[j]) {
+			b[k] = a[i];
+			bWeights[k] = weights[i];
+			k++;
+			i++;
+		} else {
+			b[k] = a[j];
+			bWeights[k] = weights[j];
+			k++;
+			j++;
+		}
+	}
+	while (i <= mid) {
+		b[k] = a[i];
+		bWeights[k] = weights[i];
+		k++;
+		i++;
+	}
 
-    while (j <= high){
-    	b[k] = a[j];
-    	bWeights[k] = weights[j];
-    	k++; j++;
-    }
+	while (j <= high) {
+		b[k] = a[j];
+		bWeights[k] = weights[j];
+		k++;
+		j++;
+	}
 
-    k--;
-    while (k >= low) {
-        a[k] = b[k];
-        weights[k] = bWeights[k];
-        k--;
-    }
+	k--;
+	while (k >= low) {
+		a[k] = b[k];
+		weights[k] = bWeights[k];
+		k--;
+	}
 }
 
-void mergesortComments(long* weights, long a[], long low, long high, long *b, long *bWeights)
-{
-    if (low < high) {
-        long m = ((high - low)>>1)+low;
-        mergesortComments(weights, a, low, m, b , bWeights);
-        mergesortComments(weights, a, m + 1, high, b, bWeights);
-        mergeCommentsWeights(weights, a, low, m, high, b, bWeights);
-    }
+void mergesortComments(long* weights, long a[], long low, long high, long *b,
+		long *bWeights) {
+	if (low < high) {
+		long m = ((high - low) >> 1) + low;
+		mergesortComments(weights, a, low, m, b, bWeights);
+		mergesortComments(weights, a, m + 1, high, b, bWeights);
+		mergeCommentsWeights(weights, a, low, m, high, b, bWeights);
+	}
 }
 
 long countFileLines(FILE *file) {
@@ -323,7 +364,7 @@ long countFileLines(FILE *file) {
 	return lines;
 }
 
-long countFileLines(char *file){
+long countFileLines(char *file) {
 	//static const auto BUFFER_SIZE = 16 * 1024;
 	int fd = open(file, O_RDONLY);
 	if (fd == -1)
@@ -336,27 +377,27 @@ long countFileLines(char *file){
 	long lines = 0;
 	long bytes_read;
 
-	while ( (bytes_read = read(fd, buf, FILE_BUFFER_SIZE)) > 0) {
+	while ((bytes_read = read(fd, buf, FILE_BUFFER_SIZE)) > 0) {
 		if (bytes_read == -1)
 			printErr("countFileLines()::Could not read from file!");
 		if (!bytes_read)
 			break;
-		for (char *p = buf;(p = (char*)memchr(p, '\n', (buf + bytes_read) - p));
-				++p)
+		for (char *p = buf;
+				(p = (char*) memchr(p, '\n', (buf + bytes_read) - p)); ++p)
 			++lines;
 	}
 
 	return lines;
 }
 
-long getFileSize(FILE *file){
+long getFileSize(FILE *file) {
 	fseek(file, 0, SEEK_END);
 	long lSize = ftell(file);
 	rewind(file);
 	return lSize;
 }
 
-char* getFileBytes(FILE *file, long *lSize){
+char* getFileBytes(FILE *file, long *lSize) {
 	setvbuf(file, NULL, _IOFBF, FILE_VBUF_SIZE);
 	// obtain file size:
 	*lSize = getFileSize(file);
@@ -375,7 +416,7 @@ char* getFileBytes(FILE *file, long *lSize){
 
 // converts the date into an integer representing that date
 // e.g 1990-07-31 = 19900731
-static inline int getDateAsInt(char *date, int date_sz){
+static inline int getDateAsInt(char *date, int date_sz) {
 	int dateNum = 0;
 	for (int i = 0; i < date_sz; i++) {
 		if (date[i] != '-') {
@@ -385,6 +426,20 @@ static inline int getDateAsInt(char *date, int date_sz){
 		}
 	}
 	return dateNum;
+}
+
+unsigned long long getDateAsULL(const char *numStr, int num_sz) {
+	unsigned long long num = 0;
+	for (int i = 0; i < num_sz; i++) {
+		// dateNum = dateNum*8 + dateNum*2 = dateNum * 10
+		num = (num << 3) + (num << 1);
+		num += numStr[i] - '0';
+	}
+	return num;
+}
+
+unsigned long CantorPairingFunction(long k1, long k2) {
+	return (((k1 + k2) * (k1 + k2 + 14)) >> 1) + k2;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -414,7 +469,7 @@ void readPersons(char* inputDir) {
 
 	// TODO - DO IT IN ONE FILE OPEN
 	// TODO - read birthdays
-	PersonBirthdays = (int*)malloc(sizeof(int)*N_PERSONS);
+	PersonBirthdays = (int*) malloc(sizeof(int) * N_PERSONS);
 	input = fopen(path, "r");
 	if (input == NULL) {
 		printErr("could not open person.csv!");
@@ -429,16 +484,16 @@ void readPersons(char* inputDir) {
 	char *lineEnd;
 	char *dateStartDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', 100);
-		dateStartDivisor = (char*) memchr(startLine, '|', 100);
+		lineEnd = (char*) memchr(startLine, '\n', 1000);
+		dateStartDivisor = (char*) memchr(startLine, '|', 1000);
 		*dateStartDivisor = '\0';
 		long idPerson = atol(startLine);
-		dateStartDivisor = (char*) memchr(dateStartDivisor+1, '|', 100);
-		dateStartDivisor = (char*) memchr(dateStartDivisor+1, '|', 100);
-		dateStartDivisor = (char*) memchr(dateStartDivisor+1, '|', 100);
+		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', 1000);
+		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', 1000);
+		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', 1000);
 		*lineEnd = '\0';
 
-		int dateInt = getDateAsInt(dateStartDivisor+1, 10);
+		int dateInt = getDateAsInt(dateStartDivisor + 1, 10);
 		//printf("%d\n", dateInt);
 		PersonBirthdays[idPerson] = dateInt;
 
@@ -455,7 +510,7 @@ void readPersons(char* inputDir) {
 	PersonToTags = new PersonTags[N_PERSONS];
 }
 
-long calculateAndAssignSubgraphs(){
+long calculateAndAssignSubgraphs() {
 	char *visited = (char*) malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
 	long currentSubgraph = 0;
@@ -499,7 +554,7 @@ long calculateAndAssignSubgraphs(){
 	return currentSubgraph;
 }
 
-void readPersonKnowsPerson(char *inputDir){
+void readPersonKnowsPerson(char *inputDir) {
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -516,16 +571,18 @@ void readPersonKnowsPerson(char *inputDir){
 	// allocate memory to contain the whole file:
 	char* buffer = (char*) malloc(sizeof(char) * lSize);
 	if (buffer == NULL) {
-		printErr("readPersonKnowsPerson:: No memory while reading Person_Knows_Person!!!");
+		printErr(
+				"readPersonKnowsPerson:: No memory while reading Person_Knows_Person!!!");
 	}
 
 	// copy the file into the buffer:
 	size_t result = fread(buffer, 1, lSize, input);
 	if (result != lSize) {
-		printErr("readPersonKnowsPerson:: Could not read the whole file in memory!!!");
+		printErr(
+				"readPersonKnowsPerson:: Could not read the whole file in memory!!!");
 	}
 
-	long edges=0;
+	long edges = 0;
 
 	// the whole file is now loaded in the memory buffer.
 	vector<long> ids;
@@ -548,8 +605,9 @@ void readPersonKnowsPerson(char *inputDir){
 				// store the neighbors
 				//Persons[idA].adjacentPersons = ids;
 				PersonStruct *person = &Persons[prevId];
-				person->adjacentPersonsIds = (long*)malloc(sizeof(long)*ids.size());
-				for( long i=0,sz=ids.size(); i<sz; i++ ){
+				person->adjacentPersonsIds = (long*) malloc(
+						sizeof(long) * ids.size());
+				for (long i = 0, sz = ids.size(); i < sz; i++) {
 					person->adjacentPersonsIds[i] = ids[i];
 				}
 				person->adjacents = ids.size();
@@ -565,7 +623,7 @@ void readPersonKnowsPerson(char *inputDir){
 	}
 
 	// check if there are edges to be added for the last person
-	if( !ids.empty() ){
+	if (!ids.empty()) {
 		PersonStruct *person = &Persons[prevId];
 		person->adjacentPersonsIds = (long*) malloc(sizeof(long) * ids.size());
 		for (int i = 0, sz = ids.size(); i < sz; i++) {
@@ -587,37 +645,41 @@ void readPersonKnowsPerson(char *inputDir){
 	N_SUBGRAPHS = calculateAndAssignSubgraphs();
 }
 
-void postProcessComments(){
+void postProcessComments() {
 	// for each person we will get each neighbor and put our edge weight in an array
 	// to speed up look up time and then sort them
-	for( long i=0,sz=N_PERSONS; i<sz; i++ ){
-		if( Persons[i].adjacents > 0 ){
+	for (long i = 0, sz = N_PERSONS; i < sz; i++) {
+		if (Persons[i].adjacents > 0) {
 			long adjacents = Persons[i].adjacents;
 			long *adjacentIds = Persons[i].adjacentPersonsIds;
-			MAP_INT_INT *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
-			Persons[i].adjacentPersonWeightsSorted = (long*)malloc(sizeof(long)*adjacents);
+			MAP_INT_INT *weightsMap =
+					&(PersonsComments[i].adjacentPersonWeights);
+			Persons[i].adjacentPersonWeightsSorted = (long*) malloc(
+					sizeof(long) * adjacents);
 			long *weights = Persons[i].adjacentPersonWeightsSorted;
-			for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
+			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz;
+					cAdjacent++) {
 				weights[cAdjacent] = (*(weightsMap))[adjacentIds[cAdjacent]];
 			}
 			// now we need to sort them
 			/*
-			printf("\n\nUnsorted: \n");
-			for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
-				printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], weights[cAdjacent]);
-			}
+			 printf("\n\nUnsorted: \n");
+			 for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
+			 printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], weights[cAdjacent]);
+			 }
 			 */
-			long *temp = (long*)malloc(sizeof(long)*(adjacents));
-		    long *tempWeights = (long*)malloc(sizeof(long)*(adjacents));
-			mergesortComments(weights, adjacentIds, 0, adjacents-1, temp, tempWeights);
+			long *temp = (long*) malloc(sizeof(long) * (adjacents));
+			long *tempWeights = (long*) malloc(sizeof(long) * (adjacents));
+			mergesortComments(weights, adjacentIds, 0, adjacents - 1, temp,
+					tempWeights);
 			free(temp);
 			free(tempWeights);
 			/*
-			printf("\nSorted: \n");
-			for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
-				printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], Persons[i].adjacentPersonWeightsSorted[cAdjacent]);
-			}
-			*/
+			 printf("\nSorted: \n");
+			 for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
+			 printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], Persons[i].adjacentPersonWeightsSorted[cAdjacent]);
+			 }
+			 */
 		}
 	}
 	// since we have all the data needed in arrays we can delete the hash maps
@@ -695,7 +757,7 @@ void readComments(char* inputDir) {
 	buffer = getFileBytes(input, &lSize);
 
 #ifdef DEBUGGING
-		comments=0;
+	comments=0;
 #endif
 
 	// process the whole file in memory
@@ -707,9 +769,9 @@ void readComments(char* inputDir) {
 		lineEnd = (char*) memchr(startLine, '\n', len);
 		idDivisor = (char*) memchr(startLine, '|', len);
 		*idDivisor = '\0';
-		if( lineEnd != NULL ){
+		if (lineEnd != NULL) {
 			*lineEnd = '\0';
-		}else{
+		} else {
 			lineEnd = EndOfFile;
 		}
 		long idA = atol(startLine);
@@ -719,7 +781,7 @@ void readComments(char* inputDir) {
 		long personA = (*CommentToPerson)[idA];
 		long personB = (*CommentToPerson)[idB];
 
-		if( personA != personB ){
+		if (personA != personB) {
 			// increase the counter for the comments from A to B
 			int a_b = PersonsComments[personA].commentsToPerson[personB] + 1;
 			PersonsComments[personA].commentsToPerson[personB] = a_b;
@@ -728,7 +790,7 @@ void readComments(char* inputDir) {
 			// - Leave only the min(comments A-to-B, comments B-to-A) at each edge
 			///////////////////////////////////////////////////////////////////
 			int b_a = PersonsComments[personB].commentsToPerson[personA];
-			if( a_b <= b_a ){
+			if (a_b <= b_a) {
 				PersonsComments[personA].adjacentPersonWeights[personB] = a_b;
 				PersonsComments[personB].adjacentPersonWeights[personA] = a_b;
 			}
@@ -755,7 +817,7 @@ void readComments(char* inputDir) {
 
 }
 
-void readPlaces(char *inputDir){
+void readPlaces(char *inputDir) {
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -771,7 +833,7 @@ void readPlaces(char *inputDir){
 	char msg[100];
 #endif
 
-	long places=0;
+	long places = 0;
 	// process the whole file in memory
 	// skip the first line
 	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
@@ -783,21 +845,22 @@ void readPlaces(char *inputDir){
 		int len = EndOfFile - startLine;
 		lineEnd = (char*) memchr(startLine, '\n', len);
 		idDivisor = (char*) memchr(startLine, '|', len);
-		nameDivisor = (char*) memchr(idDivisor+1, '|', len);
+		nameDivisor = (char*) memchr(idDivisor + 1, '|', len);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		*nameDivisor = '\0';
 		long id = atol(startLine);
-		char *name = idDivisor+1;
+		char *name = idDivisor + 1;
 
 		// insert the place into the Trie for PlacesToId
 		// we first insert into the trie in order to get the Place node that already exists if any
 		// for this place, or the new one that was created with this insertion.
 		// this way we will always get the same index for the same place name regardless of id
-		TrieNode *insertedPlace = TrieInsert(PlacesToId, name, nameDivisor-name, id, places);
+		TrieNode *insertedPlace = TrieInsert(PlacesToId, name,
+				nameDivisor - name, id, places);
 		// create a new Place structure only if this was a new Place and not an existing place with
 		// a different id, like Asia or Brasil
-		if( insertedPlace->realId == id ){
+		if (insertedPlace->realId == id) {
 			PlaceNodeStruct *node = new PlaceNodeStruct();
 			node->id = id;
 			node->index = insertedPlace->vIndex;
@@ -821,8 +884,7 @@ void readPlaces(char *inputDir){
 #endif
 }
 
-
-void readPlacePartOfPlace(char *inputDir){
+void readPlacePartOfPlace(char *inputDir) {
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -852,13 +914,13 @@ void readPlacePartOfPlace(char *inputDir){
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idA = atol(startLine);
-		long idB = atol(idDivisor+1);
+		long idB = atol(idDivisor + 1);
 
-		if( idA != idB ){
+		if (idA != idB) {
 			// insert the place idA into the part of place idB
 			long indexA = (*PlaceIdToIndex)[idA];
 			long indexB = (*PlaceIdToIndex)[idB];
-			if( indexA != indexB ){
+			if (indexA != indexB) {
 				Places[indexB]->placesPartOfIndex.push_back(indexA);
 			}
 		}
@@ -880,8 +942,7 @@ void readPlacePartOfPlace(char *inputDir){
 
 }
 
-
-void readPersonLocatedAtPlace(char *inputDir){
+void readPersonLocatedAtPlace(char *inputDir) {
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -911,7 +972,7 @@ void readPersonLocatedAtPlace(char *inputDir){
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idPerson = atol(startLine);
-		long idPlace = atol(idDivisor+1);
+		long idPlace = atol(idDivisor + 1);
 
 		// insert the place idA into the part of place idB
 		long indexPlace = (*PlaceIdToIndex)[idPlace];
@@ -930,7 +991,7 @@ void readPersonLocatedAtPlace(char *inputDir){
 #ifdef DEBUGGING
 
 	long c=0;
-	for(unsigned long i=0; i<Places.size(); i++){
+	for(unsigned long i=0; i<Places.size(); i++) {
 		c += Places[i]->personsThis.size();
 		//printf("%ld - %ld\n", i, Places[i]->personsThis.size());
 	}
@@ -940,8 +1001,7 @@ void readPersonLocatedAtPlace(char *inputDir){
 #endif
 }
 
-
-void readOrgsLocatedAtPlace(char *inputDir){
+void readOrgsLocatedAtPlace(char *inputDir) {
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -971,7 +1031,7 @@ void readOrgsLocatedAtPlace(char *inputDir){
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idOrg = atol(startLine);
-		long idPlace = atol(idDivisor+1);
+		long idPlace = atol(idDivisor + 1);
 
 		// insert the place idA into the part of place idB
 		long indexPlace = (*PlaceIdToIndex)[idPlace];
@@ -998,12 +1058,9 @@ void readOrgsLocatedAtPlace(char *inputDir){
 	PlaceIdToIndex = NULL;
 }
 
-void readPersonWorksStudyAtOrg(char *inputDir){
+void readPersonWorksStudyAtOrg(char *inputDir) {
 	char path[1024];
-	char *paths[2] = {
-		CSV_PERSON_STUDYAT_ORG,
-		CSV_WORKAT_ORG
-	};
+	char *paths[2] = { CSV_PERSON_STUDYAT_ORG, CSV_WORKAT_ORG };
 
 	// we need tod this twice for the files above
 	for (int i = 0; i < 2; i++) {
@@ -1033,11 +1090,11 @@ void readPersonWorksStudyAtOrg(char *inputDir){
 			int len = EndOfFile - startLine;
 			lineEnd = (char*) memchr(startLine, '\n', len);
 			idDivisor = (char*) memchr(startLine, '|', len);
-			orgDivisor = (char*) memchr(idDivisor+1, '|', len);
+			orgDivisor = (char*) memchr(idDivisor + 1, '|', len);
 			*idDivisor = '\0';
 			*orgDivisor = '\0';
 			long idPerson = atol(startLine);
-			long idOrg = atol(idDivisor+1);
+			long idOrg = atol(idDivisor + 1);
 
 			// insert the place idA into the part of place idB
 			long indexPlace = (*OrgToPlace)[idOrg];
@@ -1058,15 +1115,15 @@ void readPersonWorksStudyAtOrg(char *inputDir){
 		printOut(msg);
 #endif
 
-	}// end of file processing
+	}		// end of file processing
 
-	// safe to delete this vector since we do not need it anymore
+			// safe to delete this vector since we do not need it anymore
 	OrgToPlace->clear();
 	delete OrgToPlace;
 	OrgToPlace = NULL;
 }
 
-void readPersonHasInterestTag(char *inputDir){
+void readPersonHasInterestTag(char *inputDir) {
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -1089,6 +1146,7 @@ void readPersonHasInterestTag(char *inputDir){
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
+
 	while (startLine < EndOfFile) {
 		int len = EndOfFile - startLine;
 		lineEnd = (char*) memchr(startLine, '\n', len);
@@ -1096,10 +1154,24 @@ void readPersonHasInterestTag(char *inputDir){
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long personId = atol(startLine);
-		long tagId = atol(idDivisor+1);
+		long tagId = atol(idDivisor + 1);
 
 		PersonToTags[personId].tags.push_back(tagId);
 		//printf("%ld %ld\n", idA, idB);
+
+		int subgraph = Persons[personId].subgraphNumber;
+		unsigned long key = CantorPairingFunction(tagId, subgraph);
+		if (TagSubBirthdays.find(key) == TagSubBirthdays.end()) {
+			TagSubStruct *newTag = new TagSubStruct();
+			newTag->subId = subgraph;
+			newTag->tagId = tagId;
+			TagSubBirthdays[key] = newTag;
+		}
+		Q2ListNode *newPerson = new Q2ListNode();
+		newPerson->birth = PersonBirthdays[personId];
+		newPerson->personId = personId;
+		newPerson->component_size = 0;
+		TagSubBirthdays[key]->people.push_back(newPerson);
 
 		startLine = lineEnd + 1;
 #ifdef DEBUGGING
@@ -1111,9 +1183,10 @@ void readPersonHasInterestTag(char *inputDir){
 	free(buffer);
 
 	// sort the tags to make easy the comparison
-	// TODO - create signatures for the tags insteads
-	for( long i=0; i<N_PERSONS; i++ ){
-		std::stable_sort(PersonToTags[i].tags.begin(), PersonToTags[i].tags.end());
+	// TODO - create signatures for the tags instead
+	for (long i = 0; i < N_PERSONS; i++) {
+		std::stable_sort(PersonToTags[i].tags.begin(),
+				PersonToTags[i].tags.end());
 	}
 
 #ifdef DEBUGGING
@@ -1123,7 +1196,7 @@ void readPersonHasInterestTag(char *inputDir){
 
 }
 
-void readTags(char *inputDir){
+void readTags(char *inputDir) {
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -1139,7 +1212,7 @@ void readTags(char *inputDir){
 	char msg[100];
 #endif
 
-	long tags=0;
+	long tags = 0;
 	// process the whole file in memory
 	// skip the first line
 	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
@@ -1151,21 +1224,22 @@ void readTags(char *inputDir){
 		int len = EndOfFile - startLine;
 		lineEnd = (char*) memchr(startLine, '\n', len);
 		idDivisor = (char*) memchr(startLine, '|', len);
-		nameDivisor = (char*) memchr(idDivisor+1, '|', len);
+		nameDivisor = (char*) memchr(idDivisor + 1, '|', len);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		*nameDivisor = '\0';
 		long id = atol(startLine);
-		char *name = idDivisor+1;
+		char *name = idDivisor + 1;
 
 		// insert the tag into the Trie for TagToIndex
 		// we first insert into the trie in order to get the Place node that already exists if any
 		// for this place, or the new one that was created with this insertion.
 		// this way we will always get the same index for the same place name regardless of id
-		TrieNode *insertedTag = TrieInsert(TagToIndex, name, nameDivisor-name, id, tags);
+		TrieNode *insertedTag = TrieInsert(TagToIndex, name, nameDivisor - name,
+				id, tags);
 		// create a new Place structure only if this was a new Place and not an existing place with
 		// a different id, like Asia or Brazil
-		if( insertedTag->realId == id ){
+		if (insertedTag->realId == id) {
 			TagNode *node = new TagNode();
 			node->id = id;
 			node->tagNode = insertedTag;
@@ -1190,7 +1264,7 @@ void readTags(char *inputDir){
 #endif
 }
 
-void readForumHasTag(char *inputDir){
+void readForumHasTag(char *inputDir) {
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -1220,7 +1294,7 @@ void readForumHasTag(char *inputDir){
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long forumId = atol(startLine);
-		long tagId = atol(idDivisor+1);
+		long tagId = atol(idDivisor + 1);
 
 		// insert the forum into the tag
 		long tagIndex = (*TagIdToIndex)[tagId];
@@ -1245,7 +1319,7 @@ void readForumHasTag(char *inputDir){
 	delete TagIdToIndex;
 }
 
-void readForumHasMember(char *inputDir){
+void readForumHasMember(char *inputDir) {
 	char path[1024];
 	path[0] = '\0';
 	strcat(path, inputDir);
@@ -1272,11 +1346,11 @@ void readForumHasMember(char *inputDir){
 		int len = EndOfFile - startLine;
 		lineEnd = (char*) memchr(startLine, '\n', len);
 		idDivisor = (char*) memchr(startLine, '|', len);
-		dateDivisor = (char*) memchr(idDivisor+1, '|', len);
+		dateDivisor = (char*) memchr(idDivisor + 1, '|', len);
 		*idDivisor = '\0';
 		*dateDivisor = '\0';
 		long forumId = atol(startLine);
-		long personId = atol(idDivisor+1);
+		long personId = atol(idDivisor + 1);
 
 		// insert the person directly into the forum members
 		Forums[forumId].push_back(personId);
@@ -1297,23 +1371,43 @@ void readForumHasMember(char *inputDir){
 }
 
 ///////////////////////////////////////////////////////////////////////
+// PROCESSING FUNCTIONS
+///////////////////////////////////////////////////////////////////////
+
+void postProcessTagBirthdays() {
+	for (MAP_LONG_TSPTR::iterator it = TagSubBirthdays.begin(),
+			end = TagSubBirthdays.end(); it != end;	it++) {
+		TagSubStruct*tagStruct = (*it).second;
+		TagSubFinals.push_back(tagStruct);
+		// sort the birthdays of each TagSubgraph
+		std::stable_sort(tagStruct->people.begin(), tagStruct->people.end(),
+				Q2ListNodePredicate);
+	}
+	// sort the final list of tags descending on the list size
+	std::stable_sort(TagSubFinals.begin(), TagSubFinals.end(), Q2ListPredicate);
+
+	// TODO - dynamic memory allocation to DELETE
+	TagSubBirthdays.clear();
+}
+
+///////////////////////////////////////////////////////////////////////
 // QUERY EXECUTORS
 ///////////////////////////////////////////////////////////////////////
 
-void query1(int p1, int p2, int x, long qid){
+void query1(int p1, int p2, int x, long qid) {
 	//printf("query1: %d %d %d\n", p1, p2, x);
 
-	int answer=-1;
+	int answer = -1;
 
-	char *visited = (char*)malloc(N_PERSONS);
+	char *visited = (char*) malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
 	vector<QueryBFS> Q;
 
 	// insert the source node into the queue
 	Q.push_back(QueryBFS(p1, 0));
-	unsigned long index=0;
+	unsigned long index = 0;
 	unsigned long size = 1;
-	while( index < size ){
+	while (index < size) {
 		QueryBFS current = Q[index];
 		index++;
 
@@ -1341,7 +1435,7 @@ void query1(int p1, int p2, int x, long qid){
 						break;
 					}
 					visited[cAdjacent] = 1;
-					Q.push_back(QueryBFS(cAdjacent, current.depth+1));
+					Q.push_back(QueryBFS(cAdjacent, current.depth + 1));
 					size++;
 				}
 			}
@@ -1361,13 +1455,13 @@ void query1(int p1, int p2, int x, long qid){
 					}
 					// mark node as added - GREY
 					visited[cAdjacent] = 1;
-					Q.push_back(QueryBFS(cAdjacent, current.depth+1));
+					Q.push_back(QueryBFS(cAdjacent, current.depth + 1));
 					size++;
 				}
 			}
 		} // end of neighbors processing
-		// check if an answer has been found
-		if( answer != -1 ){
+		  // check if an answer has been found
+		if (answer != -1) {
 			break;
 		}
 	}
@@ -1381,19 +1475,170 @@ void query1(int p1, int p2, int x, long qid){
 	Answers[qid] = ss.str();
 }
 
-void query2(int k, char *date, int date_sz, long qid){
-	//printf("query 2: k[%d] date[%*s] dateNum[%d]\n", k, date_sz, date, getDateAsInt(date, date_sz));
+long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
+	// make the persons for this graph a set
+	long indexValidPersons=0;
+	MAP_INT_INT newGraphPersons;
+	for( unsigned long i=0,sz=people.size(); i<sz && people[i]->birth >= queryBirth; i++ ){
+		newGraphPersons[people[i]->personId] = 1;
+		indexValidPersons++;
+	}
+	// check if we have enough people to make a larger component
+	//if( indexValidPersons < minComponentSize ){
+		//return 0;
+	//}
+
+	// now I want to create a new graph containing only the required edges
+	// to speed up the shortest paths between all of them
+	MAP_INT_VecL newGraph;
+	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
+		long pId = people[i]->personId;
+		long *edges = Persons[pId].adjacentPersonsIds;
+		vector<long> &newEdges = newGraph[pId];
+		for (int j = 0, szz = Persons[pId].adjacents; j < szz; j++) {
+			if (newGraphPersons[edges[j]] == 1) {
+				newEdges.push_back(edges[j]);
+			}
+		}
+	}
+
+	// now we have to calculate the shortest paths between them
+	MAP_INT_INT components;
+	MAP_INT_INT visitedBFS;
+	vector<long> componentsIds;
+	vector<QueryBFS> Q;
+	long currentCluster = -1;
+	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
+		if( visitedBFS[people[i]->personId] == 0 ){
+			currentCluster++;
+			componentsIds.push_back(currentCluster);
+			Q.clear();
+			Q2ListNode *cPerson = people[i];
+			long qIndex = 0;
+			long qSize = 1;
+			Q.push_back(QueryBFS(cPerson->personId, currentCluster));
+			while (qIndex < qSize) {
+				QueryBFS &c = Q[qIndex];
+				qIndex++;
+				visitedBFS[c.person] = 2;
+
+				components[c.depth]++;
+
+				// insert each unvisited neighbor of the current node
+				vector<long> &edges = newGraph[c.person];
+				for (int e = 0, szz = edges.size(); e < szz; e++) {
+					long eId = edges[e];
+					if (visitedBFS[eId] == 0) {
+						visitedBFS[eId] = 1;
+						Q.push_back(QueryBFS(eId, c.depth));
+						qSize++;
+					}
+				}
+			}
+			// end of BFS for unvisited person
+		}
+	}
+
+	// find the maximum cluster
+	long maxComponent = 0;
+	for( long i=0,sz=componentsIds.size(); i<sz; i++ ){
+		long c = components[componentsIds[i]];
+		if( c >= maxComponent ){
+			maxComponent = c;
+		}
+	}
+	return maxComponent;
 }
 
-int BFS_query3(long idA, long idB, int h){
-	char *visited = (char*)malloc(N_PERSONS);
+void query2(int k, char *date, int date_sz, long qid) {
+	//printf("query 2: k[%d] date[%*s] dateNum[%d]\n", k, date_sz, date, getDateAsInt(date, date_sz));
+
+	unsigned int queryBirth = getDateAsInt(date, date_sz);
+	long minComponentSize = 0;
+
+	list<long> resultPeople;
+	list<long> resultTag;
+
+	for (long i = 0, sz = TagSubFinals.size(); i < sz; i++) {
+		vector<Q2ListNode*> &people = TagSubFinals[i]->people;
+		long currentTagSize = people.size();
+		/*
+		// do not need to process further in other tags
+		if (currentTagSize < minComponentSize) {
+			break;
+		}
+		// check the max birth date of the list in order to avoid
+		// checking a list when there are no valid people
+		if (people[0]->birth < queryBirth) {
+			continue;
+		}
+		*/
+
+		// TODO - CALL NORMALIZE FOR THE COMPONENTS
+		long largestTagComponent = findTagLargestComponent(people, queryBirth, minComponentSize);
+
+		// we have to check if the current tag should be in the results
+		if (i < k) {
+			resultPeople.push_back(largestTagComponent);
+			resultTag.push_back(TagSubFinals[i]->tagId);
+			if (i == k - 1) {
+				resultPeople.sort(DescendingIntPredicate);
+				resultTag.sort(DescendingIntPredicate);
+				minComponentSize = resultPeople.back();
+			}
+			// NOT NEEDED - initialized above
+			//minComponentSize = 0;
+		} else {
+			// we need to discard another result only if this tag has larger component than our minimum
+			if (largestTagComponent > resultPeople.back()) {
+				char found = 0;
+				for (list<long>::iterator itPerson = resultPeople.begin(), end =
+						resultPeople.end(), itTag=resultTag.begin(); itPerson != end; itPerson++, itTag++) {
+					if (*itPerson < largestTagComponent) {
+						// insert here
+						resultPeople.insert(itPerson,largestTagComponent);
+						resultTag.insert(itTag, TagSubFinals[i]->tagId);
+						// discard the last one - min
+						resultPeople.pop_back();
+						resultTag.pop_back();
+						found = 1;
+						if (largestTagComponent < minComponentSize)
+							minComponentSize = largestTagComponent;
+						break;
+					}
+				}
+				if (!found) {
+					// we did not find minimum so check if the last one is equal
+					// and insert this one too
+					if (resultPeople.back() == largestTagComponent) {
+						resultPeople.push_back(largestTagComponent);
+						resultTag.push_back(TagSubFinals[i]->tagId);
+					}
+				}
+			}					// end if this is a valid tag
+		}					// end if we have more than k results
+
+	} // end for each tag component
+
+	// print the K ids from the sorted list - according to the tag names for ties
+	printf("\nq2 [%ld]", qid);
+	list<long>::iterator peopleIt = resultPeople.begin();
+	for( list<long>::iterator end=resultTag.end(), itTag=resultTag.begin(); itTag != end; itTag++ ){
+		printf("%ld[%ld] ", *itTag, *peopleIt);
+		peopleIt++;
+	}
+
+}
+
+int BFS_query3(long idA, long idB, int h) {
+	char *visited = (char*) malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
 
 	vector<QueryBFS> Q;
-	long qIndex=0;
-	long qSize=1;
+	long qIndex = 0;
+	long qSize = 1;
 	Q.push_back(QueryBFS(idA, 0));
-	while( qIndex < qSize ){
+	while (qIndex < qSize) {
 		QueryBFS cPerson = Q[qIndex];
 		qIndex++;
 
@@ -1409,18 +1654,18 @@ int BFS_query3(long idA, long idB, int h){
 		visited[cPerson.person] = 2;
 
 		long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
-		for( long i=0,sz=Persons[cPerson.person].adjacents; i<sz; i++ ){
+		for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
 			long cB = neighbors[i];
 			// if person is not visited and not added yet
-			if( visited[cB] == 0 ){
+			if (visited[cB] == 0) {
 				// check if this is our person
-				if( idB == cB ){
+				if (idB == cB) {
 					free(visited);
 					return cPerson.depth + 1;
 				}
 				// mark person as GREY - added
 				visited[cB] = 1;
-				Q.push_back(QueryBFS(cB, cPerson.depth+1));
+				Q.push_back(QueryBFS(cB, cPerson.depth + 1));
 				qSize++;
 			}
 		}
@@ -1429,7 +1674,7 @@ int BFS_query3(long idA, long idB, int h){
 	return INT_MAX;
 }
 
-void query3(int k, int h, char *name, int name_sz, long qid){
+void query3(int k, int h, char *name, int name_sz, long qid) {
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
 
 	vector<long> persons;
@@ -1437,7 +1682,7 @@ void query3(int k, int h, char *name, int name_sz, long qid){
 	//visitedPersons.resize(N_PERSONS);
 	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
 	// get all the persons that are related to the place passed in
-	char *visitedPlace = (char*)malloc(Places.size());
+	char *visitedPlace = (char*) malloc(Places.size());
 	memset(visitedPlace, 0, Places.size());
 	TrieNode *place = TrieFind(PlacesToId, name, name_sz);
 	long index = place->vIndex;
@@ -1447,28 +1692,29 @@ void query3(int k, int h, char *name, int name_sz, long qid){
 	visitedPlace[index] = 1;
 	long qIndex = 0;
 	long qSize = 1;
-	while(qIndex < qSize){
+	while (qIndex < qSize) {
 		long cPlace = Q_places[qIndex];
 		qIndex++;
 		// set visited
 		visitedPlace[cPlace] = 2;
 		PlaceNodeStruct *cPlaceStruct = Places[cPlace];
 		//std::copy (cPlaceStruct->personsThis.begin(),cPlaceStruct->personsThis.end(),std::back_inserter(persons));
-		std::vector<long>::iterator cPerson=cPlaceStruct->personsThis.begin();
-		std::vector<long>::iterator end=cPlaceStruct->personsThis.end();
-		persons.reserve(persons.size()+(end-cPerson));
-		for( ; cPerson != end; cPerson++ ){
+		std::vector<long>::iterator cPerson = cPlaceStruct->personsThis.begin();
+		std::vector<long>::iterator end = cPlaceStruct->personsThis.end();
+		persons.reserve(persons.size() + (end - cPerson));
+		for (; cPerson != end; cPerson++) {
 			//if( visitedPersons[*cPerson] )
-			if( visitedPersons->isSet(*cPerson) )
+			if (visitedPersons->isSet(*cPerson))
 				continue;
 			visitedPersons->set(*cPerson);
 			persons.push_back(*cPerson);
 		}
 
-		for (std::vector<long>::iterator it = cPlaceStruct->placesPartOfIndex.begin();
-				it != cPlaceStruct->placesPartOfIndex.end(); ++it){
+		for (std::vector<long>::iterator it =
+				cPlaceStruct->placesPartOfIndex.begin();
+				it != cPlaceStruct->placesPartOfIndex.end(); ++it) {
 			// if not visited
-			if( visitedPlace[*it] == 0 ){
+			if (visitedPlace[*it] == 0) {
 				// set as added
 				visitedPlace[*it] = 1;
 				Q_places.push_back(*it);
@@ -1485,14 +1731,14 @@ void query3(int k, int h, char *name, int name_sz, long qid){
 	// now we have all the required persons so we have to calculate the common tags
 	// for each pair and insert them into the priority queue in order to get the maximum K later
 	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_Comparator> PQ;
-	for( long i = 0,end=persons.size()-1; i<end; ++i ){
+	for (long i = 0, end = persons.size() - 1; i < end; ++i) {
 		long idA = persons[i];
-	//for( std::vector<long>::iterator idA = persons.begin(),end=persons.begin()+persons.size()-1; idA != end ; ++idA ){
+		//for( std::vector<long>::iterator idA = persons.begin(),end=persons.begin()+persons.size()-1; idA != end ; ++idA ){
 		//for( std::vector<long>::iterator idB = idA+1; idB != persons.end(); ++idB ){
-		for( long j = i+1, endd=persons.size(); j<endd; ++j ){
+		for (long j = i + 1, endd = persons.size(); j < endd; ++j) {
 			long idB = persons[j];
 			// WE DO NOT HAVE TO CHECK THESE PEOPLE IF THEY ARE NOT IN THE SAME SUBGRAPH
-			if( Persons[idA].subgraphNumber != Persons[idB].subgraphNumber )
+			if (Persons[idA].subgraphNumber != Persons[idB].subgraphNumber)
 				continue;
 			// we now have to calculate the common tags between these two people
 			int cTags = 0;
@@ -1502,21 +1748,21 @@ void query3(int k, int h, char *name, int name_sz, long qid){
 			std::vector<long>::const_iterator endA = tagsA.end();
 			std::vector<long>::const_iterator iB = tagsB.begin();
 			std::vector<long>::const_iterator endB = tagsB.end();
-			for( ; iA != endA && iB != endB ; ){
-				if( *iA < *iB  )
+			for (; iA != endA && iB != endB;) {
+				if (*iA < *iB)
 					iA++;
-				else if ( *iB < *iA )
+				else if (*iB < *iA)
 					iB++;
-				else if ( *iA == *iB ){
+				else if (*iA == *iB) {
 					cTags++;
 					iA++;
 					iB++;
 				}
 			}
 			//printf("idA[%ld] idB[%ld] common[%ld]\n", idA, idB, cTags);
-			if( idA <= idB ){
+			if (idA <= idB) {
 				PQ.push(Query3PQ(idA, idB, cTags));
-			}else{
+			} else {
 				PQ.push(Query3PQ(idB, idA, cTags));
 			}
 		}
@@ -1526,18 +1772,18 @@ void query3(int k, int h, char *name, int name_sz, long qid){
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
 	std::stringstream ss;
-	for( ; k>0; k-- ){
+	for (; k > 0; k--) {
 		long idA = -1;
 		long idB = -1;
 		//long cTags = -1;
-		while( !PQ.empty() ){
+		while (!PQ.empty()) {
 			const Query3PQ &cPair = PQ.top();
 			idA = cPair.idA;
 			idB = cPair.idB;
 			//cTags = cPair.commonTags;
 			PQ.pop();
 			int distance = BFS_query3(idA, idB, h);
-			if( distance <= h ){
+			if (distance <= h) {
 				// we have an answer so exit the while
 				break;
 			}
@@ -1550,7 +1796,7 @@ void query3(int k, int h, char *name, int name_sz, long qid){
 	Answers[qid] = ss.str();
 }
 
-void query4(int k, char *tag, int tag_sz, long qid){
+void query4(int k, char *tag, int tag_sz, long qid) {
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
 
 	long tagIndex = TrieFind(TagToIndex, tag, tag_sz)->vIndex;
@@ -1560,27 +1806,27 @@ void query4(int k, char *tag, int tag_sz, long qid){
 	//vector<bool> *visitedPersons = new vector<bool>();
 	//visitedPersons->resize(N_PERSONS);
 	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
-	for( int cForum=0, fsz=forums.size(); cForum<fsz; cForum++ ){
+	for (int cForum = 0, fsz = forums.size(); cForum < fsz; cForum++) {
 		vector<long> &cPersons = Forums[forums[cForum]];
-		for( int cPerson=0, psz=cPersons.size(); cPerson<psz; cPerson++ ){
+		for (int cPerson = 0, psz = cPersons.size(); cPerson < psz; cPerson++) {
 			long personId = cPersons[cPerson];
 			//if( (*visitedPersons)[personId] )
-			if( visitedPersons->isSet(personId) )
+			if (visitedPersons->isSet(personId))
 				continue;
 			visitedPersons->set(personId);
-			persons.push_back(Query4PersonStruct(personId,0,0,0.0));
+			persons.push_back(Query4PersonStruct(personId, 0, 0, 0.0));
 		}
 	}
 
 	// now I want to create a new graph containing only the required edges
 	// to speed up the shortest paths between all of them
 	MAP_INT_VecL newGraph;
-	for( int i=0,sz=persons.size(); i<sz; i++ ){
+	for (int i = 0, sz = persons.size(); i < sz; i++) {
 		long pId = persons[i].person;
 		long *edges = Persons[pId].adjacentPersonsIds;
 		vector<long> &newEdges = newGraph[pId];
-		for( int j=0,szz=Persons[pId].adjacents; j<szz; j++ ){
-			if( visitedPersons->isSet(edges[j]) ){
+		for (int j = 0, szz = Persons[pId].adjacents; j < szz; j++) {
+			if (visitedPersons->isSet(edges[j])) {
 				newEdges.push_back(edges[j]);
 			}
 		}
@@ -1589,17 +1835,17 @@ void query4(int k, char *tag, int tag_sz, long qid){
 	delete visitedPersons;
 
 	// now we have to calculate the shortest paths between them
-	int n_1 = persons.size()-1;
+	int n_1 = persons.size() - 1;
 	MAP_INT_INT visitedBFS;
 	vector<QueryBFS> Q;
-	for( int i=0,sz=persons.size(); i<sz; i++ ){
+	for (int i = 0, sz = persons.size(); i < sz; i++) {
 		visitedBFS.clear();
 		Q.clear();
 		Query4PersonStruct &cPerson = persons[i];
 		long qIndex = 0;
 		long qSize = 1;
 		Q.push_back(QueryBFS(cPerson.person, 0));
-		while( qIndex < qSize ){
+		while (qIndex < qSize) {
 			QueryBFS &c = Q[qIndex];
 			qIndex++;
 			visitedBFS[c.person] = 2;
@@ -1608,29 +1854,31 @@ void query4(int k, char *tag, int tag_sz, long qid){
 
 			// insert each unvisited neighbor of the current node
 			vector<long> &edges = newGraph[c.person];
-			for( int e=0,szz=edges.size(); e<szz; e++ ){
+			for (int e = 0, szz = edges.size(); e < szz; e++) {
 				long eId = edges[e];
-				if( visitedBFS[eId] == 0 ){
+				if (visitedBFS[eId] == 0) {
 					visitedBFS[eId] = 1;
-					Q.push_back(QueryBFS(eId, c.depth+1));
+					Q.push_back(QueryBFS(eId, c.depth + 1));
 					qSize++;
 				}
 			}
 		}
 		// we do not have to check if n_1 == 0 since if it was the outer FOR here would not execute
-		if( cPerson.s_p == 0 )
+		if (cPerson.s_p == 0)
 			cPerson.centrality = 0;
-		else{
+		else {
 			// calculate the centrality for this person
-			cPerson.r_p += qSize-1;
-			cPerson.centrality = ((double)(cPerson.r_p * cPerson.r_p)) / (n_1 * cPerson.s_p);
+			cPerson.r_p += qSize - 1;
+			cPerson.centrality = ((double) (cPerson.r_p * cPerson.r_p))
+					/ (n_1 * cPerson.s_p);
 		}
 	}
 
 	// we now just have to return the K persons with the highest centrality
-	std::stable_sort(persons.begin(), persons.end(), Query4PersonStructPredicate);
+	std::stable_sort(persons.begin(), persons.end(),
+			Query4PersonStructPredicate);
 	std::stringstream ss;
-	for( int i=0; i<k; i++ ){
+	for (int i = 0; i < k; i++) {
 		//ss << persons[i].person << ":" << persons[i].centrality << " ";
 		ss << persons[i].person << " ";
 	}
@@ -1639,17 +1887,16 @@ void query4(int k, char *tag, int tag_sz, long qid){
 	Answers[qid] = ss.str();
 }
 
-
 //////////////////////// WORKER JOBS /////////////////////////
 
-struct Query1WorkerStruct{
+struct Query1WorkerStruct {
 	int p1;
 	int p2;
 	int x;
 	long qid;
 };
-void* Query1WorkerFunction(int tid, void *args){
-	Query1WorkerStruct *qArgs = (Query1WorkerStruct*)args;
+void* Query1WorkerFunction(int tid, void *args) {
+	Query1WorkerStruct *qArgs = (Query1WorkerStruct*) args;
 	//printf("tid[%d] [%d]\n", tid, qArgs->qid);
 	query1(qArgs->p1, qArgs->p2, qArgs->x, qArgs->qid);
 
@@ -1658,14 +1905,14 @@ void* Query1WorkerFunction(int tid, void *args){
 	return 0;
 }
 
-struct Query2WorkerStruct{
+struct Query2WorkerStruct {
 	int k;
 	char *date;
 	int date_sz;
 	long qid;
 };
-void* Query2WorkerFunction(int tid, void *args){
-	Query2WorkerStruct *qArgs = (Query2WorkerStruct*)args;
+void* Query2WorkerFunction(int tid, void *args) {
+	Query2WorkerStruct *qArgs = (Query2WorkerStruct*) args;
 	//printf("tid[%d] [%d]\n", tid, *(int*)args);
 	query2(qArgs->k, qArgs->date, qArgs->date_sz, qArgs->qid);
 
@@ -1674,15 +1921,15 @@ void* Query2WorkerFunction(int tid, void *args){
 	return 0;
 }
 
-struct Query3WorkerStruct{
+struct Query3WorkerStruct {
 	int k;
 	int h;
 	char *name;
 	int name_sz;
 	long qid;
 };
-void* Query3WorkerFunction(int tid, void *args){
-	Query3WorkerStruct *qArgs = (Query3WorkerStruct*)args;
+void* Query3WorkerFunction(int tid, void *args) {
+	Query3WorkerStruct *qArgs = (Query3WorkerStruct*) args;
 	//printf("tid[%d] [%d]\n", tid, *(int*)args);
 	query3(qArgs->k, qArgs->h, qArgs->name, qArgs->name_sz, qArgs->qid);
 
@@ -1692,14 +1939,14 @@ void* Query3WorkerFunction(int tid, void *args){
 	return 0;
 }
 
-struct Query4WorkerStruct{
+struct Query4WorkerStruct {
 	int k;
 	char *tag;
 	int tag_sz;
 	long qid;
 };
-void* Query4WorkerFunction(int tid, void *args){
-	Query4WorkerStruct *qArgs = (Query4WorkerStruct*)args;
+void* Query4WorkerFunction(int tid, void *args) {
+	Query4WorkerStruct *qArgs = (Query4WorkerStruct*) args;
 	//printf("tid[%d] [%d]\n", tid, *(int*)args);
 	query4(qArgs->k, qArgs->tag, qArgs->tag_sz, qArgs->qid);
 
@@ -1709,15 +1956,15 @@ void* Query4WorkerFunction(int tid, void *args){
 	return 0;
 }
 
-struct QueryWorkerStruct{
+struct QueryWorkerStruct {
 	void** query_worker_struct;
 	char query_type;
 	int numOfJobs;
 };
 
-void* QueryWorkerFunction(int tid, void *args){
-	QueryWorkerStruct* qworker = (QueryWorkerStruct*)args;
-	switch(qworker->query_type){
+void* QueryWorkerFunction(int tid, void *args) {
+	QueryWorkerStruct* qworker = (QueryWorkerStruct*) args;
+	switch (qworker->query_type) {
 	case 1:
 		for (int i = 0, sz = qworker->numOfJobs; i < sz; i++) {
 			Query1WorkerFunction(tid, qworker->query_worker_struct[i]);
@@ -1747,12 +1994,11 @@ void* QueryWorkerFunction(int tid, void *args){
 
 //////////////////////////////////////////////////////////////
 
-
 ///////////////////////////////////////////////////////////////////////
 // MAIN PROGRAM
 ///////////////////////////////////////////////////////////////////////
 
-void _initializations(){
+void _initializations() {
 	CommentToPerson = new MAP_INT_INT();
 	PlaceIdToIndex = new MAP_INT_INT();
 	OrgToPlace = new MAP_INT_INT();
@@ -1768,12 +2014,9 @@ void _initializations(){
 	Answers2.reserve(2048);
 	Answers3.reserve(2048);
 	Answers4.reserve(2048);
-
-	// Initialize the threadpool
-	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES );
 }
 
-void _destructor(){
+void _destructor() {
 	delete[] Persons;
 	delete[] PersonToTags;
 	TrieNode_Destructor(PlacesToId);
@@ -1782,22 +2025,25 @@ void _destructor(){
 
 void addPoolJobs(char prevQType, vector<Query1WorkerStruct*> &vec1,
 		vector<Query2WorkerStruct*> &vec2, vector<Query3WorkerStruct*> &vec3,
-		vector<Query4WorkerStruct*> &vec4){
-	switch(prevQType){
-	case 1:
-	{
-		long totalJobsAssigned=0, totalJobs=vec1.size();
+		vector<Query4WorkerStruct*> &vec4) {
+	switch (prevQType) {
+	case 1: {
+		long totalJobsAssigned = 0, totalJobs = vec1.size();
 		int i;
-		while(totalJobsAssigned < totalJobs){
-			QueryWorkerStruct* qws = (QueryWorkerStruct*)malloc(sizeof(QueryWorkerStruct));
+		while (totalJobsAssigned < totalJobs) {
+			QueryWorkerStruct* qws = (QueryWorkerStruct*) malloc(
+					sizeof(QueryWorkerStruct));
 			qws->query_type = 1;
-			qws->query_worker_struct = (void**)malloc(sizeof(Query1WorkerStruct*)*BATCH_Q1);
-			for( i=0; i<BATCH_Q1 && totalJobsAssigned<totalJobs; i++ ){
+			qws->query_worker_struct = (void**) malloc(
+					sizeof(Query1WorkerStruct*) * BATCH_Q1);
+			for (i = 0; i < BATCH_Q1 && totalJobsAssigned < totalJobs; i++) {
 				qws->query_worker_struct[i] = vec1[totalJobsAssigned];
 				totalJobsAssigned++;
 			}
 			qws->numOfJobs = i;
-			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(QueryWorkerFunction), (void*)qws );
+			lp_threadpool_addjob_nolock(threadpool,
+					reinterpret_cast<void* (*)(int,
+							void*)>(QueryWorkerFunction), (void*)qws );
 		}
 		vec1.clear();
 	}
@@ -1805,46 +2051,52 @@ void addPoolJobs(char prevQType, vector<Query1WorkerStruct*> &vec1,
 	case 2:
 
 		break;
-	case 3:
-	{
-			long totalJobsAssigned=0, totalJobs=vec3.size();
-			int i;
-			while(totalJobsAssigned < totalJobs){
-				QueryWorkerStruct* qws = (QueryWorkerStruct*)malloc(sizeof(QueryWorkerStruct));
-				qws->query_type = 3;
-				qws->query_worker_struct = (void**)malloc(sizeof(Query3WorkerStruct*)*BATCH_Q3);
-				for( i=0; i<BATCH_Q3 && totalJobsAssigned<totalJobs; i++ ){
-					qws->query_worker_struct[i] = vec3[totalJobsAssigned];
-					totalJobsAssigned++;
-				}
-				qws->numOfJobs = i;
-				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(QueryWorkerFunction), (void*)qws );
+	case 3: {
+		long totalJobsAssigned = 0, totalJobs = vec3.size();
+		int i;
+		while (totalJobsAssigned < totalJobs) {
+			QueryWorkerStruct* qws = (QueryWorkerStruct*) malloc(
+					sizeof(QueryWorkerStruct));
+			qws->query_type = 3;
+			qws->query_worker_struct = (void**) malloc(
+					sizeof(Query3WorkerStruct*) * BATCH_Q3);
+			for (i = 0; i < BATCH_Q3 && totalJobsAssigned < totalJobs; i++) {
+				qws->query_worker_struct[i] = vec3[totalJobsAssigned];
+				totalJobsAssigned++;
 			}
-			vec3.clear();
+			qws->numOfJobs = i;
+			lp_threadpool_addjob_nolock(threadpool,
+					reinterpret_cast<void* (*)(int,
+							void*)>(QueryWorkerFunction), (void*)qws );
 		}
+		vec3.clear();
+	}
 		break;
-	case 4:
-	{
-			long totalJobsAssigned=0, totalJobs=vec4.size();
-			int i;
-			while(totalJobsAssigned < totalJobs){
-				QueryWorkerStruct* qws = (QueryWorkerStruct*)malloc(sizeof(QueryWorkerStruct));
-				qws->query_type = 4;
-				qws->query_worker_struct = (void**)malloc(sizeof(Query4WorkerStruct*)*BATCH_Q4);
-				for( i=0; i<BATCH_Q4 && totalJobsAssigned<totalJobs; i++ ){
-					qws->query_worker_struct[i] = vec4[totalJobsAssigned];
-					totalJobsAssigned++;
-				}
-				qws->numOfJobs = i;
-				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(QueryWorkerFunction), (void*)qws );
+	case 4: {
+		long totalJobsAssigned = 0, totalJobs = vec4.size();
+		int i;
+		while (totalJobsAssigned < totalJobs) {
+			QueryWorkerStruct* qws = (QueryWorkerStruct*) malloc(
+					sizeof(QueryWorkerStruct));
+			qws->query_type = 4;
+			qws->query_worker_struct = (void**) malloc(
+					sizeof(Query4WorkerStruct*) * BATCH_Q4);
+			for (i = 0; i < BATCH_Q4 && totalJobsAssigned < totalJobs; i++) {
+				qws->query_worker_struct[i] = vec4[totalJobsAssigned];
+				totalJobsAssigned++;
 			}
-			vec4.clear();
+			qws->numOfJobs = i;
+			lp_threadpool_addjob_nolock(threadpool,
+					reinterpret_cast<void* (*)(int,
+							void*)>(QueryWorkerFunction), (void*)qws );
 		}
+		vec4.clear();
+	}
 		break;
 	}
 }
 
-void readQueries(char *queriesFile){
+void readQueries(char *queriesFile) {
 	///////////////////////////////////////////////////////////////////
 	// READ THE QUERIES
 	///////////////////////////////////////////////////////////////////
@@ -1857,12 +2109,16 @@ void readQueries(char *queriesFile){
 	Answers.resize(N_QUERIES);
 
 	// initialize the vars for the job assignments
-	vector<Query1WorkerStruct*> vec1; vec1.reserve(BATCH_Q1<<1);
-	vector<Query2WorkerStruct*> vec2; vec2.reserve(BATCH_Q2<<1);
-	vector<Query3WorkerStruct*> vec3; vec3.reserve(BATCH_Q3<<1);
-	vector<Query4WorkerStruct*> vec4; vec4.reserve(BATCH_Q4<<1);
+	vector<Query1WorkerStruct*> vec1;
+	vec1.reserve(BATCH_Q1 << 1);
+	vector<Query2WorkerStruct*> vec2;
+	vec2.reserve(BATCH_Q2 << 1);
+	vector<Query3WorkerStruct*> vec3;
+	vec3.reserve(BATCH_Q3 << 1);
+	vector<Query4WorkerStruct*> vec4;
+	vec4.reserve(BATCH_Q4 << 1);
 	char prevQType = -1;
-	long qid=0;
+	long qid = 0;
 
 	FILE *input = fopen(path, "r");
 	if (input == NULL) {
@@ -1876,94 +2132,98 @@ void readQueries(char *queriesFile){
 	char *lineEnd;
 	while (startLine < EndOfFile) {
 		lineEnd = (char*) memchr(startLine, '\n', 100);
-		int queryType = atoi(startLine+5);
+		int queryType = atoi(startLine + 5);
 
 		// check if we need to add a batch of jobs
-		if( prevQType != queryType && prevQType != -1 ){
+		if (prevQType != queryType && prevQType != -1) {
 			//addPoolJobs(prevQType, vec1, vec2, vec3, vec4);
 		}
 
 		// handle the new query
-		switch( queryType ){
-		case 1:
-		{
-			char *second = ((char*) memchr(startLine+7, ',', 20)) + 1;
-			*(second-1) = '\0';
+		switch (queryType) {
+		case 1: {
+			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
+			*(second - 1) = '\0';
 			char *third = ((char*) memchr(second, ',', 20)) + 1;
-			*(lineEnd-1) = '\0';
-			//query1(atoi(startLine+7), atoi(second), atoi(third));
-
-			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*)malloc(sizeof(Query1WorkerStruct));
-			qwstruct->p1 = atoi(startLine+7);
+			*(lineEnd - 1) = '\0';
+			query1(atoi(startLine+7), atoi(second), atoi(third), qid);
+/*
+			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(
+					sizeof(Query1WorkerStruct));
+			qwstruct->p1 = atoi(startLine + 7);
 			qwstruct->p2 = atoi(second);
 			qwstruct->x = atoi(third);
 			qwstruct->qid = qid;
 			vec1.push_back(qwstruct);
-			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(Query1WorkerFunction), (void*)qwstruct );
-
+			lp_threadpool_addjob_nolock(threadpool,
+					reinterpret_cast<void* (*)(int,
+							void*)>(Query1WorkerFunction), (void*)qwstruct );
+*/
 			break;
 		}
-		case 2:
-		{
+		case 2: {
 			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
 			*(second - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *date = second + 1; // to skip one space
-			//query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
+			query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
 			break;
 		}
-		case 3:
-		{
+		case 3: {
 			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
 			*(second - 1) = '\0';
 			char *third = ((char*) memchr(second, ',', 20)) + 1;
 			*(third - 1) = '\0';
 			*(lineEnd - 1) = '\0';
-			char *name = third+1; // to skip one space
-			int name_sz = lineEnd-1-name;
-			//query3(atoi(startLine + 7), atoi(second), name, name_sz);
-
-			char *placeName = (char*)malloc(name_sz+1);
-			strncpy(placeName, name, name_sz+1);
-			Query3WorkerStruct *qwstruct = (Query3WorkerStruct*)malloc(sizeof(Query3WorkerStruct));
-			qwstruct->k = atoi(startLine+7);
+			char *name = third + 1; // to skip one space
+			int name_sz = lineEnd - 1 - name;
+			query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
+/*
+			char *placeName = (char*) malloc(name_sz + 1);
+			strncpy(placeName, name, name_sz + 1);
+			Query3WorkerStruct *qwstruct = (Query3WorkerStruct*) malloc(
+					sizeof(Query3WorkerStruct));
+			qwstruct->k = atoi(startLine + 7);
 			qwstruct->h = atoi(second);
 			qwstruct->name = placeName;
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
 			vec3.push_back(qwstruct);
-			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(Query3WorkerFunction), qwstruct );
-
+			lp_threadpool_addjob_nolock(threadpool,
+					reinterpret_cast<void* (*)(int,
+							void*)>(Query3WorkerFunction), qwstruct );
+*/
 			break;
 		}
-		case 4:
-		{
+		case 4: {
 			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
 			*(second - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *name = second + 1; // to skip one space
 			int tag_sz = lineEnd - 1 - name;
-			//query4(atoi(startLine + 7), name, tag_sz);
-
-			char *tagName = (char*)malloc(tag_sz+1);
-			strncpy(tagName, name, tag_sz+1);
-			Query4WorkerStruct *qwstruct = (Query4WorkerStruct*)malloc(sizeof(Query4WorkerStruct));
-			qwstruct->k = atoi(startLine+7);
+			query4(atoi(startLine + 7), name, tag_sz, qid);
+/*
+			char *tagName = (char*) malloc(tag_sz + 1);
+			strncpy(tagName, name, tag_sz + 1);
+			Query4WorkerStruct *qwstruct = (Query4WorkerStruct*) malloc(
+					sizeof(Query4WorkerStruct));
+			qwstruct->k = atoi(startLine + 7);
 			qwstruct->tag = tagName;
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
 			vec4.push_back(qwstruct);
-			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int, void*)>(Query4WorkerFunction), qwstruct );
-
+			lp_threadpool_addjob_nolock(threadpool,
+					reinterpret_cast<void* (*)(int,
+							void*)>(Query4WorkerFunction), qwstruct );
+*/
 			break;
 		}
-		default:
-		{
+		default: {
 			*lineEnd = '\0';
 			//printOut(startLine);
 		}
 		}
-		startLine = lineEnd+1;
+		startLine = lineEnd + 1;
 		prevQType = queryType;
 		qid++;
 	}
@@ -1972,12 +2232,11 @@ void readQueries(char *queriesFile){
 	//addPoolJobs(prevQType, vec1, vec2, vec3, vec4);
 }
 
-
 int main(int argc, char** argv) {
-/*
-	inputDir = argv[1];
-	queryFile = argv[2];
-*/
+	/*
+	 inputDir = argv[1];
+	 queryFile = argv[2];
+	 */
 
 	// MAKE GLOBAL INITIALIZATIONS
 	char msg[100];
@@ -1985,8 +2244,11 @@ int main(int argc, char** argv) {
 
 	long long time_global_start = getTime();
 
+	// Initialize the threadpool
+	//threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
 	// add queries into the pool
 	//readQueries(queryFile);
+
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
 	sprintf(msg, "queries file time: %ld", time_queries_end - time_global_start);
@@ -2025,6 +2287,9 @@ int main(int argc, char** argv) {
 
 	// Q3
 	readPersonHasInterestTag(inputDir);
+	// Q2
+	postProcessTagBirthdays();
+
 	// Q4
 	readTags(inputDir);
 	readForumHasTag(inputDir);
@@ -2036,16 +2301,16 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
+	readQueries(queryFile);
 	// start workers
-	lp_threadpool_startjobs(threadpool);
-	synchronize_complete(threadpool);
+	//lp_threadpool_startjobs(threadpool);
+	//synchronize_complete(threadpool);
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
 	sprintf(msg, "queries process time: %ld", time_queries_end - time_global_start);
 	printOut(msg);
 #endif
-
 
 	/////////////////////////////////
 	long long time_global_end = getTime();
@@ -2054,71 +2319,70 @@ int main(int argc, char** argv) {
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
 
-/*
-	for(int i=0, sz=Answers1.size(); i<sz; i++){
-		//printf("answer %d: %d\n", i, Answers1[i]);
-		printf("%d\n", Answers1[i]);
-	}
+	/*
+	 for(int i=0, sz=Answers1.size(); i<sz; i++){
+	 //printf("answer %d: %d\n", i, Answers1[i]);
+	 printf("%d\n", Answers1[i]);
+	 }
 
-	for(int i=0, sz=Answers2.size(); i<sz; i++){
-		//printf("answer %d: %s\n", i, Answers3[i].c_str());
-		printf("%s\n", Answers2[i].c_str());
-	}
+	 for(int i=0, sz=Answers2.size(); i<sz; i++){
+	 //printf("answer %d: %s\n", i, Answers3[i].c_str());
+	 printf("%s\n", Answers2[i].c_str());
+	 }
 
-	for(int i=0, sz=Answers3.size(); i<sz; i++){
-		//printf("answer %d: %s\n", i, Answers3[i].c_str());
-		printf("%s\n", Answers3[i].c_str());
-	}
+	 for(int i=0, sz=Answers3.size(); i<sz; i++){
+	 //printf("answer %d: %s\n", i, Answers3[i].c_str());
+	 printf("%s\n", Answers3[i].c_str());
+	 }
 
-	for(int i=0, sz=Answers4.size(); i<sz; i++){
-		//printf("answer 4 %d: %s\n", i, Answers4[i].c_str());
-		printf("%s\n", Answers4[i].c_str());
-	}
-*/
-	for(long i=0, sz=Answers.size(); i<sz; i++){
+	 for(int i=0, sz=Answers4.size(); i<sz; i++){
+	 //printf("answer 4 %d: %s\n", i, Answers4[i].c_str());
+	 printf("%s\n", Answers4[i].c_str());
+	 }
+	 */
+	for (long i = 0, sz = Answers.size(); i < sz; i++) {
 		//printf("answer %d: %d\n", i, Answers1[i]);
 		printf("%s\n", Answers[i].c_str());
 	}
-
 
 	// destroy the remaining indexes
 	_destructor();
 }
 
-
-
 ////////////////////////////////////////////////////////////////////////
 // TRIE IMPLEMENTATION
 ////////////////////////////////////////////////////////////////////////
-TrieNode* TrieNode_Constructor(){
-	TrieNode* n = (TrieNode*)malloc(sizeof(TrieNode));
-	if( !n ) printErr("error allocating TrieNode");
+TrieNode* TrieNode_Constructor() {
+	TrieNode* n = (TrieNode*) malloc(sizeof(TrieNode));
+	if (!n)
+		printErr("error allocating TrieNode");
 	n->valid = 0;
-	memset( n->children, 0, VALID_PLACE_CHARS*sizeof(TrieNode*) );
+	memset(n->children, 0, VALID_PLACE_CHARS * sizeof(TrieNode*));
 	return n;
 }
-void TrieNode_Destructor( TrieNode* node ){
-	for( int i=0; i<VALID_PLACE_CHARS; i++ ){
-		if( node->children[i] != 0 ){
-			TrieNode_Destructor( node->children[i] );
+void TrieNode_Destructor(TrieNode* node) {
+	for (int i = 0; i < VALID_PLACE_CHARS; i++) {
+		if (node->children[i] != 0) {
+			TrieNode_Destructor(node->children[i]);
 		}
 	}
-	free( node );
+	free(node);
 }
-TrieNode* TrieInsert( TrieNode* node, const char* name, char name_sz, long id, long index){
-	int ptr=0;
+TrieNode* TrieInsert(TrieNode* node, const char* name, char name_sz, long id,
+		long index) {
+	int ptr = 0;
 	int pos;
-	while( ptr < name_sz ){
+	while (ptr < name_sz) {
 		//pos=name[ptr]-'a';
-		pos = (unsigned char)name[ptr];
-		if( node->children[pos] == 0 ){
+		pos = (unsigned char) name[ptr];
+		if (node->children[pos] == 0) {
 			node->children[pos] = TrieNode_Constructor();
 		}
 		node = node->children[pos];
 		ptr++;
 	}
 	// if already exists we do not overwrite but just return the existing one
-	if( 1 == node->valid ){
+	if (1 == node->valid) {
 		return node;
 	}
 	node->valid = 1;
@@ -2126,24 +2390,22 @@ TrieNode* TrieInsert( TrieNode* node, const char* name, char name_sz, long id, l
 	node->vIndex = index;
 	return node;
 }
-TrieNode* TrieFind( TrieNode* root, const char* name, char name_sz ){
-	int p, i, found=1;
-	for( p=0; p<name_sz; p++ ){
+TrieNode* TrieFind(TrieNode* root, const char* name, char name_sz) {
+	int p, i, found = 1;
+	for (p = 0; p < name_sz; p++) {
 		//i = word[p] -'a';
-		i = (unsigned char)name[p];
-		if( root->children[i] != 0 ){
+		i = (unsigned char) name[p];
+		if (root->children[i] != 0) {
 			root = root->children[i];
-		}else{
-			found=0;
+		} else {
+			found = 0;
 			break;
 		}
 	}
-	if( found && root->valid ){
+	if (found && root->valid) {
 		// WE HAVE A MATCH SO return the node
 		return root;
 	}
 	return 0;
 }
-
-
 
