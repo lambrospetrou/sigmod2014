@@ -245,6 +245,8 @@ MAP_INT_INT *OrgToPlace;
 
 MAP_INT_INT *TagIdToIndex;
 
+int *PersonBirthdays;
+
 ///////////////////////////////////////////////////////////////////////////////
 
 //////////////////////////////////////////////////////////////////////////////
@@ -354,6 +356,23 @@ long getFileSize(FILE *file){
 	return lSize;
 }
 
+char* getFileBytes(FILE *file, long *lSize){
+	setvbuf(file, NULL, _IOFBF, FILE_VBUF_SIZE);
+	// obtain file size:
+	*lSize = getFileSize(file);
+	// allocate memory to contain the whole file:
+	char* buffer = (char*) malloc(sizeof(char) * *lSize);
+	if (buffer == NULL) {
+		printErr("getFileBytes:: No memory while reading file!!!");
+	}
+	// copy the file into the buffer:
+	size_t result = fread(buffer, 1, *lSize, file);
+	if (result != *lSize) {
+		printErr("getFileBytes:: Could not read the whole file in memory!!!");
+	}
+	return buffer;
+}
+
 // converts the date into an integer representing that date
 // e.g 1990-07-31 = 19900731
 static inline int getDateAsInt(char *date, int date_sz){
@@ -392,6 +411,42 @@ void readPersons(char* inputDir) {
 	sprintf(msg, "Total persons: %d", N_PERSONS);
 	printOut(msg);
 #endif
+
+	// TODO - DO IT IN ONE FILE OPEN
+	// TODO - read birthdays
+	PersonBirthdays = (int*)malloc(sizeof(int)*N_PERSONS);
+	input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open person.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+
+	// process the whole file in memory
+	// skip the first line
+	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *EndOfFile = buffer + lSize;
+	char *lineEnd;
+	char *dateStartDivisor;
+	while (startLine < EndOfFile) {
+		lineEnd = (char*) memchr(startLine, '\n', 100);
+		dateStartDivisor = (char*) memchr(startLine, '|', 100);
+		*dateStartDivisor = '\0';
+		long idPerson = atol(startLine);
+		dateStartDivisor = (char*) memchr(dateStartDivisor+1, '|', 100);
+		dateStartDivisor = (char*) memchr(dateStartDivisor+1, '|', 100);
+		dateStartDivisor = (char*) memchr(dateStartDivisor+1, '|', 100);
+		*lineEnd = '\0';
+
+		int dateInt = getDateAsInt(dateStartDivisor+1, 10);
+		//printf("%d\n", dateInt);
+		PersonBirthdays[idPerson] = dateInt;
+
+		startLine = lineEnd + 1;
+	}
+	// close the comment_hasCreator_Person
+	fclose(input);
+	free(buffer);
 
 	// initialize persons
 	//Persons = malloc(sizeof(PersonStruct)*N_PERSONS);
@@ -530,25 +585,6 @@ void readPersonKnowsPerson(char *inputDir){
 	// now we want to find all the subgraphs into the graph and assign each person
 	// into one of them since we will use this info into the Query 4
 	N_SUBGRAPHS = calculateAndAssignSubgraphs();
-}
-
-
-
-char* getFileBytes(FILE *file, long *lSize){
-	setvbuf(file, NULL, _IOFBF, FILE_VBUF_SIZE);
-	// obtain file size:
-	*lSize = getFileSize(file);
-	// allocate memory to contain the whole file:
-	char* buffer = (char*) malloc(sizeof(char) * *lSize);
-	if (buffer == NULL) {
-		printErr("getFileBytes:: No memory while reading file!!!");
-	}
-	// copy the file into the buffer:
-	size_t result = fread(buffer, 1, *lSize, file);
-	if (result != *lSize) {
-		printErr("getFileBytes:: Could not read the whole file in memory!!!");
-	}
-	return buffer;
 }
 
 void postProcessComments(){
@@ -1950,7 +1986,7 @@ int main(int argc, char** argv) {
 	long long time_global_start = getTime();
 
 	// add queries into the pool
-	readQueries(queryFile);
+	//readQueries(queryFile);
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
 	sprintf(msg, "queries file time: %ld", time_queries_end - time_global_start);
