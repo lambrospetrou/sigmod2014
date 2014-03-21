@@ -296,7 +296,8 @@ MAP_INT_INT *TagIdToIndex;
 
 // TODO
 int *PersonBirthdays;
-typedef std::tr1::unordered_map<unsigned long, TagSubStruct*, hash<unsigned long> > MAP_LONG_TSPTR;
+//typedef std::tr1::unordered_map<unsigned long, TagSubStruct*, hash<unsigned long> > MAP_LONG_TSPTR;
+typedef std::map<unsigned long, TagSubStruct*> MAP_LONG_TSPTR;
 MAP_LONG_TSPTR TagSubBirthdays;
 vector<TagSubStruct*> TagSubFinals;
 
@@ -1491,7 +1492,8 @@ void query1(int p1, int p2, int x, long qid) {
 	Answers[qid] = ss.str();
 }
 
-long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
+
+long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
 	MAP_INT_INT newGraphPersons;
@@ -1566,6 +1568,86 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	return maxComponent;
 }
 
+long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
+	// make the persons for this graph a set
+	long indexValidPersons=0;
+	MAP_INT_INT newGraphPersons;
+	for( unsigned long i=0,sz=people.size(); i<sz && people[i]->birth >= queryBirth; i++ ){
+		newGraphPersons[people[i]->personId] = 1;
+		indexValidPersons++;
+	}
+
+	// check if we have enough people to make a larger component
+	if( indexValidPersons < minComponentSize ){
+		return 0;
+	}
+
+	// now I want to create a new graph containing only the required edges
+	// to speed up the shortest paths between all of them
+	MAP_INT_VecL newGraph;
+	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
+		long pId = people[i]->personId;
+		long *edges = Persons[pId].adjacentPersonsIds;
+		vector<long> &newEdges = newGraph[pId];
+		for (int j = 0, szz = Persons[pId].adjacents; j < szz; j++) {
+			long nId = edges[j];
+			if (newGraphPersons[nId] == 1) {
+				newEdges.push_back(edges[j]);
+			}
+		}
+	}
+
+	// now we have to calculate the shortest paths between them
+	MAP_INT_INT components;
+	MAP_INT_INT visitedBFS;
+	vector<long> componentsIds;
+	vector<QueryBFS> Q;
+	long currentCluster = -1;
+	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
+		if( visitedBFS[people[i]->personId] == 0 ){
+			currentCluster++;
+			componentsIds.push_back(currentCluster);
+			Q.clear();
+			Q2ListNode *cPerson = people[i];
+			long qIndex = 0;
+			long qSize = 1;
+			Q.push_back(QueryBFS(cPerson->personId, 0));
+			while (qIndex < qSize) {
+				QueryBFS &c = Q[qIndex];
+				qIndex++;
+				visitedBFS[c.person] = 2;
+
+				//components[c.depth]++;
+				components[currentCluster]++;
+
+				//printf("c[%ld] [%ld]\n", currentCluster, components[currentCluster] );
+
+				// insert each unvisited neighbor of the current node
+				vector<long> &edges = newGraph[c.person];
+				for (int e = 0, szz = edges.size(); e < szz; e++) {
+					long eId = edges[e];
+					if (visitedBFS[eId] == 0) {
+						visitedBFS[eId] = 1;
+						Q.push_back(QueryBFS(eId, 0));
+						qSize++;
+					}
+				}
+			}
+			// end of BFS for unvisited person
+		}
+	}
+
+	// find the maximum cluster
+	long maxComponent = 0;
+	for( long i=0,sz=componentsIds.size(); i<sz; i++ ){
+		long c = components[componentsIds[i]];
+		if( c >= maxComponent ){
+			maxComponent = c;
+		}
+	}
+	return maxComponent;
+}
+
 void query2(int k, char *date, int date_sz, long qid) {
 	//printf("query 2: k[%d] date[%*s] dateNum[%d]\n", k, date_sz, date, getDateAsInt(date, date_sz));
 
@@ -1591,9 +1673,9 @@ void query2(int k, char *date, int date_sz, long qid) {
 			continue;
 		}
 
-
 		// TODO - CALL NORMALIZE FOR THE COMPONENTS
 		long largestTagComponent = findTagLargestComponent(people, queryBirth, minComponentSize);
+
 
 		// we have to check if the current tag should be in the results
 		if (i < k) {
@@ -2156,7 +2238,7 @@ void readQueries(char *queriesFile) {
 			*(second - 1) = '\0';
 			char *third = ((char*) memchr(second, ',', 20)) + 1;
 			*(lineEnd - 1) = '\0';
-			query1(atoi(startLine+7), atoi(second), atoi(third), qid);
+			//query1(atoi(startLine+7), atoi(second), atoi(third), qid);
 /*
 			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(
 					sizeof(Query1WorkerStruct));
@@ -2187,7 +2269,7 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = third + 1; // to skip one space
 			int name_sz = lineEnd - 1 - name;
-			query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
+			//query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
 /*
 			char *placeName = (char*) malloc(name_sz + 1);
 			strncpy(placeName, name, name_sz + 1);
@@ -2211,7 +2293,7 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = second + 1; // to skip one space
 			int tag_sz = lineEnd - 1 - name;
-			query4(atoi(startLine + 7), name, tag_sz, qid);
+			//query4(atoi(startLine + 7), name, tag_sz, qid);
 /*
 			char *tagName = (char*) malloc(tag_sz + 1);
 			strncpy(tagName, name, tag_sz + 1);
