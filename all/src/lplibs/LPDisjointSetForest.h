@@ -14,21 +14,24 @@
 // MACROS
 ///////////////////
 
-// called when memory allocation fails, prints an error message and exits
-#define noMemory(x) cerr << "Memory Allocation Failed! .::. "##x << endl; exit(1);
+#ifndef _LP_MEMORY
+#define noMemory(x) fprintf(stderr, "Memory Allocation Failed! .::. %s\n", x); exit(1);
+#endif
 
 ///////////////////
 // HEADER INCLUTIONS
 ///////////////////
-#include "LPList.h"
-#include "LPVector.h"
-#include "LPHashTableChained.h"
 #include <cstdlib>
+#include <stdio.h>
 #include <iostream>
 #include <string>
 #include <stdexcept>
 #include <exception>
+#include <iterator>
+#include <tr1/unordered_map>
 
+using std::tr1::unordered_map;
+using std::tr1::hash;
 using std::cout;
 using std::cerr;
 using std::endl;
@@ -38,6 +41,7 @@ using std::string;
 ////////////      DECLERATION OF LPDisjointSetForest  ///////////////////
 //////////////////////////////////////////////////////////////
 
+#define MapTToSetPTR std::tr1::unordered_map<T, Set*, hash<T> >
 
 ///////////////////
 // MAIN CLASS DECLARATIONS
@@ -68,8 +72,6 @@ public:
 	// return the size of the forest in elements
 	unsigned int elements()const;
 
-	// return all the elements in the forest inside a vector
-	LPVector<T> getElements();
 
 ///////////////////
 // Modifiers
@@ -87,6 +89,9 @@ public:
 	// returns the root parent of the value in arguments
 	// if the value is not in a set in our forest the function prints an error and returns null
 	T* findSet( const T& x );
+
+	// returns the number of sets
+	unsigned int countSets() const;
 
 	// clear all the elements
 	void clear();
@@ -106,15 +111,17 @@ public:
 	// PRIVATE
 private:
 	struct Set{
-		T data;
-		Set* parent;
-		int rank;
-
 		Set(const T& newData = T() ): data(newData),rank(0),parent(0){}
+		Set* parent;
+		T data;
+		int rank;
 	};
 
 	unsigned int elementsS;
-	LPHashTableChained< T, Set* > forest;
+	MapTToSetPTR forest;
+	//LPHashTableChained< T, Set* > forest;
+
+	unsigned int numberOfSets;
 
 ///////////////////
 // Private Functions
@@ -149,7 +156,7 @@ private:
 
 // create a forest with no sets
 template<class T>
-LPDisjointSetForest<T>::LPDisjointSetForest(): elementsS(0){
+LPDisjointSetForest<T>::LPDisjointSetForest(): elementsS(0), numberOfSets(0){
 
 }
 
@@ -184,17 +191,6 @@ template<class T>
 unsigned int LPDisjointSetForest<T>::elements()const{
 	return elementsS;
 }
-
-// return all the elements in the forest inside a vector
-template<class T>
-LPVector<T> LPDisjointSetForest<T>::getElements(){
-	LPVector<Set*> allSets = forest.getElements();
-	LPVector<T> elems;
-	for( unsigned int i= allSets.size(); i>0; i-- )
-		elems.push_back( (*allSets[i-1])->data);
-	return elems;
-}
-
 ///////////////////
 // Modifiers
 ///////////////////
@@ -210,8 +206,10 @@ void LPDisjointSetForest<T>::createSet(const T& newValue){
 		return ;
 	}
 	newSet->parent = newSet;
-	forest.insert(newValue,newSet);
+	//forest.insert(newValue,newSet);
+	forest[newValue] = newSet;
 	++elementsS;
+	++numberOfSets;
 }
 
 // make the set given in arguments a set on its own
@@ -228,35 +226,44 @@ void LPDisjointSetForest<T>::makeSet( const T& value ){
 // unite two sets in the forest
 template<class T>
 void LPDisjointSetForest<T>::uniteSets(const T& a , const T& b){
-	Set **founda = forest.search(a);
-	Set **foundb = forest.search(b);
+	//Set **founda = forest.search(a);
+	//Set **foundb = forest.search(b);
+	Set *founda = forest[a];
+	Set *foundb = forest[b];
 	if( !founda || !foundb ){
 		cout << "\nUnion of two non-sets is not supported!" << endl;
 		return;
 	}
-	linkSets( **founda , **foundb );
+	linkSets( *founda , *foundb );
 }
 
 // returns the root parent of the value in arguments
 // if the value is not in a set in our forest the function prints an error and returns null
 template<class T>
 T* LPDisjointSetForest<T>::findSet( const T& x ){
-	Set** found = forest.search(x);
+	//Set** found = forest.search(x);
+	Set *found = forest[x];
 	if( !found ){
-		cout << "\nThere is no element with the passed in value in Disjoint-Set-Forest!" << endl;
+		//cout << "\nThere is no element with the passed in value in Disjoint-Set-Forest!" << endl;
 		return 0;
 	}
-	return &(findSet( **found )->data);
+	return &(findSet( *found )->data);
+}
+
+// returns the number of sets
+template<class T>
+unsigned int LPDisjointSetForest<T>::countSets() const{
+	return numberOfSets;;
 }
 
 // clear all the elements
 template<class T>
 void LPDisjointSetForest<T>::clear(){
-	LPVector<Set *> sa = forest.getElements();
-	unsigned int sz = sa.size();
-	for( unsigned int i=0; i<sz; i++ )
-		if( *( sa[i] ) )
-			delete *sa[i];
+	typename std::tr1::unordered_map<T, Set*, hash<T> >::iterator it = forest.begin();
+	typename std::tr1::unordered_map<T, Set*, hash<T> >::iterator end = forest.end();
+	for ( ; it != end;	it++) {
+		delete (*it).second;
+	}
 	elementsS = 0;
 	forest.clear();
 }
@@ -285,6 +292,8 @@ void LPDisjointSetForest<T>::print(){
 // link the two sets given in arguments
 template<class T>
 void LPDisjointSetForest<T>::linkSets( Set& a, Set& b ){
+	if( a.parent == b.parent )
+		return;
 	if( a.rank > b.rank )
 		b.parent = &a;
 	else{
@@ -292,6 +301,7 @@ void LPDisjointSetForest<T>::linkSets( Set& a, Set& b ){
 		if( a.rank == b.rank )
 			b.rank++;
 	}
+	numberOfSets--;
 }
 
 // returns the root parent of the value in arguments

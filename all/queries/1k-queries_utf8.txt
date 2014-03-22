@@ -1,4 +1,3 @@
-query3(3, 2, Pudong)
 query1(576, 400, -1)
 query1(58, 402, 0)
 query1(266, 106, -1)

@@ -17,7 +17,9 @@
 ///////////////////
 
 // called when memory allocation fails, prints an error message and exits
-#define noMemory(x) cerr << "Memory Allocation Failed! .::. "##x << endl; exit(1);
+#ifndef _LP_MEMORY
+#define noMemory(x) fprintf(stderr, "Memory Allocation Failed! .::. %s\n", x); exit(1);
+#endif
 
 ///////////////////
 // HEADER INCLUTIONS

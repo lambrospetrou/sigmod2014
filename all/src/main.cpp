@@ -1500,82 +1500,61 @@ void query1(int p1, int p2, int x, long qid) {
 }
 
 
-long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
+long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
-	MAP_INT_INT newGraphPersons;
+
+	// first pass to make sure we have enough people to make a larger component
 	for( unsigned long i=0,sz=people.size(); i<sz && people[i]->birth >= queryBirth; i++ ){
-		newGraphPersons[people[i]->personId] = 1;
 		indexValidPersons++;
 	}
 	// check if we have enough people to make a larger component
-	//if( indexValidPersons < minComponentSize ){
-		//return 0;
-	//}
-
-	// now I want to create a new graph containing only the required edges
-	// to speed up the shortest paths between all of them
-	MAP_INT_VecL newGraph;
-	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
-		long pId = people[i]->personId;
-		long *edges = Persons[pId].adjacentPersonsIds;
-		vector<long> &newEdges = newGraph[pId];
-		for (int j = 0, szz = Persons[pId].adjacents; j < szz; j++) {
-			if (newGraphPersons[edges[j]] == 1) {
-				newEdges.push_back(edges[j]);
-			}
-		}
+	if (indexValidPersons < minComponentSize) {
+		return 0;
 	}
 
-	// now we have to calculate the shortest paths between them
-	MAP_INT_INT components;
-	MAP_INT_INT visitedBFS;
-	vector<long> componentsIds;
-	vector<QueryBFS> Q;
-	long currentCluster = -1;
-	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
-		if( visitedBFS[people[i]->personId] == 0 ){
-			currentCluster++;
-			componentsIds.push_back(currentCluster);
-			Q.clear();
-			Q2ListNode *cPerson = people[i];
-			long qIndex = 0;
-			long qSize = 1;
-			Q.push_back(QueryBFS(cPerson->personId, currentCluster));
-			while (qIndex < qSize) {
-				QueryBFS &c = Q[qIndex];
-				qIndex++;
-				visitedBFS[c.person] = 2;
+	// second pass to initialize the structures needed
+	LPDisjointSetForest<long> forest;
+	MAP_INT_INT newGraphPersons;
+	for( unsigned long i=0,sz=indexValidPersons; i<sz; i++ ){
+		//newGraphPersons[people[i]->personId] = 1;
+		forest.createSet(people[i]->personId);
+	}
 
-				components[c.depth]++;
-
-				// insert each unvisited neighbor of the current node
-				vector<long> &edges = newGraph[c.person];
-				for (int e = 0, szz = edges.size(); e < szz; e++) {
-					long eId = edges[e];
-					if (visitedBFS[eId] == 0) {
-						visitedBFS[eId] = 1;
-						Q.push_back(QueryBFS(eId, c.depth));
-						qSize++;
-					}
+	// add each person in its component set
+	for( unsigned long i=0,sz=indexValidPersons; i<sz; i++ ){
+		long cId = people[i]->personId;
+		long *edges = Persons[cId].adjacentPersonsIds;
+		for (int e = 0, szz = Persons[cId].adjacents; e < szz; e++) {
+			long eId = edges[e];
+			long* nSet = forest.findSet(eId);
+			// if neighbor is in this graph
+			if ( nSet != 0 ) {
+				long *cSet = forest.findSet(cId);
+				if( cSet != nSet ){
+					// we have to connect these two neighbors
+					forest.uniteSets(cId, eId);
 				}
 			}
-			// end of BFS for unvisited person
 		}
 	}
 
-	// find the maximum cluster
-	long maxComponent = 0;
-	for( long i=0,sz=componentsIds.size(); i<sz; i++ ){
-		long c = components[componentsIds[i]];
-		if( c >= maxComponent ){
-			maxComponent = c;
-		}
+	int numsets = forest.countSets();
+
+	// now we have to pass one more and count the number of people in each set
+	MAP_INT_INT components;
+	long maxComponent = 0, cCount;
+	long *set;
+	for( unsigned long i=0,sz=indexValidPersons; i<sz; i++ ){
+		set = forest.findSet(people[i]->personId);
+		cCount = ++components[*set];
+		if( cCount > maxComponent )
+			maxComponent = cCount;
 	}
 	return maxComponent;
 }
 
-long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
+long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
 	MAP_INT_INT newGraphPersons;
@@ -2418,12 +2397,14 @@ int main(int argc, char** argv) {
 	printOut(msg);
 
 	long long time_global_end = getTime();
-	sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]",
-			time_global_end - time_global_start,
-			(time_global_end - time_global_start) / 1000000.0);
-	printOut(msg);
+			sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]",
+					time_global_end - time_global_start,
+					(time_global_end - time_global_start) / 1000000.0);
+			printOut(msg);
 
 #endif
+
+
 
 	for (long i = 0, sz = Answers.size(); i < sz; i++) {
 		//printf("answer %d: %d\n", i, Answers1[i]);
