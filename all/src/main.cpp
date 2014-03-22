@@ -27,6 +27,7 @@
 
 #include "lplibs/LPBitset.h"
 #include "lplibs/LPThreadpool.h"
+#include "lplibs/LPDisjointSetForest.h"
 
 using namespace std;
 using std::tr1::unordered_map;
