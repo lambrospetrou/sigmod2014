@@ -1500,7 +1500,7 @@ void query1(int p1, int p2, int x, long qid) {
 }
 
 
-long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
+long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
 
@@ -1539,8 +1539,6 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 		}
 	}
 
-	int numsets = forest.countSets();
-
 	// now we have to pass one more and count the number of people in each set
 	MAP_INT_INT components;
 	long maxComponent = 0, cCount;
@@ -1554,12 +1552,14 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	return maxComponent;
 }
 
-long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
+long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
-	MAP_INT_INT newGraphPersons;
+	//MAP_INT_INT newGraphPersons;
+	LPBitset newGraphPersons(N_PERSONS);
 	for( unsigned long i=0,sz=people.size(); i<sz && people[i]->birth >= queryBirth; i++ ){
-		newGraphPersons[people[i]->personId] = 1;
+		//newGraphPersons[people[i]->personId] = 1;
+		newGraphPersons.set(people[i]->personId);
 		indexValidPersons++;
 	}
 
@@ -1571,11 +1571,13 @@ long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirt
 	// now we have to calculate the shortest paths between them
 	MAP_INT_INT components;
 	MAP_INT_INT visitedBFS;
+	//LPBitset visitedBFS(N_PERSONS);
 	vector<long> componentsIds;
 	vector<long> Q;
 	Q.reserve(128);
 	long currentCluster = -1;
 	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
+		//if( !visitedBFS.isSet(people[i]->personId) ){
 		if( visitedBFS[people[i]->personId] == 0 ){
 			currentCluster++;
 			componentsIds.push_back(currentCluster);
@@ -1587,9 +1589,13 @@ long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirt
 			while (qIndex < qSize) {
 				long c = Q[qIndex];
 				qIndex++;
+
+				//if( visitedBFS.isSet(c) )
+					//continue;
+				//visitedBFS.set(c);
 				visitedBFS[c] = 2;
 
-				//components[c.depth]++;
+
 				components[currentCluster]++;
 
 				//printf("c[%ld] [%ld]\n", currentCluster, components[currentCluster] );
@@ -1598,8 +1604,11 @@ long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirt
 				long *edges = Persons[c].adjacentPersonsIds;
 				for (int e = 0, szz = Persons[c].adjacents; e < szz; e++) {
 					long eId = edges[e];
-					if ( newGraphPersons[eId]==1 && visitedBFS[eId] == 0) {
+					//if ( newGraphPersons[eId]==1 && visitedBFS[eId] == 0) {
+					if ( newGraphPersons.isSet(eId) && visitedBFS[eId] == 0) {
+					//if ( newGraphPersons.isSet(eId) && !visitedBFS.isSet(eId)) {
 						visitedBFS[eId] = 1;
+						//visitedBFS.set(eId);
 						Q.push_back(eId);
 						qSize++;
 					}
@@ -1655,7 +1664,7 @@ void query2(int k, char *date, int date_sz, long qid) {
 			printf("yes");
 		}
 */
-		// CALL NORMALIZE FOR THE COMPONENTS
+		// find the largest component for the current tag
 		long largestTagComponent = findTagLargestComponent(people, queryBirth, minComponentSize);
 
 		// we have to check if the current tag should be in the results
@@ -1692,7 +1701,7 @@ void query2(int k, char *date, int date_sz, long qid) {
 	} // end for each tag component
 
 	// print the K ids from the sorted list - according to the tag names for ties
-	results.sort(Q2ResultListPredicate);
+	//results.sort(Q2ResultListPredicate);
 	std::stringstream ss;
 	for( list<Q2ResultNode>::iterator end=results.end(), itTag=results.begin(); itTag != end; itTag++ ){
 		ss << TagIdToName[(*itTag).tagId] << " ";
@@ -2396,20 +2405,19 @@ int main(int argc, char** argv) {
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
 
-	long long time_global_end = getTime();
-			sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]",
-					time_global_end - time_global_start,
-					(time_global_end - time_global_start) / 1000000.0);
-			printOut(msg);
-
 #endif
-
-
 
 	for (long i = 0, sz = Answers.size(); i < sz; i++) {
 		//printf("answer %d: %d\n", i, Answers1[i]);
 		printf("%s\n", Answers[i].c_str());
 	}
+
+	long long time_global_end = getTime();
+	sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]",
+			time_global_end - time_global_start,
+			(time_global_end - time_global_start) / 1000000.0);
+	printOut(msg);
+
 
 	// destroy the remaining indexes
 	_destructor();
