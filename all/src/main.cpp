@@ -39,6 +39,7 @@ using std::tr1::hash;
 #define CACHE_LINE_SIZE 64
 
 #define VALID_PLACE_CHARS 256
+#define LONGEST_LINE_READING 2048
 
 #define WORKER_THREADS 4
 #define NUM_THREADS 5
@@ -493,18 +494,18 @@ void readPersons(char* inputDir) {
 
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *dateStartDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', 1000);
-		dateStartDivisor = (char*) memchr(startLine, '|', 1000);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		dateStartDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*dateStartDivisor = '\0';
 		long idPerson = atol(startLine);
-		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', 1000);
-		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', 1000);
-		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', 1000);
+		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
+		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
+		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
 		*lineEnd = '\0';
 
 		int dateInt = getDateAsInt(dateStartDivisor + 1, 10);
@@ -603,11 +604,11 @@ void readPersonKnowsPerson(char *inputDir) {
 	ids.reserve(256);
 	long prevId = -1;
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	while (startLine < EndOfFile) {
-		char *lineEnd = (char*) memchr(startLine, '\n', 100);
-		char *idDivisor = (char*) memchr(startLine, '|', lineEnd - startLine);
+		char *lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		char *idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idA = atol(startLine);
@@ -727,13 +728,13 @@ void readComments(char* inputDir) {
 
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', 100);
-		idDivisor = (char*) memchr(startLine, '|', lineEnd - startLine);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idA = atol(startLine);
@@ -779,9 +780,8 @@ void readComments(char* inputDir) {
 	startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
 	EndOfFile = buffer + lSize;
 	while (startLine < EndOfFile) {
-		int len = EndOfFile - startLine;
-		lineEnd = (char*) memchr(startLine, '\n', len);
-		idDivisor = (char*) memchr(startLine, '|', len);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		if (lineEnd != NULL) {
 			*lineEnd = '\0';
@@ -850,16 +850,15 @@ void readPlaces(char *inputDir) {
 	long places = 0;
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
 	char *nameDivisor;
 	while (startLine < EndOfFile) {
-		int len = EndOfFile - startLine;
-		lineEnd = (char*) memchr(startLine, '\n', len);
-		idDivisor = (char*) memchr(startLine, '|', len);
-		nameDivisor = (char*) memchr(idDivisor + 1, '|', len);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		nameDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		*nameDivisor = '\0';
@@ -917,14 +916,13 @@ void readPlacePartOfPlace(char *inputDir) {
 
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		int len = EndOfFile - startLine;
-		lineEnd = (char*) memchr(startLine, '\n', len);
-		idDivisor = (char*) memchr(startLine, '|', len);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idA = atol(startLine);
@@ -975,14 +973,13 @@ void readPersonLocatedAtPlace(char *inputDir) {
 
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		int len = EndOfFile - startLine;
-		lineEnd = (char*) memchr(startLine, '\n', len);
-		idDivisor = (char*) memchr(startLine, '|', len);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idPerson = atol(startLine);
@@ -1034,14 +1031,13 @@ void readOrgsLocatedAtPlace(char *inputDir) {
 
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		int len = EndOfFile - startLine;
-		lineEnd = (char*) memchr(startLine, '\n', len);
-		idDivisor = (char*) memchr(startLine, '|', len);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idOrg = atol(startLine);
@@ -1095,16 +1091,15 @@ void readPersonWorksStudyAtOrg(char *inputDir) {
 
 		// process the whole file in memory
 		// skip the first line
-		char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+		char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 		char *EndOfFile = buffer + lSize;
 		char *lineEnd;
 		char *idDivisor;
 		char *orgDivisor;
 		while (startLine < EndOfFile) {
-			int len = EndOfFile - startLine;
-			lineEnd = (char*) memchr(startLine, '\n', len);
-			idDivisor = (char*) memchr(startLine, '|', len);
-			orgDivisor = (char*) memchr(idDivisor + 1, '|', len);
+			lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+			idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+			orgDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 			*idDivisor = '\0';
 			*orgDivisor = '\0';
 			long idPerson = atol(startLine);
@@ -1156,15 +1151,14 @@ void readPersonHasInterestTag(char *inputDir) {
 
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
 
 	while (startLine < EndOfFile) {
-		int len = EndOfFile - startLine;
-		lineEnd = (char*) memchr(startLine, '\n', len);
-		idDivisor = (char*) memchr(startLine, '|', len);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long personId = atol(startLine);
@@ -1229,16 +1223,15 @@ void readTags(char *inputDir) {
 	long tags = 0;
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
 	char *nameDivisor;
 	while (startLine < EndOfFile) {
-		int len = EndOfFile - startLine;
-		lineEnd = (char*) memchr(startLine, '\n', len);
-		idDivisor = (char*) memchr(startLine, '|', len);
-		nameDivisor = (char*) memchr(idDivisor + 1, '|', len);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		nameDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		*nameDivisor = '\0';
@@ -1303,14 +1296,13 @@ void readForumHasTag(char *inputDir) {
 
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		int len = EndOfFile - startLine;
-		lineEnd = (char*) memchr(startLine, '\n', len);
-		idDivisor = (char*) memchr(startLine, '|', len);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long forumId = atol(startLine);
@@ -1357,16 +1349,15 @@ void readForumHasMember(char *inputDir) {
 #endif
 	// process the whole file in memory
 	// skip the first line
-	char *startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
 	char *dateDivisor;
 	while (startLine < EndOfFile) {
-		int len = EndOfFile - startLine;
-		lineEnd = (char*) memchr(startLine, '\n', len);
-		idDivisor = (char*) memchr(startLine, '|', len);
-		dateDivisor = (char*) memchr(idDivisor + 1, '|', len);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		dateDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*dateDivisor = '\0';
 		long forumId = atol(startLine);
@@ -1416,6 +1407,18 @@ void postProcessTagBirthdays() {
 
 void query1(int p1, int p2, int x, long qid) {
 	//printf("query1: %d %d %d\n", p1, p2, x);
+
+	if(p1 == p2){
+		std::stringstream ss;
+		ss << 0;
+		Answers[qid] = ss.str();
+		return;
+	}else if( p1 < 0 || p2 < 0 ){
+		std::stringstream ss;
+		ss << -1;
+		Answers[qid] = ss.str();
+		return;
+	}
 
 	int answer = -1;
 
@@ -1585,26 +1588,12 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 		return 0;
 	}
 
-	// now I want to create a new graph containing only the required edges
-	// to speed up the shortest paths between all of them
-	MAP_INT_VecL newGraph;
-	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
-		long pId = people[i]->personId;
-		long *edges = Persons[pId].adjacentPersonsIds;
-		vector<long> &newEdges = newGraph[pId];
-		for (int j = 0, szz = Persons[pId].adjacents; j < szz; j++) {
-			long nId = edges[j];
-			if (newGraphPersons[nId] == 1) {
-				newEdges.push_back(edges[j]);
-			}
-		}
-	}
-
 	// now we have to calculate the shortest paths between them
 	MAP_INT_INT components;
 	MAP_INT_INT visitedBFS;
 	vector<long> componentsIds;
 	vector<long> Q;
+	Q.reserve(128);
 	long currentCluster = -1;
 	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
 		if( visitedBFS[people[i]->personId] == 0 ){
@@ -1626,10 +1615,10 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 				//printf("c[%ld] [%ld]\n", currentCluster, components[currentCluster] );
 
 				// insert each unvisited neighbor of the current node
-				vector<long> &edges = newGraph[c];
-				for (int e = 0, szz = edges.size(); e < szz; e++) {
+				long *edges = Persons[c].adjacentPersonsIds;
+				for (int e = 0, szz = Persons[c].adjacents; e < szz; e++) {
 					long eId = edges[e];
-					if (visitedBFS[eId] == 0) {
+					if ( newGraphPersons[eId]==1 && visitedBFS[eId] == 0) {
 						visitedBFS[eId] = 1;
 						Q.push_back(eId);
 						qSize++;
@@ -1651,13 +1640,12 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	return maxComponent;
 }
 
-bool Q2ResultListPredicate(Q2ResultNode &a, Q2ResultNode &b) {
+bool Q2ResultListPredicate(const Q2ResultNode &a, const Q2ResultNode &b) {
 	if( a.people > b.people )
 		return true;
 	if( a.people < b.people )
 		return false;
 	return strcmp( TagIdToName[a.tagId], TagIdToName[b.tagId] ) <= 0;
-	// check for tag name too
 }
 
 void query2(int k, char *date, int date_sz, long qid) {
@@ -1666,11 +1654,9 @@ void query2(int k, char *date, int date_sz, long qid) {
 	unsigned int queryBirth = getDateAsInt(date, date_sz);
 	long minComponentSize = 0;
 
-	//list<long> resultPeople;
-	//list<long> resultTag;
-
 	list<Q2ResultNode> results;
 
+	int currentResults = 0;
 	for (long i = 0, sz = TagSubFinals.size(); i < sz; i++) {
 		vector<Q2ListNode*> &people = TagSubFinals[i]->people;
 		long currentTagSize = people.size();
@@ -1684,42 +1670,41 @@ void query2(int k, char *date, int date_sz, long qid) {
 		if (people[0]->birth < queryBirth) {
 			continue;
 		}
-
-		// TODO - CALL NORMALIZE FOR THE COMPONENTS
+/*
+		if( k==6 && queryBirth == 19800306 ){
+			printf("yes");
+		}
+*/
+		// CALL NORMALIZE FOR THE COMPONENTS
 		long largestTagComponent = findTagLargestComponent(people, queryBirth, minComponentSize);
 
-
 		// we have to check if the current tag should be in the results
-		if (i < k) {
+		if (currentResults < k) {
+			// NOT NEEDED - initialized above
+			// minComponentSize = 0;
 			results.push_back(Q2ResultNode(TagSubFinals[i]->tagId, largestTagComponent));
-			if (i == k - 1) {
+			currentResults++;
+			if (currentResults == k) {
 				results.sort(Q2ResultListPredicate);
 				minComponentSize = results.back().people;
 			}
-			// NOT NEEDED - initialized above
-			//minComponentSize = 0;
 		} else {
 			// we need to discard another result only if this tag has larger component than our minimum
-			if (largestTagComponent > results.back().people) {
-				char found = 0;
-				for (list<Q2ResultNode>::iterator itPerson = results.begin(), end =
-						results.end(); itPerson != end; itPerson++) {
-					if ( (*itPerson).people < largestTagComponent) {
+			if (largestTagComponent >= results.back().people) {
+				//char found = 0;
+				for (list<Q2ResultNode>::iterator itPerson = results.begin(),
+						end = results.end(); itPerson != end; itPerson++) {
+					//if ( (*itPerson).people < largestTagComponent) {
+					if ( (*itPerson).people < largestTagComponent
+							|| (strcmp( TagIdToName[(*itPerson).tagId], TagIdToName[TagSubFinals[i]->tagId] ) >= 0  && (*itPerson).people == largestTagComponent )) {
 						// insert here
 						results.insert(itPerson, Q2ResultNode(TagSubFinals[i]->tagId,largestTagComponent));
 						// discard the last one - min
 						results.pop_back();
-						found = 1;
+						// update the minimum component
 						if (largestTagComponent < minComponentSize)
 							minComponentSize = largestTagComponent;
 						break;
-					}
-				}
-				if (!found) {
-					// we did not find minimum so check if the last one is equal
-					// and insert this one too
-					if (results.back().people == largestTagComponent) {
-						results.push_back(Q2ResultNode(TagSubFinals[i]->tagId,largestTagComponent));
 					}
 				}
 			}					// end if this is a valid tag
@@ -1729,10 +1714,7 @@ void query2(int k, char *date, int date_sz, long qid) {
 	// print the K ids from the sorted list - according to the tag names for ties
 	results.sort(Q2ResultListPredicate);
 	std::stringstream ss;
-	//printf("\nq2 [%ld]", qid);
 	for( list<Q2ResultNode>::iterator end=results.end(), itTag=results.begin(); itTag != end; itTag++ ){
-		//printf("%ld[%ld] ", (*itTag).tagId, (*itTag).people);
-		//printf("%ld ", TagIdToName[(*itTag).tagId]);
 		ss << TagIdToName[(*itTag).tagId] << " ";
 	}
 	Answers[qid] = ss.str().c_str();
@@ -1881,6 +1863,8 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	// is below the H-hops needed by the query.
 	std::stringstream ss;
 	for (; k > 0; k--) {
+		if( PQ.empty() )
+			break;
 		long idA = -1;
 		long idB = -1;
 		//long cTags = -1;
@@ -1893,11 +1877,11 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			int distance = BFS_query3(idA, idB, h);
 			if (distance <= h) {
 				// we have an answer so exit the while
+				ss << idA << "|" << idB << " ";
 				break;
 			}
 		}
 		//ss << idA << "|" << idB << "[" << cTags << "] ";
-		ss << idA << "|" << idB << " ";
 	}
 	//Answers3.push_back(ss.str());
 	//printf("q3: [%s]\n", ss.str().c_str());
@@ -1995,6 +1979,7 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 	Answers[qid] = ss.str();
 }
 
+//////////////////////////////////////////////////////////////
 //////////////////////// WORKER JOBS /////////////////////////
 
 struct Query1WorkerStruct {
@@ -2117,11 +2102,12 @@ void _initializations() {
 	TagToIndex = TrieNode_Constructor();
 	Tags.reserve(2048);
 	TagIdToIndex = new MAP_INT_INT();
-
+/*
 	Answers1.reserve(2048);
 	Answers2.reserve(2048);
 	Answers3.reserve(2048);
 	Answers4.reserve(2048);
+*/
 }
 
 void _destructor() {
@@ -2241,7 +2227,7 @@ void readQueries(char *queriesFile) {
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', 100);
+		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		int queryType = atoi(startLine + 5);
 
 		// check if we need to add a batch of jobs
@@ -2254,9 +2240,9 @@ void readQueries(char *queriesFile) {
 		// handle the new query
 		switch (queryType) {
 		case 1: {
-			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
+			char *second = ((char*) memchr(startLine + 7, ',', LONGEST_LINE_READING)) + 1;
 			*(second - 1) = '\0';
-			char *third = ((char*) memchr(second, ',', 20)) + 1;
+			char *third = ((char*) memchr(second, ',', LONGEST_LINE_READING)) + 1;
 			*(lineEnd - 1) = '\0';
 			query1(atoi(startLine+7), atoi(second), atoi(third), qid);
 /*
@@ -2274,7 +2260,7 @@ void readQueries(char *queriesFile) {
 			break;
 		}
 		case 2: {
-			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
+			char *second = ((char*) memchr(startLine + 7, ',', LONGEST_LINE_READING)) + 1;
 			*(second - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *date = second + 1; // to skip one space
@@ -2282,9 +2268,9 @@ void readQueries(char *queriesFile) {
 			break;
 		}
 		case 3: {
-			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
+			char *second = ((char*) memchr(startLine + 7, ',', LONGEST_LINE_READING)) + 1;
 			*(second - 1) = '\0';
-			char *third = ((char*) memchr(second, ',', 20)) + 1;
+			char *third = ((char*) memchr(second, ',', LONGEST_LINE_READING)) + 1;
 			*(third - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *name = third + 1; // to skip one space
@@ -2308,7 +2294,7 @@ void readQueries(char *queriesFile) {
 			break;
 		}
 		case 4: {
-			char *second = ((char*) memchr(startLine + 7, ',', 20)) + 1;
+			char *second = ((char*) memchr(startLine + 7, ',', LONGEST_LINE_READING)) + 1;
 			*(second - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *name = second + 1; // to skip one space
@@ -2430,32 +2416,14 @@ int main(int argc, char** argv) {
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
 
+	long long time_global_end = getTime();
+	sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]",
+			time_global_end - time_global_start,
+			(time_global_end - time_global_start) / 1000000.0);
+	printOut(msg);
 
 #endif
 
-
-
-	/*
-	 for(int i=0, sz=Answers1.size(); i<sz; i++){
-	 //printf("answer %d: %d\n", i, Answers1[i]);
-	 printf("%d\n", Answers1[i]);
-	 }
-
-	 for(int i=0, sz=Answers2.size(); i<sz; i++){
-	 //printf("answer %d: %s\n", i, Answers3[i].c_str());
-	 printf("%s\n", Answers2[i].c_str());
-	 }
-
-	 for(int i=0, sz=Answers3.size(); i<sz; i++){
-	 //printf("answer %d: %s\n", i, Answers3[i].c_str());
-	 printf("%s\n", Answers3[i].c_str());
-	 }
-
-	 for(int i=0, sz=Answers4.size(); i<sz; i++){
-	 //printf("answer 4 %d: %s\n", i, Answers4[i].c_str());
-	 printf("%s\n", Answers4[i].c_str());
-	 }
-	 */
 	for (long i = 0, sz = Answers.size(); i < sz; i++) {
 		//printf("answer %d: %d\n", i, Answers1[i]);
 		printf("%s\n", Answers[i].c_str());
