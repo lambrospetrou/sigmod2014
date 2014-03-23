@@ -2,9 +2,9 @@
 
 LPSparseArrayLong::LPSparseArrayLong(){
 	this->mInsertedElements = 0;
-	mSparseArray.head = mSparseArray.head = new SparseArrayNode(0, NULL, NULL);
-	mSparseArray.num_nodes = 1;
-	mSparseArray.mid_high = mSparseArray.head->high;
+	this->mSparseArray.head = mSparseArray.tail = new SparseArrayNode(0);
+	this->mSparseArray.num_nodes = 1;
+	this->mSparseArray.mid_high = mSparseArray.head->high;
 }
 
 
@@ -27,11 +27,11 @@ long LPSparseArrayLong::set(long index, long value) {
 		// OR
 		// we must create a node before this one because this is a block for bigger ids
 		if (cnode == 0 || cnode->low > index) {
-			cnode = new SparseArrayNode(
-					((index / SPARSE_ARRAY_NODE_DATA) * SPARSE_ARRAY_NODE_DATA),
-					prev, prev->next);
+			cnode = new SparseArrayNode((index / SPARSE_ARRAY_NODE_DATA) * SPARSE_ARRAY_NODE_DATA);
+			cnode->next = prev->next;
+			cnode->prev = prev;
 			prev->next = cnode;
-			if (cnode->next != 0) {
+			if( cnode->next != 0 ){
 				cnode->next->prev = cnode;
 			}
 			mSparseArray.num_nodes++;
@@ -55,12 +55,13 @@ long LPSparseArrayLong::set(long index, long value) {
 		// the case where we stopped at the right node
 		if (cnode->high < index) {
 			prev = cnode;
-			cnode = new SparseArrayNode(
-					((index / SPARSE_ARRAY_NODE_DATA) * SPARSE_ARRAY_NODE_DATA),
-					prev, prev->next);
+			cnode = new SparseArrayNode((index / SPARSE_ARRAY_NODE_DATA) * SPARSE_ARRAY_NODE_DATA);
 			if (prev == mSparseArray.tail) {
 				mSparseArray.tail = cnode;
 			}
+			cnode->next = prev->next;
+			cnode->prev = prev;
+			prev->next = cnode;
 			if (cnode->next != 0) {
 				cnode->next->prev = cnode;
 			}

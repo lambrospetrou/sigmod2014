@@ -1,1 +1,1 @@
-./main $1 $2
+./src/mainSigmod2014 $1 $2

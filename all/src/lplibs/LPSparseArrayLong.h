@@ -19,12 +19,12 @@ public:
 	void clear();
 
 private:
-	const static long SPARSE_ARRAY_NODE_DATA = 1024;
+	const static long SPARSE_ARRAY_NODE_DATA = 4096;
 
 	struct SparseArrayNode{
-		SparseArrayNode(unsigned int low, SparseArrayNode*prev, SparseArrayNode*next){
-			this->next = next;
-			this->prev = prev;
+		SparseArrayNode(unsigned int low){
+			this->next = 0;
+			this->prev = 0;
 			this->low = low;
 			this->high = low + SPARSE_ARRAY_NODE_DATA - 1;
 			memset(data, 0, SPARSE_ARRAY_NODE_DATA*sizeof(long));

@@ -43,9 +43,10 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define WORKER_THREADS 4
-#define NUM_THREADS 5
 #define NUM_CORES 4
+#define WORKER_THREADS NUM_CORES
+#define NUM_THREADS WORKER_THREADS+1
+
 
 #define BATCH_Q1 500
 #define BATCH_Q2 20
