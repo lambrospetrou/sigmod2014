@@ -29,6 +29,7 @@
 #include "lplibs/LPThreadpool.h"
 #include "lplibs/LPSparseBitset.h"
 #include "lplibs/LPSparseArrayGeneric.h"
+#include "lplibs/atomic_ops_if.h"
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -47,7 +48,7 @@ using std::tr1::hash;
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
-#define BATCH_Q1 400
+#define BATCH_Q1 200
 #define BATCH_Q2 20
 #define BATCH_Q3 10
 #define BATCH_Q4 1
@@ -1396,10 +1397,98 @@ void postProcessTagBirthdays() {
 	// sort the final list of tags descending on the list size
 	std::stable_sort(TagSubFinals.begin(), TagSubFinals.end(), Q2ListPredicate);
 
-	// TODO - dynamic memory allocation to DELETE
+	// dynamic memory allocation to DELETE
 	delete TagSubBirthdays;
 	//TagSubBirthdays.clear();
 }
+
+
+
+///////////////////////////////////////////////////////////////////////
+///////////////////// READING FILES - WORKER JOBS /////////////////////
+///////////////////////////////////////////////////////////////////////
+
+// TODO - optimization instead of adding all the jobs : KEEP ONE FOR YOURSELF
+
+int phase2_placesFinished = 0;
+
+void* phase3_ReadForumHasTags(int tid, void *args){
+	readForumHasTag(inputDir);
+	return 0;
+}
+
+void* phase3_ReadForumHasMembers(int tid, void *args){
+	readForumHasMember(inputDir);
+	return 0;
+}
+
+void* phase2_ReadPlacePartOfPlace(int tid, void *args){
+	readPlacePartOfPlace(inputDir);
+	FAI_U32(&phase2_placesFinished);
+	return 0;
+}
+
+void* phase2_ReadTagsAndPersonTags(int tid, void* args){
+	readPersonHasInterestTag(inputDir);
+	// Q2 - create the final arrays
+	postProcessTagBirthdays();
+
+	readTags(inputDir);
+	// add the rest of tag functions
+	//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase3_ReadForumHasMembers), NULL );
+	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase3_ReadForumHasTags), NULL );
+	phase3_ReadForumHasMembers(tid, NULL);
+	return 0;
+}
+
+void* phase2_ReadComments(int tid, void *args){
+	readComments(inputDir);
+	postProcessComments();
+	return 0;
+}
+
+void* phase1_ReadPersons(int tid, void *args){
+	readPersons(inputDir);
+	readPersonKnowsPerson(inputDir);
+
+	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase2_ReadComments), NULL );
+	// process the tags now that we have persons
+	phase2_ReadTagsAndPersonTags(tid, NULL);
+
+	return 0;
+}
+
+void* phase1_ReadPlacesFiles(int tid, void* args){
+	readPlaces(inputDir);
+	// add the rest of places jobs
+	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase2_ReadPlacePartOfPlace), NULL );
+
+	// execute one job too
+	readPersonLocatedAtPlace(inputDir);
+	readOrgsLocatedAtPlace(inputDir);
+	readPersonWorksStudyAtOrg(inputDir);
+
+	// wait for the others to finish and destroy the unnecessary indexes
+	// now we can delete PlaceId to Index hashmap since no further
+	// data will come containing the PlaceId
+	while( CAS_U32(&phase2_placesFinished, 1, 0) != 1 );
+
+	delete PlaceIdToIndex;
+	PlaceIdToIndex = NULL;
+
+	return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
 
 ///////////////////////////////////////////////////////////////////////
 // QUERY EXECUTORS
@@ -2058,12 +2147,7 @@ void _initializations() {
 	TagToIndex = TrieNode_Constructor();
 	Tags.reserve(2048);
 	TagIdToIndex = new MAP_INT_INT();
-/*
-	Answers1.reserve(2048);
-	Answers2.reserve(2048);
-	Answers3.reserve(2048);
-	Answers4.reserve(2048);
-*/
+
 }
 
 void _destructor() {
@@ -2308,10 +2392,14 @@ int main(int argc, char** argv) {
 	long long time_global_start = getTime();
 
 	// Initialize the threadpool
-	//	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
+	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
+	lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase1_ReadPersons), NULL );
+	lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase1_ReadPlacesFiles), NULL );
+	lp_threadpool_startjobs(threadpool);
+	synchronize_complete(threadpool);
 	// add queries into the pool
 	//readQueries(queryFile);
-
+/*
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
 	sprintf(msg, "queries file time: %ld", time_queries_end - time_global_start);
@@ -2348,8 +2436,6 @@ int main(int argc, char** argv) {
 	readOrgsLocatedAtPlace(inputDir);
 	readPersonWorksStudyAtOrg(inputDir);
 
-	// now we can delete PlaceId to Index hashmap since no further
-	// data will come containing the PlaceId
 	delete PlaceIdToIndex;
 	PlaceIdToIndex = NULL;
 
@@ -2361,7 +2447,6 @@ int main(int argc, char** argv) {
 
 	// Q3
 	readPersonHasInterestTag(inputDir);
-	// Q2
 	postProcessTagBirthdays();
 
 	// Q4
@@ -2375,8 +2460,9 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
-	lp_threadpool_startjobs(threadpool);
+*/
+	//threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
+	//lp_threadpool_startjobs(threadpool);
 	readQueries(queryFile);
 	// start workers
 	//lp_threadpool_startjobs(threadpool);
