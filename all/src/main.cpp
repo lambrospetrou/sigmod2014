@@ -2237,8 +2237,8 @@ void readQueries(char *queriesFile) {
 			*(second - 1) = '\0';
 			char *third = ((char*) memchr(second, ',', LONGEST_LINE_READING)) + 1;
 			*(lineEnd - 1) = '\0';
-			//query1(atoi(startLine+7), atoi(second), atoi(third), qid);
-
+			query1(atoi(startLine+7), atoi(second), atoi(third), qid);
+/*
 			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(
 					sizeof(Query1WorkerStruct));
 			qwstruct->p1 = atoi(startLine + 7);
@@ -2247,7 +2247,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 //			vec1.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerFunction), (void*)qwstruct );
-
+*/
 			break;
 		}
 		case 2: {
@@ -2255,8 +2255,8 @@ void readQueries(char *queriesFile) {
 			*(second - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *date = second + 1; // to skip one space
-			//query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
-
+			query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
+/*
 			Query2WorkerStruct *qwstruct = (Query2WorkerStruct*) malloc(
 					sizeof(Query2WorkerStruct));
 			qwstruct->k = atoi(startLine + 7);
@@ -2265,7 +2265,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//vec2.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
-
+*/
 			break;
 		}
 		case 3: {
@@ -2276,8 +2276,8 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = third + 1; // to skip one space
 			int name_sz = lineEnd - 1 - name;
-			//query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
-
+			query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
+/*
 			char *placeName = (char*) malloc(name_sz + 1);
 			strncpy(placeName, name, name_sz + 1);
 			Query3WorkerStruct *qwstruct = (Query3WorkerStruct*) malloc(
@@ -2289,7 +2289,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 //			vec3.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
-
+*/
 			break;
 		}
 		case 4: {
@@ -2298,8 +2298,8 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = second + 1; // to skip one space
 			int tag_sz = lineEnd - 1 - name;
-			//query4(atoi(startLine + 7), name, tag_sz, qid);
-
+			query4(atoi(startLine + 7), name, tag_sz, qid);
+/*
 			char *tagName = (char*) malloc(tag_sz + 1);
 			strncpy(tagName, name, tag_sz + 1);
 			Query4WorkerStruct *qwstruct = (Query4WorkerStruct*) malloc(
@@ -2310,7 +2310,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 //			vec4.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
-
+*/
 			break;
 		}
 		default: {
@@ -2340,7 +2340,7 @@ int main(int argc, char** argv) {
 	long long time_global_start = getTime();
 
 	// Initialize the threadpool
-	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
+	//threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
 	// add queries into the pool
 	//readQueries(queryFile);
 
@@ -2398,8 +2398,8 @@ int main(int argc, char** argv) {
 
 	readQueries(queryFile);
 	// start workers
-	lp_threadpool_startjobs(threadpool);
-	synchronize_complete(threadpool);
+	//lp_threadpool_startjobs(threadpool);
+	//synchronize_complete(threadpool);
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
