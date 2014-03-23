@@ -5,7 +5,6 @@ LPSparseArrayLong::LPSparseArrayLong(){
 	mSparseArray.head = mSparseArray.head = new SparseArrayNode(0, NULL, NULL);
 	mSparseArray.num_nodes = 1;
 	mSparseArray.mid_high = mSparseArray.head->high;
-	memset(mSparseArray.head->data, 0, SPARSE_ARRAY_NODE_DATA);
 }
 
 
@@ -145,3 +144,8 @@ long* LPSparseArrayLong::compress(long *arraySize) const{
 	return array;
 }
 
+void LPSparseArrayLong::clear(){
+	for (SparseArrayNode *cnode = mSparseArray.head; cnode; cnode = cnode->next) {
+		memset(cnode->data, 0, SPARSE_ARRAY_NODE_DATA*sizeof(long));
+	}
+}

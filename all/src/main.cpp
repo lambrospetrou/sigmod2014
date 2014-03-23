@@ -1570,8 +1570,9 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	}
 
 	// now we have to calculate the shortest paths between them
-	MAP_INT_INT components;
+	//MAP_INT_INT components;
 	//MAP_INT_INT visitedBFS;
+	LPSparseArrayLong components;
 	LPSparseArrayLong visitedBFS;
 	//LPBitset visitedBFS(N_PERSONS);
 	vector<long> componentsIds;
@@ -1599,7 +1600,8 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 				//visitedBFS[c] = 2;
 				visitedBFS.set(c, 2);
 
-				components[currentCluster]++;
+				//components[currentCluster]++;
+				++*(components.getRef(currentCluster));
 
 				//printf("c[%ld] [%ld]\n", currentCluster, components[currentCluster] );
 
@@ -1626,7 +1628,8 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	// find the maximum cluster
 	long maxComponent = 0;
 	for( long i=0,sz=componentsIds.size(); i<sz; i++ ){
-		long c = components[componentsIds[i]];
+		//long c = components[componentsIds[i]];
+		long c = components.get(componentsIds[i]);
 		if( c >= maxComponent ){
 			maxComponent = c;
 		}
@@ -1922,7 +1925,8 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 
 	// now we have to calculate the shortest paths between them
 	int n_1 = persons.size() - 1;
-	MAP_INT_INT visitedBFS;
+	//MAP_INT_INT visitedBFS;
+	LPSparseArrayLong visitedBFS;
 	vector<QueryBFS> Q;
 	for (int i = 0, sz = persons.size(); i < sz; i++) {
 		visitedBFS.clear();
@@ -1934,7 +1938,8 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 		while (qIndex < qSize) {
 			QueryBFS &c = Q[qIndex];
 			qIndex++;
-			visitedBFS[c.person] = 2;
+			//visitedBFS[c.person] = 2;
+			visitedBFS.set(c.person, 2);
 			// update info for the current person centrality
 			cPerson.s_p += c.depth;
 
@@ -1942,8 +1947,10 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 			vector<long> &edges = newGraph[c.person];
 			for (int e = 0, szz = edges.size(); e < szz; e++) {
 				long eId = edges[e];
-				if (visitedBFS[eId] == 0) {
-					visitedBFS[eId] = 1;
+				//if (visitedBFS[eId] == 0) {
+				if (visitedBFS.get(eId) == 0) {
+					//visitedBFS[eId] = 1;
+					visitedBFS.set(eId, 1);
 					Q.push_back(QueryBFS(eId, c.depth + 1));
 					qSize++;
 				}

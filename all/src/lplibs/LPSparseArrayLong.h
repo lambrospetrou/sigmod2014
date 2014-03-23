@@ -27,6 +27,7 @@ private:
 			this->prev = prev;
 			this->low = low;
 			this->high = low + SPARSE_ARRAY_NODE_DATA - 1;
+			memset(data, 0, SPARSE_ARRAY_NODE_DATA*sizeof(long));
 		}
 		SparseArrayNode* next;
 		SparseArrayNode* prev;
