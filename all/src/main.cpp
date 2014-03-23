@@ -27,8 +27,6 @@
 
 #include "lplibs/LPBitset.h"
 #include "lplibs/LPThreadpool.h"
-#include "lplibs/LPDisjointSetForest.h"
-#include "lplibs/LPSparseArrayLong.h"
 #include "lplibs/LPSparseBitset.h"
 #include "lplibs/LPSparseArrayGeneric.h"
 
@@ -45,7 +43,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -83,8 +81,10 @@ struct PersonStruct {
 // Aligned for cache lines;
 
 struct PersonCommentsStruct {
-	LPSparseArrayLong commentsToPerson;
-	LPSparseArrayLong adjacentPersonWeights;
+	//LPSparseArrayLong commentsToPerson;
+	//LPSparseArrayLong adjacentPersonWeights;
+	LPSparseArrayGeneric<long> commentsToPerson;
+	LPSparseArrayGeneric<long> adjacentPersonWeights;
 };
 
 struct TrieNode {
@@ -672,7 +672,7 @@ void postProcessComments() {
 		if (Persons[i].adjacents > 0) {
 			long adjacents = Persons[i].adjacents;
 			long *adjacentIds = Persons[i].adjacentPersonsIds;
-			LPSparseArrayLong *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
+			LPSparseArrayGeneric<long> *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
 			Persons[i].adjacentPersonWeightsSorted = (long*) malloc(
 					sizeof(long) * adjacents);
 			long *weights = Persons[i].adjacentPersonWeightsSorted;
@@ -1432,7 +1432,7 @@ void query1(int p1, int p2, int x, long qid) {
 
 	//char *visited = (char*) malloc(N_PERSONS);
 	//memset(visited, 0, N_PERSONS);
-	LPSparseArrayLong visited;
+	LPSparseArrayGeneric<long> visited;
 	vector<QueryBFS> Q;
 
 	// insert the source node into the queue
@@ -1516,7 +1516,7 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	}
 
 	// now we have to calculate the shortest paths between them
-	LPSparseArrayLong components;
+	LPSparseArrayGeneric<long> components;
 	LPSparseArrayGeneric<char> visitedBFS;
 	//LPBitset visitedBFS(N_PERSONS);
 	vector<long> componentsIds;
