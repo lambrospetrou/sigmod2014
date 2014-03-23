@@ -29,6 +29,7 @@
 #include "lplibs/LPThreadpool.h"
 #include "lplibs/LPDisjointSetForest.h"
 #include "lplibs/LPSparseArrayLong.h"
+#include "lplibs/LPSparseBitset.h"
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -1557,7 +1558,6 @@ long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirt
 long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
-	//MAP_INT_INT newGraphPersons;
 	LPBitset newGraphPersons(N_PERSONS);
 	for( unsigned long i=0,sz=people.size(); i<sz && people[i]->birth >= queryBirth; i++ ){
 		//newGraphPersons[people[i]->personId] = 1;
@@ -1571,8 +1571,6 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	}
 
 	// now we have to calculate the shortest paths between them
-	//MAP_INT_INT components;
-	//MAP_INT_INT visitedBFS;
 	LPSparseArrayLong components;
 	LPSparseArrayLong visitedBFS;
 	//LPBitset visitedBFS(N_PERSONS);
@@ -1582,7 +1580,6 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	long currentCluster = -1;
 	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
 		//if( !visitedBFS.isSet(people[i]->personId) ){
-		//if( visitedBFS[people[i]->personId] == 0 ){
 		if( visitedBFS.get(people[i]->personId) == 0 ){
 			currentCluster++;
 			componentsIds.push_back(currentCluster);
@@ -1598,10 +1595,8 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 				//if( visitedBFS.isSet(c) )
 					//continue;
 				//visitedBFS.set(c);
-				//visitedBFS[c] = 2;
 				visitedBFS.set(c, 2);
 
-				//components[currentCluster]++;
 				++*(components.getRef(currentCluster));
 
 				//printf("c[%ld] [%ld]\n", currentCluster, components[currentCluster] );
@@ -1610,12 +1605,9 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 				long *edges = Persons[c].adjacentPersonsIds;
 				for (int e = 0, szz = Persons[c].adjacents; e < szz; e++) {
 					long eId = edges[e];
-					//if ( newGraphPersons[eId]==1 && visitedBFS[eId] == 0) {
-					//if ( newGraphPersons.isSet(eId) && visitedBFS[eId] == 0) {
 					//if ( newGraphPersons.isSet(eId) && !visitedBFS.isSet(eId)) {
 					if ( newGraphPersons.isSet(eId) && visitedBFS.get(eId) == 0) {
 						visitedBFS.set(eId, 1);
-						//visitedBFS[eId] = 1;
 						//visitedBFS.set(eId);
 						Q.push_back(eId);
 						qSize++;
@@ -1629,7 +1621,6 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	// find the maximum cluster
 	long maxComponent = 0;
 	for( long i=0,sz=componentsIds.size(); i<sz; i++ ){
-		//long c = components[componentsIds[i]];
 		long c = components.get(componentsIds[i]);
 		if( c >= maxComponent ){
 			maxComponent = c;
