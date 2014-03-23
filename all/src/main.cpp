@@ -47,7 +47,7 @@ using std::tr1::hash;
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
-#define BATCH_Q1 100
+#define BATCH_Q1 200
 #define BATCH_Q2 20
 #define BATCH_Q3 10
 #define BATCH_Q4 1

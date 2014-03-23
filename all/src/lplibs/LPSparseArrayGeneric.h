@@ -129,34 +129,6 @@ void LPSparseArrayGeneric<T>::set(unsigned long index, T value) {
 }
 
 template<class T>
-T LPSparseArrayGeneric<T>::get(unsigned long index){
-	SparseArrayNode *cnode;
-	if (index < mSparseArray.mid_high) {
-		// START FROM THE HEAD AND SEARCH FORWARD
-		for (cnode = mSparseArray.head; cnode && cnode->high < index; cnode = cnode->next) {
-			// go forward
-		}
-		// the case where we finished the array without finding the required section
-		if (cnode == 0 || cnode->low > index) {
-			return 0;
-		}
-	} else {
-		// START FROM THE TAIL AND SEARCH BACKWARD
-		for (cnode = mSparseArray.tail; cnode->low > index; cnode =	cnode->prev) {
-			// move back
-		}
-		// the case where we stopped at a node with HIGH less than index and we must create a new node cause LOW is also less than index
-		// OR
-		// the case where we stopped at the right node
-		if (cnode->high < index) {
-			return 0;
-		}
-	}
-	// cnode holds the block where we have the required value
-	return cnode->data[index - cnode->low];
-}
-
-template<class T>
 T* LPSparseArrayGeneric<T>::getRef(unsigned long index){
 	SparseArrayNode *cnode;
 	if (index < mSparseArray.mid_high) {
@@ -173,15 +145,21 @@ T* LPSparseArrayGeneric<T>::getRef(unsigned long index){
 		for (cnode = mSparseArray.tail; cnode->low > index; cnode =	cnode->prev) {
 			// move back
 		}
-		// the case where we stopped at a node with HIGH less than index and we must create a new node cause LOW is also less than index
-		// OR
-		// the case where we stopped at the right node
+		// the case where we stopped at a node with HIGH less than index
 		if (cnode->high < index) {
 			return 0;
 		}
 	}
 	// cnode holds the block where we have the required value
 	return &cnode->data[index - cnode->low];
+}
+
+template<class T>
+T LPSparseArrayGeneric<T>::get(unsigned long index){
+	T* found = getRef(index);
+	if( found == 0 )
+		return 0;
+	return *found;
 }
 
 template<class T>
