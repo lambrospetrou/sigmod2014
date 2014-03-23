@@ -48,7 +48,6 @@ using std::tr1::hash;
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
-
 #define BATCH_Q1 500
 #define BATCH_Q2 20
 #define BATCH_Q3 10
@@ -278,11 +277,12 @@ TrieNode *TagToIndex; // required by Q4
 MAP_INT_VecL Forums;
 //vector<ForumNodeStruct*> Forums;
 
+/*
 vector<int> Answers1;
 vector<string> Answers2;
 vector<string> Answers3;
 vector<string> Answers4;
-
+*/
 vector<string> Answers;
 
 // the structures below are only used as intermediate steps while
@@ -300,7 +300,7 @@ MAP_LONG_STRING TagIdToName;
 int *PersonBirthdays;
 //typedef std::tr1::unordered_map<unsigned long, TagSubStruct*, hash<unsigned long> > MAP_LONG_TSPTR;
 typedef std::map<unsigned long, TagSubStruct*> MAP_LONG_TSPTR;
-MAP_LONG_TSPTR TagSubBirthdays;
+MAP_LONG_TSPTR *TagSubBirthdays;
 vector<TagSubStruct*> TagSubFinals;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1153,6 +1153,8 @@ void readPersonHasInterestTag(char *inputDir) {
 	char msg[100];
 #endif
 
+	TagSubBirthdays = new MAP_LONG_TSPTR();
+
 	// process the whole file in memory
 	// skip the first line
 	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
@@ -1173,17 +1175,17 @@ void readPersonHasInterestTag(char *inputDir) {
 
 		int subgraph = Persons[personId].subgraphNumber;
 		unsigned long key = CantorPairingFunction(tagId, subgraph);
-		if (TagSubBirthdays.find(key) == TagSubBirthdays.end()) {
+		if (TagSubBirthdays->find(key) == TagSubBirthdays->end()) {
 			TagSubStruct *newTag = new TagSubStruct();
 			newTag->subId = subgraph;
 			newTag->tagId = tagId;
-			TagSubBirthdays[key] = newTag;
+			(*TagSubBirthdays)[key] = newTag;
 		}
 		Q2ListNode *newPerson = new Q2ListNode();
 		newPerson->birth = PersonBirthdays[personId];
 		newPerson->personId = personId;
 		newPerson->component_size = 0;
-		TagSubBirthdays[key]->people.push_back(newPerson);
+		(*TagSubBirthdays)[key]->people.push_back(newPerson);
 
 		startLine = lineEnd + 1;
 #ifdef DEBUGGING
@@ -1193,6 +1195,9 @@ void readPersonHasInterestTag(char *inputDir) {
 	// close the comment_hasCreator_Person
 	fclose(input);
 	free(buffer);
+
+	// delete not required structures anymore - Q2
+	free(PersonBirthdays);
 
 	// sort the tags to make easy the comparison
 	// TODO - create signatures for the tags instead
@@ -1390,8 +1395,8 @@ void readForumHasMember(char *inputDir) {
 ///////////////////////////////////////////////////////////////////////
 
 void postProcessTagBirthdays() {
-	for (MAP_LONG_TSPTR::iterator it = TagSubBirthdays.begin(),
-			end = TagSubBirthdays.end(); it != end;	it++) {
+	for (MAP_LONG_TSPTR::iterator it = TagSubBirthdays->begin(),
+			end = TagSubBirthdays->end(); it != end;	it++) {
 		TagSubStruct*tagStruct = (*it).second;
 		TagSubFinals.push_back(tagStruct);
 		// sort the birthdays of each TagSubgraph
@@ -1402,7 +1407,8 @@ void postProcessTagBirthdays() {
 	std::stable_sort(TagSubFinals.begin(), TagSubFinals.end(), Q2ListPredicate);
 
 	// TODO - dynamic memory allocation to DELETE
-	TagSubBirthdays.clear();
+	delete TagSubBirthdays;
+	//TagSubBirthdays.clear();
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -1426,8 +1432,9 @@ void query1(int p1, int p2, int x, long qid) {
 
 	int answer = -1;
 
-	char *visited = (char*) malloc(N_PERSONS);
-	memset(visited, 0, N_PERSONS);
+	//char *visited = (char*) malloc(N_PERSONS);
+	//memset(visited, 0, N_PERSONS);
+	LPSparseArrayLong visited;
 	vector<QueryBFS> Q;
 
 	// insert the source node into the queue
@@ -1440,7 +1447,8 @@ void query1(int p1, int p2, int x, long qid) {
 
 		//printf("current: %ld %d\n", current.person, current.depth);
 		// mark node as visited - BLACK
-		visited[current.person] = 2;
+		//visited[current.person] = 2;
+		visited.set(current.person,2);
 
 		// we must add the current neighbors into the queue if
 		// the comments are valid
@@ -1452,16 +1460,13 @@ void query1(int p1, int p2, int x, long qid) {
 			for (long i = 0, sz = cPerson->adjacents;
 					(i < sz) && (weights[i] > x); i++) {
 				long cAdjacent = adjacents[i];
-				if (visited[cAdjacent] == 0) {
+				//if (visited[cAdjacent] == 0) {
+				if (visited.get(cAdjacent) == 0) {
 					if (cAdjacent == p2) {
-						//Answers1.push_back(current.depth + 1);
-						//printf("q1: [%d]", current.depth + 1);
-						//free(visited);
-						//return;
 						answer = current.depth + 1;
 						break;
 					}
-					visited[cAdjacent] = 1;
+					visited.set(cAdjacent,1);
 					Q.push_back(QueryBFS(cAdjacent, current.depth + 1));
 					size++;
 				}
@@ -1471,17 +1476,14 @@ void query1(int p1, int p2, int x, long qid) {
 			for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
 				long cAdjacent = adjacents[i];
 				// if node not visited and not added
-				if (visited[cAdjacent] == 0) {
+				//if (visited[cAdjacent] == 0) {
+				if (visited.get(cAdjacent) == 0) {
 					if (cAdjacent == p2) {
-						//Answers1.push_back(current.depth + 1);
-						//printf("q1: [%d]", current.depth + 1);
-						//free(visited);
-						//return;
 						answer = current.depth + 1;
 						break;
 					}
 					// mark node as added - GREY
-					visited[cAdjacent] = 1;
+					visited.set(cAdjacent,1);
 					Q.push_back(QueryBFS(cAdjacent, current.depth + 1));
 					size++;
 				}
@@ -1492,8 +1494,6 @@ void query1(int p1, int p2, int x, long qid) {
 			break;
 		}
 	}
-
-	free(visited);
 	// no path found
 	//Answers1.push_back(-1);
 	//printf("q1: [%d]", answer);
