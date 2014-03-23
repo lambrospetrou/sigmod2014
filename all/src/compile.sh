@@ -1,1 +1,1 @@
-g++ lplibs/LPThreadpool.cpp lplibs/LPSparseArrayGeneric.cpp lplibs/LPSparseBitset.cpp lplibs/LPBitset.cpp  main.cpp -lpthread -o mainSigmod2014 -w
+g++ lplibs/LPThreadpool.cpp lplibs/LPSparseArrayGeneric.h lplibs/LPSparseBitset.cpp lplibs/LPBitset.cpp  main.cpp -lpthread -o mainSigmod2014 -w

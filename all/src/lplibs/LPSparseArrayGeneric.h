@@ -18,7 +18,7 @@ public:
 	void clear();
 
 private:
-	const static long SPARSE_ARRAY_NODE_DATA = 2048;
+	const static long SPARSE_ARRAY_NODE_DATA = 4096;
 
 	struct SparseArrayNode{
 		SparseArrayNode(unsigned int low){

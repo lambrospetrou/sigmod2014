@@ -25,7 +25,7 @@ public:
 	void clearAll();
 
 private:
-	const static long SPARSE_ARRAY_NODE_DATA = 256;
+	const static long SPARSE_ARRAY_NODE_DATA = 1024;
 	const static long SPARSE_ARRAY_NODE_DATA_BITS = SPARSE_ARRAY_NODE_DATA << 3;
 
 	struct SparseArrayNode{

@@ -18,7 +18,7 @@
 #include <list>
 #include <vector>
 #include <queue>
-#include <map>
+//#include <map>
 #include <algorithm>
 #include <iterator>
 #include <sstream>
@@ -47,7 +47,7 @@ using std::tr1::hash;
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
-#define BATCH_Q1 200
+#define BATCH_Q1 400
 #define BATCH_Q2 20
 #define BATCH_Q3 10
 #define BATCH_Q4 1
@@ -275,12 +275,6 @@ TrieNode *TagToIndex; // required by Q4
 MAP_INT_VecL Forums;
 //vector<ForumNodeStruct*> Forums;
 
-/*
-vector<int> Answers1;
-vector<string> Answers2;
-vector<string> Answers3;
-vector<string> Answers4;
-*/
 vector<string> Answers;
 
 // the structures below are only used as intermediate steps while
@@ -296,8 +290,8 @@ MAP_LONG_STRING TagIdToName;
 
 // TODO
 int *PersonBirthdays;
-//typedef std::tr1::unordered_map<unsigned long, TagSubStruct*, hash<unsigned long> > MAP_LONG_TSPTR;
-typedef std::map<unsigned long, TagSubStruct*> MAP_LONG_TSPTR;
+typedef std::tr1::unordered_map<unsigned long, TagSubStruct*, hash<unsigned long> > MAP_LONG_TSPTR;
+//typedef std::map<unsigned long, TagSubStruct*> MAP_LONG_TSPTR;
 MAP_LONG_TSPTR *TagSubBirthdays;
 vector<TagSubStruct*> TagSubFinals;
 
@@ -501,19 +495,28 @@ void readPersons(char* inputDir) {
 	char *lineEnd;
 	char *dateStartDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		//lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
+		//for( dateStartDivisor=startLine; *dateStartDivisor != '|'; dateStartDivisor++);
 		dateStartDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*dateStartDivisor = '\0';
 		long idPerson = atol(startLine);
 		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
 		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
 		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
-		*lineEnd = '\0';
+		/*
+		int divisorsCount = 0;
+		for( dateStartDivisor=dateStartDivisor+1; divisorsCount<3; dateStartDivisor++ ){
+			if( *dateStartDivisor == '|' )
+				divisorsCount++;
+		}
+		*/
 
 		int dateInt = getDateAsInt(dateStartDivisor + 1, 10);
 		//printf("%d\n", dateInt);
 		PersonBirthdays[idPerson] = dateInt;
 
+		//for( lineEnd=dateStartDivisor+10; *lineEnd != '\n'; lineEnd++);
+		lineEnd = (char*) memchr(dateStartDivisor+10, '\n', LONGEST_LINE_READING);
 		startLine = lineEnd + 1;
 	}
 	// close the comment_hasCreator_Person
@@ -603,14 +606,14 @@ void readPersonKnowsPerson(char *inputDir) {
 
 	// the whole file is now loaded in the memory buffer.
 	vector<long> ids;
-	ids.reserve(256);
+	ids.reserve(128);
 	long prevId = -1;
 	// skip the first line
 	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	char *EndOfFile = buffer + lSize;
 	while (startLine < EndOfFile) {
-		char *lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		char *idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		char *lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idA = atol(startLine);
@@ -733,8 +736,8 @@ void readComments(char* inputDir) {
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idA = atol(startLine);
@@ -780,14 +783,10 @@ void readComments(char* inputDir) {
 	startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
 	EndOfFile = buffer + lSize;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
-		if (lineEnd != NULL) {
-			*lineEnd = '\0';
-		} else {
-			lineEnd = EndOfFile;
-		}
+		*lineEnd = '\0';
 		long idA = atol(startLine);
 		long idB = atol(idDivisor + 1);
 
@@ -828,12 +827,6 @@ void readComments(char* inputDir) {
 	printOut(msg);
 #endif
 
-	///////////////////////////////////////////////////////////////////
-	// PROCESS THE COMMENTS OF EACH PERSON A
-	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
-	///////////////////////////////////////////////////////////////////
-	postProcessComments();
-
 }
 
 void readPlaces(char *inputDir) {
@@ -861,11 +854,9 @@ void readPlaces(char *inputDir) {
 	char *idDivisor;
 	char *nameDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		nameDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
-		*lineEnd = '\0';
 		*nameDivisor = '\0';
 		long id = atol(startLine);
 		char *name = idDivisor + 1;
@@ -890,6 +881,7 @@ void readPlaces(char *inputDir) {
 
 		//printf("place[%ld] name[%*s] index[%ld] idToIndex[%ld]\n", id, nameDivisor-name, name,  insertedPlace->placeIndex, (*PlaceIdToIndex)[id]);
 
+		lineEnd = (char*) memchr(nameDivisor, '\n', LONGEST_LINE_READING);
 		startLine = lineEnd + 1;
 	}
 	// close the comment_hasCreator_Person
@@ -926,8 +918,8 @@ void readPlacePartOfPlace(char *inputDir) {
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idA = atol(startLine);
@@ -983,8 +975,8 @@ void readPersonLocatedAtPlace(char *inputDir) {
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idPerson = atol(startLine);
@@ -1041,8 +1033,8 @@ void readOrgsLocatedAtPlace(char *inputDir) {
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long idOrg = atol(startLine);
@@ -1067,10 +1059,7 @@ void readOrgsLocatedAtPlace(char *inputDir) {
 	printOut(msg);
 #endif
 
-	// now we can delete PlaceId to Index hashmap since no further
-	// data will come containing the PlaceId
-	delete PlaceIdToIndex;
-	PlaceIdToIndex = NULL;
+
 }
 
 void readPersonWorksStudyAtOrg(char *inputDir) {
@@ -1102,7 +1091,6 @@ void readPersonWorksStudyAtOrg(char *inputDir) {
 		char *idDivisor;
 		char *orgDivisor;
 		while (startLine < EndOfFile) {
-			lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 			idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 			orgDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 			*idDivisor = '\0';
@@ -1115,6 +1103,7 @@ void readPersonWorksStudyAtOrg(char *inputDir) {
 			Places[indexPlace]->personsThis.push_back(idPerson);
 			//printf("person[%ld] org[%ld] place[%ld]\n", idPerson, idOrg, indexPlace);
 
+			lineEnd = (char*) memchr(orgDivisor, '\n', LONGEST_LINE_READING);
 			startLine = lineEnd + 1;
 #ifdef DEBUGGING
 			persons++;
@@ -1164,8 +1153,8 @@ void readPersonHasInterestTag(char *inputDir) {
 	char *idDivisor;
 
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long personId = atol(startLine);
@@ -1239,7 +1228,6 @@ void readTags(char *inputDir) {
 	char *idDivisor;
 	char *nameDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		nameDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
@@ -1273,6 +1261,7 @@ void readTags(char *inputDir) {
 		tagName[name_sz] = '\0';
 		TagIdToName[id] = tagName;
 
+		lineEnd = (char*) memchr(nameDivisor, '\n', LONGEST_LINE_READING);
 		startLine = lineEnd + 1;
 	}
 	// close the comment_hasCreator_Person
@@ -1311,8 +1300,8 @@ void readForumHasTag(char *inputDir) {
 	char *lineEnd;
 	char *idDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
 		long forumId = atol(startLine);
@@ -1365,7 +1354,6 @@ void readForumHasMember(char *inputDir) {
 	char *idDivisor;
 	char *dateDivisor;
 	while (startLine < EndOfFile) {
-		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		dateDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
@@ -1376,6 +1364,7 @@ void readForumHasMember(char *inputDir) {
 		// insert the person directly into the forum members
 		Forums[forumId].push_back(personId);
 
+		lineEnd = (char*) memchr(dateDivisor, '\n', LONGEST_LINE_READING);
 		startLine = lineEnd + 1;
 #ifdef DEBUGGING
 		forumPersons++;
@@ -1850,14 +1839,16 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 
 	// now I want to create a new graph containing only the required edges
 	// to speed up the shortest paths between all of them
-
+	//LPSparseArrayGeneric<vector<long> > newGraph;
 	MAP_INT_VecL newGraph;
 	for (int i = 0, sz = persons.size(); i < sz; i++) {
 		long pId = persons[i].person;
 		long *edges = Persons[pId].adjacentPersonsIds;
 		vector<long> &newEdges = newGraph[pId];
+		//vector<long> *newEdges = newGraph.getRef(pId);
 		for (int j = 0, szz = Persons[pId].adjacents; j < szz; j++) {
 			if (visitedPersons->isSet(edges[j])) {
+				//newEdges->push_back(edges[j]);
 				newEdges.push_back(edges[j]);
 			}
 		}
@@ -1888,9 +1879,12 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 
 			// insert each unvisited neighbor of the current node
 			vector<long> &edges = newGraph[c.person];
+			//vector<long> *edges = newGraph.getRef(c.person);
 			//long*edges = Persons[c.person].adjacentPersonsIds;
 			for (int e = 0, szz = edges.size(); e < szz; e++) {
+			//for (int e = 0, szz = edges->size(); e < szz; e++) {
 			//for (int e = 0, szz = Persons[c.person].adjacents; e < szz; e++) {
+				//long eId = (*edges)[e];
 				long eId = edges[e];
 				//if (visitedBFS[eId] == 0) {
 				if ( visitedBFS.get(eId) == 0) {
@@ -2336,6 +2330,12 @@ int main(int argc, char** argv) {
 
 	readComments(inputDir);
 
+	///////////////////////////////////////////////////////////////////
+	// PROCESS THE COMMENTS OF EACH PERSON A
+	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
+	///////////////////////////////////////////////////////////////////
+	postProcessComments();
+
 #ifdef DEBUGGING
 	long time_comments_end = getTime();
 	sprintf(msg, "comments process time: %ld", time_comments_end - time_global_start);
@@ -2347,6 +2347,11 @@ int main(int argc, char** argv) {
 	readPersonLocatedAtPlace(inputDir);
 	readOrgsLocatedAtPlace(inputDir);
 	readPersonWorksStudyAtOrg(inputDir);
+
+	// now we can delete PlaceId to Index hashmap since no further
+	// data will come containing the PlaceId
+	delete PlaceIdToIndex;
+	PlaceIdToIndex = NULL;
 
 #ifdef DEBUGGING
 	long time_places_end = getTime();
