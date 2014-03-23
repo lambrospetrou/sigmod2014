@@ -134,7 +134,7 @@ void* lp_tpworker_thread( void* _pool ){
 	lp_threadpool* pool = ((lp_threadpool*)_pool);
 	int _tid=lp_threadpool_uniquetid( pool );
 
-	fprintf( stderr, "thread[%d] entered worker_thread infite\n", _tid );
+	//fprintf( stderr, "thread[%d] entered worker_thread infite\n", _tid );
 
 	// _tid-1 because tids are from 1-NUM_THREADS
 	// the value will change when the startJobs function will be called
@@ -179,7 +179,7 @@ lp_threadpool* lp_threadpool_init( int threads, int cores ){
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*threads);
 	for( int i=0; i<threads; i++ ){
 		pthread_create( &worker_threads[i], NULL, reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
-		fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
 
 		CPU_SET( (i % cores) , &mask);
 		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0){

@@ -56,7 +56,6 @@ using std::tr1::hash;
 // structs
 ///////////////////////////////////////////////////////////////////////////////
 
-typedef vector<int> LIST_INT;
 //typedef map<int, int> MAP_INT_INT;
 typedef std::tr1::unordered_map<int, int, hash<int> > MAP_INT_INT;
 typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
@@ -65,12 +64,10 @@ typedef std::tr1::unordered_map<long, char*, hash<long> > MAP_LONG_STRING;
 struct PersonStruct {
 	PersonStruct() {
 		subgraphNumber = -1;
-		//adjacentPersons.reserve(32);
 		adjacents = 0;
 		adjacentPersonsIds = NULL;
 		adjacentPersonWeightsSorted = NULL;
 	}
-	//LIST_INT adjacentPersons;
 	long *adjacentPersonsIds;
 	long adjacents;
 
@@ -85,7 +82,7 @@ struct PersonCommentsStruct {
 	//LPSparseArrayLong adjacentPersonWeights;
 	LPSparseArrayGeneric<long> commentsToPerson;
 	LPSparseArrayGeneric<long> adjacentPersonWeights;
-};
+}__attribute__((aligned(CACHE_LINE_SIZE)));;
 
 struct TrieNode {
 	char valid;
@@ -129,7 +126,7 @@ struct TagSubStruct {
 	long tagId;
 	long subId;
 	vector<Q2ListNode*> people;
-};
+}__attribute__((aligned(CACHE_LINE_SIZE)));;
 
 /////////////////////////////
 // QUERY SPECIFIC
@@ -184,7 +181,6 @@ struct Query4PersonStruct {
 	int r_p;
 	double centrality;
 };
-// Aligned for cache lines;
 
 bool Query4PersonStructPredicate(const Query4PersonStruct& d1,
 		const Query4PersonStruct& d2) {
