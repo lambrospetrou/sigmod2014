@@ -1884,8 +1884,6 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 	vector<Query4PersonStruct> persons;
 	vector<long> &forums = Tags[tagIndex]->forums;
 	// TODO - consider having SET here for space issues - and also in query 3
-	//vector<bool> *visitedPersons = new vector<bool>();
-	//visitedPersons->resize(N_PERSONS);
 	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
 	for (int cForum = 0, fsz = forums.size(); cForum < fsz; cForum++) {
 		vector<long> &cPersons = Forums[forums[cForum]];
