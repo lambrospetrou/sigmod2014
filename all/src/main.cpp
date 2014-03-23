@@ -30,6 +30,7 @@
 #include "lplibs/LPDisjointSetForest.h"
 #include "lplibs/LPSparseArrayLong.h"
 #include "lplibs/LPSparseBitset.h"
+#include "lplibs/LPSparseArrayGeneric.h"
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -1499,59 +1500,6 @@ void query1(int p1, int p2, int x, long qid) {
 	Answers[qid] = ss.str();
 }
 
-
-long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
-	// make the persons for this graph a set
-	long indexValidPersons=0;
-
-	// first pass to make sure we have enough people to make a larger component
-	for( unsigned long i=0,sz=people.size(); i<sz && people[i]->birth >= queryBirth; i++ ){
-		indexValidPersons++;
-	}
-	// check if we have enough people to make a larger component
-	if (indexValidPersons < minComponentSize) {
-		return 0;
-	}
-
-	// second pass to initialize the structures needed
-	LPDisjointSetForest<long> forest;
-	MAP_INT_INT newGraphPersons;
-	for( unsigned long i=0,sz=indexValidPersons; i<sz; i++ ){
-		//newGraphPersons[people[i]->personId] = 1;
-		forest.createSet(people[i]->personId);
-	}
-
-	// add each person in its component set
-	for( unsigned long i=0,sz=indexValidPersons; i<sz; i++ ){
-		long cId = people[i]->personId;
-		long *edges = Persons[cId].adjacentPersonsIds;
-		for (int e = 0, szz = Persons[cId].adjacents; e < szz; e++) {
-			long eId = edges[e];
-			long* nSet = forest.findSet(eId);
-			// if neighbor is in this graph
-			if ( nSet != 0 ) {
-				long *cSet = forest.findSet(cId);
-				if( cSet != nSet ){
-					// we have to connect these two neighbors
-					forest.uniteSets(cId, eId);
-				}
-			}
-		}
-	}
-
-	// now we have to pass one more and count the number of people in each set
-	MAP_INT_INT components;
-	long maxComponent = 0, cCount;
-	long *set;
-	for( unsigned long i=0,sz=indexValidPersons; i<sz; i++ ){
-		set = forest.findSet(people[i]->personId);
-		cCount = ++components[*set];
-		if( cCount > maxComponent )
-			maxComponent = cCount;
-	}
-	return maxComponent;
-}
-
 long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
@@ -1569,7 +1517,7 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 
 	// now we have to calculate the shortest paths between them
 	LPSparseArrayLong components;
-	LPSparseArrayLong visitedBFS;
+	LPSparseArrayGeneric<char> visitedBFS;
 	//LPBitset visitedBFS(N_PERSONS);
 	vector<long> componentsIds;
 	vector<long> Q;
@@ -1707,8 +1655,10 @@ void query2(int k, char *date, int date_sz, long qid) {
 }
 
 int BFS_query3(long idA, long idB, int h) {
-	char *visited = (char*) malloc(N_PERSONS);
-	memset(visited, 0, N_PERSONS);
+	//char *visited = (char*) malloc(N_PERSONS);
+	//memset(visited, 0, N_PERSONS);
+
+	LPSparseArrayGeneric<char> visited;
 
 	vector<QueryBFS> Q;
 	long qIndex = 0;
@@ -1727,26 +1677,28 @@ int BFS_query3(long idA, long idB, int h) {
 			break;
 		}
 		// mark person BLACK - visited
-		visited[cPerson.person] = 2;
+		//visited[cPerson.person] = 2;
+		visited.set(cPerson.person,2);
 
 		long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
 		for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
 			long cB = neighbors[i];
 			// if person is not visited and not added yet
-			if (visited[cB] == 0) {
+			//if (visited[cB] == 0) {
+			if ( visited.get(cB) == 0) {
 				// check if this is our person
 				if (idB == cB) {
-					free(visited);
+					//free(visited);
 					return cPerson.depth + 1;
 				}
 				// mark person as GREY - added
-				visited[cB] = 1;
+				visited.set(cB,1);
 				Q.push_back(QueryBFS(cB, cPerson.depth + 1));
 				qSize++;
 			}
 		}
 	}
-	free(visited);
+	//free(visited);
 	return INT_MAX;
 }
 
@@ -1754,9 +1706,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
 
 	vector<long> persons;
-	//vector<bool> visitedPersons;
-	//visitedPersons.resize(N_PERSONS);
-	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
+	LPSparseBitset *visitedPersons = new LPSparseBitset();
 	// get all the persons that are related to the place passed in
 	char *visitedPlace = (char*) malloc(Places.size());
 	memset(visitedPlace, 0, Places.size());
@@ -1881,7 +1831,8 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 	vector<Query4PersonStruct> persons;
 	vector<long> &forums = Tags[tagIndex]->forums;
 	// TODO - consider having SET here for space issues - and also in query 3
-	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
+	//LPBitset *visitedPersons = new LPBitset(N_PERSONS);
+	LPSparseBitset *visitedPersons = new LPSparseBitset();
 	for (int cForum = 0, fsz = forums.size(); cForum < fsz; cForum++) {
 		vector<long> &cPersons = Forums[forums[cForum]];
 		for (int cPerson = 0, psz = cPersons.size(); cPerson < psz; cPerson++) {
@@ -1896,6 +1847,7 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 
 	// now I want to create a new graph containing only the required edges
 	// to speed up the shortest paths between all of them
+
 	MAP_INT_VecL newGraph;
 	for (int i = 0, sz = persons.size(); i < sz; i++) {
 		long pId = persons[i].person;
@@ -1910,10 +1862,11 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 	// safe to delete the visitedPersons since we got the people for this tag
 	delete visitedPersons;
 
+
 	// now we have to calculate the shortest paths between them
 	int n_1 = persons.size() - 1;
 	//MAP_INT_INT visitedBFS;
-	LPSparseArrayLong visitedBFS;
+	LPSparseArrayGeneric<char> visitedBFS;
 	vector<QueryBFS> Q;
 	for (int i = 0, sz = persons.size(); i < sz; i++) {
 		visitedBFS.clear();
@@ -1932,10 +1885,13 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 
 			// insert each unvisited neighbor of the current node
 			vector<long> &edges = newGraph[c.person];
+			//long*edges = Persons[c.person].adjacentPersonsIds;
 			for (int e = 0, szz = edges.size(); e < szz; e++) {
+			//for (int e = 0, szz = Persons[c.person].adjacents; e < szz; e++) {
 				long eId = edges[e];
 				//if (visitedBFS[eId] == 0) {
-				if (visitedBFS.get(eId) == 0) {
+				if ( visitedBFS.get(eId) == 0) {
+				//if ( visitedPersons->isSet(eId) && visitedBFS.get(eId) == 0) {
 					//visitedBFS[eId] = 1;
 					visitedBFS.set(eId, 1);
 					Q.push_back(QueryBFS(eId, c.depth + 1));
@@ -1954,9 +1910,10 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 		}
 	}
 
+	//delete visitedPersons;
+
 	// we now just have to return the K persons with the highest centrality
-	std::stable_sort(persons.begin(), persons.end(),
-			Query4PersonStructPredicate);
+	std::stable_sort(persons.begin(), persons.end(),Query4PersonStructPredicate);
 	std::stringstream ss;
 	for (int i = 0; i < k; i++) {
 		//ss << persons[i].person << ":" << persons[i].centrality << " ";

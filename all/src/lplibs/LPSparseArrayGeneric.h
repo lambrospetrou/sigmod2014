@@ -187,7 +187,7 @@ T* LPSparseArrayGeneric<T>::getRef(unsigned long index){
 template<class T>
 void LPSparseArrayGeneric<T>::clear(){
 	for (SparseArrayNode *cnode = mSparseArray.head; cnode; cnode = cnode->next) {
-		memset(cnode->data, 0, SPARSE_ARRAY_NODE_DATA*sizeof(long));
+		memset(cnode->data, 0, SPARSE_ARRAY_NODE_DATA*sizeof(T));
 	}
 }
 
