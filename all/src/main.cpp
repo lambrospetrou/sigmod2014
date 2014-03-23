@@ -28,6 +28,7 @@
 #include "lplibs/LPBitset.h"
 #include "lplibs/LPThreadpool.h"
 #include "lplibs/LPDisjointSetForest.h"
+#include "lplibs/LPSparseArrayLong.h"
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -1570,7 +1571,8 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 
 	// now we have to calculate the shortest paths between them
 	MAP_INT_INT components;
-	MAP_INT_INT visitedBFS;
+	//MAP_INT_INT visitedBFS;
+	LPSparseArrayLong visitedBFS;
 	//LPBitset visitedBFS(N_PERSONS);
 	vector<long> componentsIds;
 	vector<long> Q;
@@ -1578,7 +1580,8 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	long currentCluster = -1;
 	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
 		//if( !visitedBFS.isSet(people[i]->personId) ){
-		if( visitedBFS[people[i]->personId] == 0 ){
+		//if( visitedBFS[people[i]->personId] == 0 ){
+		if( visitedBFS.get(people[i]->personId) == 0 ){
 			currentCluster++;
 			componentsIds.push_back(currentCluster);
 			Q.clear();
@@ -1593,8 +1596,8 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 				//if( visitedBFS.isSet(c) )
 					//continue;
 				//visitedBFS.set(c);
-				visitedBFS[c] = 2;
-
+				//visitedBFS[c] = 2;
+				visitedBFS.set(c, 2);
 
 				components[currentCluster]++;
 
@@ -1605,9 +1608,11 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 				for (int e = 0, szz = Persons[c].adjacents; e < szz; e++) {
 					long eId = edges[e];
 					//if ( newGraphPersons[eId]==1 && visitedBFS[eId] == 0) {
-					if ( newGraphPersons.isSet(eId) && visitedBFS[eId] == 0) {
+					//if ( newGraphPersons.isSet(eId) && visitedBFS[eId] == 0) {
 					//if ( newGraphPersons.isSet(eId) && !visitedBFS.isSet(eId)) {
-						visitedBFS[eId] = 1;
+					if ( newGraphPersons.isSet(eId) && visitedBFS.get(eId) == 0) {
+						visitedBFS.set(eId, 1);
+						//visitedBFS[eId] = 1;
 						//visitedBFS.set(eId);
 						Q.push_back(eId);
 						qSize++;
@@ -2233,19 +2238,17 @@ void readQueries(char *queriesFile) {
 			*(second - 1) = '\0';
 			char *third = ((char*) memchr(second, ',', LONGEST_LINE_READING)) + 1;
 			*(lineEnd - 1) = '\0';
-			query1(atoi(startLine+7), atoi(second), atoi(third), qid);
-/*
+			//query1(atoi(startLine+7), atoi(second), atoi(third), qid);
+
 			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(
 					sizeof(Query1WorkerStruct));
 			qwstruct->p1 = atoi(startLine + 7);
 			qwstruct->p2 = atoi(second);
 			qwstruct->x = atoi(third);
 			qwstruct->qid = qid;
-			vec1.push_back(qwstruct);
-			lp_threadpool_addjob_nolock(threadpool,
-					reinterpret_cast<void* (*)(int,
-							void*)>(Query1WorkerFunction), (void*)qwstruct );
-*/
+//			vec1.push_back(qwstruct);
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerFunction), (void*)qwstruct );
+
 			break;
 		}
 		case 2: {
@@ -2253,7 +2256,17 @@ void readQueries(char *queriesFile) {
 			*(second - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *date = second + 1; // to skip one space
-			query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
+			//query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
+
+			Query2WorkerStruct *qwstruct = (Query2WorkerStruct*) malloc(
+					sizeof(Query2WorkerStruct));
+			qwstruct->k = atoi(startLine + 7);
+			qwstruct->date = date;
+			qwstruct->date_sz = lineEnd-1-date;
+			qwstruct->qid = qid;
+			//vec2.push_back(qwstruct);
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
+
 			break;
 		}
 		case 3: {
@@ -2264,8 +2277,8 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = third + 1; // to skip one space
 			int name_sz = lineEnd - 1 - name;
-			query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
-/*
+			//query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
+
 			char *placeName = (char*) malloc(name_sz + 1);
 			strncpy(placeName, name, name_sz + 1);
 			Query3WorkerStruct *qwstruct = (Query3WorkerStruct*) malloc(
@@ -2275,11 +2288,9 @@ void readQueries(char *queriesFile) {
 			qwstruct->name = placeName;
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
-			vec3.push_back(qwstruct);
-			lp_threadpool_addjob_nolock(threadpool,
-					reinterpret_cast<void* (*)(int,
-							void*)>(Query3WorkerFunction), qwstruct );
-*/
+//			vec3.push_back(qwstruct);
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+
 			break;
 		}
 		case 4: {
@@ -2288,8 +2299,8 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = second + 1; // to skip one space
 			int tag_sz = lineEnd - 1 - name;
-			query4(atoi(startLine + 7), name, tag_sz, qid);
-/*
+			//query4(atoi(startLine + 7), name, tag_sz, qid);
+
 			char *tagName = (char*) malloc(tag_sz + 1);
 			strncpy(tagName, name, tag_sz + 1);
 			Query4WorkerStruct *qwstruct = (Query4WorkerStruct*) malloc(
@@ -2298,11 +2309,9 @@ void readQueries(char *queriesFile) {
 			qwstruct->tag = tagName;
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
-			vec4.push_back(qwstruct);
-			lp_threadpool_addjob_nolock(threadpool,
-					reinterpret_cast<void* (*)(int,
-							void*)>(Query4WorkerFunction), qwstruct );
-*/
+//			vec4.push_back(qwstruct);
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
+
 			break;
 		}
 		default: {
@@ -2332,7 +2341,7 @@ int main(int argc, char** argv) {
 	long long time_global_start = getTime();
 
 	// Initialize the threadpool
-	//threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
+	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
 	// add queries into the pool
 	//readQueries(queryFile);
 
@@ -2390,8 +2399,8 @@ int main(int argc, char** argv) {
 
 	readQueries(queryFile);
 	// start workers
-	//lp_threadpool_startjobs(threadpool);
-	//synchronize_complete(threadpool);
+	lp_threadpool_startjobs(threadpool);
+	synchronize_complete(threadpool);
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
@@ -2413,10 +2422,10 @@ int main(int argc, char** argv) {
 	}
 
 	long long time_global_end = getTime();
-	sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]",
+	sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]\n",
 			time_global_end - time_global_start,
 			(time_global_end - time_global_start) / 1000000.0);
-	printOut(msg);
+	printErr(msg);
 
 
 	// destroy the remaining indexes
