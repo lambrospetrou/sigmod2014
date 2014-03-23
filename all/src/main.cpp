@@ -1558,9 +1558,9 @@ long findTagLargestComponent2(vector<Q2ListNode*> people, unsigned int queryBirt
 long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
-	LPBitset newGraphPersons(N_PERSONS);
+	//LPBitset newGraphPersons(N_PERSONS);
+	LPSparseBitset newGraphPersons;
 	for( unsigned long i=0,sz=people.size(); i<sz && people[i]->birth >= queryBirth; i++ ){
-		//newGraphPersons[people[i]->personId] = 1;
 		newGraphPersons.set(people[i]->personId);
 		indexValidPersons++;
 	}

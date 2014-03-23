@@ -8,6 +8,8 @@
 
 #include "LPSparseBitset.h"
 
+#include <stdio.h>
+
 /*
  * Returns the number of bytes required to hold N bits
  */
@@ -29,7 +31,7 @@ static inline long getByteForBit(long bit){
  * 	pos = bit % 8 - assuming pos=3 = 00001000
  *
  */
-static inline long getPosForBit(long bit){
+static inline unsigned char getPosForBit(unsigned long bit){
 	return 1 << (bit & 0x7); // 1 << (bit%8)
 }
 
@@ -37,6 +39,13 @@ LPSparseBitset::LPSparseBitset(){
 	this->mSparseArray.head = mSparseArray.tail = new SparseArrayNode(0);
 	this->mSparseArray.num_nodes = 1;
 	this->mSparseArray.mid_high = mSparseArray.head->high;
+}
+
+LPSparseBitset::LPSparseBitset(unsigned long initialSize){
+	this->mSparseArray.head = mSparseArray.tail = new SparseArrayNode(0);
+	this->mSparseArray.num_nodes = 1;
+	this->mSparseArray.mid_high = mSparseArray.head->high;
+	// TODO - WE SHOULD CREATE AS MANY NODES AS NECESSARY TO ACCOMONDATE initialSize
 }
 
 
@@ -47,7 +56,7 @@ LPSparseBitset::~LPSparseBitset(){
 	}
 }
 
-void LPSparseBitset::set(long index, char bitValue) {
+void LPSparseBitset::set(unsigned long index) {
 	SparseArrayNode *cnode, *prev;
 	if (index < mSparseArray.mid_high) {
 		// START FROM THE HEAD AND SEARCH FORWARD
@@ -59,7 +68,7 @@ void LPSparseBitset::set(long index, char bitValue) {
 		// OR
 		// we must create a node before this one because this is a block for bigger ids
 		if (cnode == 0 || cnode->low > index) {
-			cnode = new SparseArrayNode((index / SPARSE_ARRAY_NODE_DATA) * SPARSE_ARRAY_NODE_DATA);
+			cnode = new SparseArrayNode((index / SPARSE_ARRAY_NODE_DATA_BITS) * SPARSE_ARRAY_NODE_DATA_BITS);
 			cnode->next = prev->next;
 			cnode->prev = prev;
 			prev->next = cnode;
@@ -70,7 +79,7 @@ void LPSparseBitset::set(long index, char bitValue) {
 			//if( sa->num_nodes % 2 == 1 ){
 			if ((mSparseArray.num_nodes & 1) == 1) {
 				// we must increase the mid_high
-				unsigned int i = 0, sz = (mSparseArray.num_nodes >> 2);
+				unsigned long i = 0, sz = (mSparseArray.num_nodes >> 2);
 				for (prev = mSparseArray.head; i < sz; i++) {
 					prev = prev->next;
 				}
@@ -87,7 +96,7 @@ void LPSparseBitset::set(long index, char bitValue) {
 		// the case where we stopped at the right node
 		if (cnode->high < index) {
 			prev = cnode;
-			cnode = new SparseArrayNode((index / SPARSE_ARRAY_NODE_DATA) * SPARSE_ARRAY_NODE_DATA);
+			cnode = new SparseArrayNode((index / SPARSE_ARRAY_NODE_DATA_BITS) * SPARSE_ARRAY_NODE_DATA_BITS);
 			if (prev == mSparseArray.tail) {
 				mSparseArray.tail = cnode;
 			}
@@ -112,24 +121,12 @@ void LPSparseBitset::set(long index, char bitValue) {
 	}
 	// cnode holds the block where we need to insert the value
 	long bytePos = getByteForBit(index - cnode->low);
+	//fprintf(stderr, "before[%d]\n", cnode->data[bytePos] );
 	cnode->data[bytePos] = cnode->data[bytePos] | getPosForBit(index);
-	//fprintf( stderr, "qid[%u] pos[%d] sa_index[%u] sa_low[%u] sa_high[%u]\n", index, pos, index - sa->low, sa->low, sa->high );
+	//fprintf(stderr, "after[%u]\n", cnode->data[bytePos] );
 }
 
-void LPBitset::set(long indexBit){
-	this->mBytes[getByteForBit(indexBit)] = this->mBytes[getByteForBit(indexBit)] | getPosForBit(indexBit);
-}
-
-bool LPBitset::isSet(long indexBit) const{
-	return (this->mBytes[getByteForBit(indexBit)] & getPosForBit(indexBit) ) > 0;
-}
-
-void LPBitset::clear(long indexBit){
-	char mask = ~getPosForBit(indexBit);
-	this->mBytes[getByteForBit(indexBit)] &= mask;
-}
-
-char LPSparseBitset::isSet(long index) const{
+bool LPSparseBitset::isSet(unsigned long index) const{
 	SparseArrayNode *cnode;
 	if (index < mSparseArray.mid_high) {
 		// START FROM THE HEAD AND SEARCH FORWARD
@@ -154,10 +151,10 @@ char LPSparseBitset::isSet(long index) const{
 	}
 	// cnode holds the block where we have the required value
 	long bytePos = getByteForBit(index - cnode->low);
-	return (cnode->data[getByteForBit(bytePos)] & getPosForBit(index) ) > 0;
+	return (cnode->data[bytePos] & getPosForBit(index) ) > 0;
 }
 
-void LPSparseBitset::clear(long index){
+void LPSparseBitset::clear(unsigned long index){
 	SparseArrayNode *cnode;
 	if (index < mSparseArray.mid_high) {
 		// START FROM THE HEAD AND SEARCH FORWARD
