@@ -44,7 +44,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -257,13 +257,17 @@ char *CSV_PERSON_HASINTEREST_TAG = "/person_hasInterest_tag.csv";
 // Q4
 char *CSV_FORUM_HAS_TAG = "/forum_hasTag_tag.csv";
 char *CSV_FORUM_HAS_MEMBER = "/forum_hasMember_person.csv";
+//char *CSV_FORUM_HAS_MEMBER = "/forum_hasMember_person_mod.csv";
 
 long N_PERSONS = 0;
 long N_TAGS = 0;
 long N_SUBGRAPHS = 0;
 long N_QUERIES = 0;
 
-lp_threadpool* threadpool;
+lp_threadpool *threadpool;
+lp_threadpool *threadpool_q1;
+lp_threadpool *threadpool_q23;
+lp_threadpool *threadpool_q4;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
@@ -1424,7 +1428,8 @@ void* phase3_ReadForumHasMembers(int tid, void *args){
 
 void* phase2_ReadPlacePartOfPlace(int tid, void *args){
 	readPlacePartOfPlace(inputDir);
-	FAI_U32(&phase2_placesFinished);
+	phase2_placesFinished = 1;
+	//FAI_U32(&phase2_placesFinished);
 	return 0;
 }
 
@@ -1435,7 +1440,6 @@ void* phase2_ReadTagsAndPersonTags(int tid, void* args){
 
 	readTags(inputDir);
 	// add the rest of tag functions
-	//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase3_ReadForumHasMembers), NULL );
 	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase3_ReadForumHasTags), NULL );
 	phase3_ReadForumHasMembers(tid, NULL);
 	return 0;
@@ -1468,10 +1472,9 @@ void* phase1_ReadPlacesFiles(int tid, void* args){
 	readOrgsLocatedAtPlace(inputDir);
 	readPersonWorksStudyAtOrg(inputDir);
 
-	// wait for the others to finish and destroy the unnecessary indexes
 	// now we can delete PlaceId to Index hashmap since no further
 	// data will come containing the PlaceId
-	while( CAS_U32(&phase2_placesFinished, 1, 0) != 1 );
+	while( phase2_placesFinished == 0 );
 
 	delete PlaceIdToIndex;
 	PlaceIdToIndex = NULL;
@@ -2019,6 +2022,10 @@ struct Query1WorkerStruct {
 	int x;
 	long qid;
 };
+
+Query1WorkerStruct *Query1Structs;
+long NumOfQueries1=0;
+
 void* Query1WorkerFunction(int tid, void *args) {
 	Query1WorkerStruct *qArgs = (Query1WorkerStruct*) args;
 	//printf("tid[%d] [%d]\n", tid, qArgs->qid);
@@ -2269,13 +2276,6 @@ void readQueries(char *queriesFile) {
 		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
 		int queryType = atoi(startLine + 5);
 
-		// check if we need to add a batch of jobs
-		/*
-		if (prevQType != queryType && prevQType != -1) {
-			addPoolJobs(prevQType, vec1, vec2, vec3, vec4);
-		}
-		*/
-
 		// handle the new query
 		switch (queryType) {
 		case 1: {
@@ -2392,14 +2392,18 @@ int main(int argc, char** argv) {
 	long long time_global_start = getTime();
 
 	// Initialize the threadpool
+	/*
 	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
 	lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase1_ReadPersons), NULL );
 	lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase1_ReadPlacesFiles), NULL );
 	lp_threadpool_startjobs(threadpool);
 	synchronize_complete(threadpool);
-	// add queries into the pool
-	//readQueries(queryFile);
-/*
+	*/
+
+	//threadpool_q1 = lp_threadpool_init(WORKER_THREADS>>2, NUM_CORES);
+	threadpool_q1 = lp_threadpool_init(WORKER_THREADS, NUM_CORES);
+
+
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
 	sprintf(msg, "queries file time: %ld", time_queries_end - time_global_start);
@@ -2423,6 +2427,9 @@ int main(int argc, char** argv) {
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
 	postProcessComments();
+
+	// now we can start executing QUERY 1
+	lp_threadpool_startjobs(threadpool_q1);
 
 #ifdef DEBUGGING
 	long time_comments_end = getTime();
@@ -2460,9 +2467,9 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-*/
-	//threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
-	//lp_threadpool_startjobs(threadpool);
+
+	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
+	lp_threadpool_startjobs(threadpool);
 	readQueries(queryFile);
 	// start workers
 	//lp_threadpool_startjobs(threadpool);
