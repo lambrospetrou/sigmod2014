@@ -2038,6 +2038,7 @@ void* Query1WorkerFunction(void *args) {
 		currentJob = Query1Structs[i];
 		query1(currentJob->p1, currentJob->p2, currentJob->x, currentJob->qid);
 		free(currentJob);
+		// the following can be omitted for speedups
 		Query1Structs[i] = 0;
 	}
 
@@ -2068,6 +2069,8 @@ void executeQuery1Jobs(int q1threads){
 		CPU_SET( ((i+1) % NUM_CORES) , &mask);
 		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
 			fprintf(stderr, "Error setting thread affinity\n");
+		}else{
+			fprintf(stderr, "Successfully set thread affinity for tid[%d]\n", i);
 		}
 	}
 }
@@ -2330,7 +2333,7 @@ void readQueries(char *queriesFile) {
 			*(second - 1) = '\0';
 			char *third = ((char*) memchr(second, ',', LONGEST_LINE_READING)) + 1;
 			*(lineEnd - 1) = '\0';
-			query1(atoi(startLine+7), atoi(second), atoi(third), qid);
+			//query1(atoi(startLine+7), atoi(second), atoi(third), qid);
 
 			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(
 					sizeof(Query1WorkerStruct));
