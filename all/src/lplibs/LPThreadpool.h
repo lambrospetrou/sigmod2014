@@ -24,6 +24,7 @@ struct lp_tpjob{
 struct lp_threadpool{
 	int workers_ids;
 	int nthreads;
+	int ncores;
 	int pending_jobs;
 	lp_tpjob *jobs_head;
 	lp_tpjob *jobs_tail;

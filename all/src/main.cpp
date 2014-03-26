@@ -44,7 +44,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -1688,11 +1688,7 @@ void query2(int k, char *date, int date_sz, long qid) {
 		if (people[0]->birth < queryBirth) {
 			continue;
 		}
-/*
-		if( k==6 && queryBirth == 19800306 ){
-			printf("yes");
-		}
-*/
+
 		// find the largest component for the current tag
 		long largestTagComponent = findTagLargestComponent(people, queryBirth, minComponentSize);
 
@@ -2054,7 +2050,6 @@ void executeQuery1Jobs(int q1threads){
 	int lastEnd = 0;
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*q1threads);
 	cpu_set_t mask;
-	CPU_ZERO(&mask);
 	for (int i = 0; i < q1threads; i++) {
 		Q1Worker *qws = (Q1Worker*)malloc(sizeof(Q1Worker));
 		qws->start = lastEnd;
@@ -2066,11 +2061,12 @@ void executeQuery1Jobs(int q1threads){
 		qws->end = lastEnd;
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query1WorkerFunction), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		CPU_ZERO(&mask);
 		CPU_SET( ((i+1) % NUM_CORES) , &mask);
 		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
-			fprintf(stderr, "Error setting thread affinity\n");
+			fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, ((i+1) % NUM_CORES));
 		}else{
-			fprintf(stderr, "Successfully set thread affinity for tid[%d]\n", i);
+			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, ((i+1) % NUM_CORES));
 		}
 	}
 }
@@ -2098,6 +2094,7 @@ void* Query2WorkerFunction(int tid, void *args) {
 	//printf("tid[%d] [%d]\n", tid, *(int*)args);
 	query2(qArgs->k, qArgs->date, qArgs->date_sz, qArgs->qid);
 
+	free(qArgs->date);
 	free(qArgs);
 	// end of job
 	return 0;
@@ -2353,15 +2350,14 @@ void readQueries(char *queriesFile) {
 			char *date = second + 1; // to skip one space
 			//query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
 
-			Query2WorkerStruct *qwstruct = (Query2WorkerStruct*) malloc(
-					sizeof(Query2WorkerStruct));
+			Query2WorkerStruct *qwstruct = (Query2WorkerStruct*) malloc(sizeof(Query2WorkerStruct));
 			qwstruct->k = atoi(startLine + 7);
-			qwstruct->date = date;
 			qwstruct->date_sz = lineEnd-1-date;
+			qwstruct->date = strndup(date, qwstruct->date_sz);
 			qwstruct->qid = qid;
 			//vec2.push_back(qwstruct);
-			//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
-			lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
+			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
 
 			break;
 		}
@@ -2385,8 +2381,8 @@ void readQueries(char *queriesFile) {
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
 //			vec3.push_back(qwstruct);
-			//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
-			lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
 		}
@@ -2407,8 +2403,8 @@ void readQueries(char *queriesFile) {
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
 //			vec4.push_back(qwstruct);
-			//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
-			lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
+			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
 			break;
 		}
@@ -2431,6 +2427,11 @@ int main(int argc, char** argv) {
 	inputDir = argv[1];
 	queryFile = argv[2];
 
+	// make the master thread to run only on the 1st core
+	cpu_set_t mask;
+	CPU_ZERO(&mask);
+	CPU_SET( 0 , &mask);
+
 
 	// MAKE GLOBAL INITIALIZATIONS
 	char msg[100];
@@ -2447,6 +2448,8 @@ int main(int argc, char** argv) {
 	synchronize_complete(threadpool);
 	*/
 
+	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
+	readQueries(queryFile);
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
@@ -2512,9 +2515,7 @@ int main(int argc, char** argv) {
 #endif
 
 
-	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
 	lp_threadpool_startjobs(threadpool);
-	readQueries(queryFile);
 	// start workers
 	//lp_threadpool_startjobs(threadpool);
 	synchronize_complete(threadpool);
