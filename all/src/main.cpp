@@ -47,7 +47,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -123,6 +123,10 @@ struct TagNode {
 
 // final sorted lists
 struct Q2ListNode {
+	Q2ListNode(long pId, unsigned int b){
+		personId = pId;
+		birth = b;
+	}
 	long personId;
 	unsigned int birth;
 };
@@ -131,7 +135,7 @@ struct Q2ListNode {
 struct TagSubStruct {
 	long tagId;
 	long subId;
-	vector<Q2ListNode*> people;
+	vector<Q2ListNode> people;
 };
 
 /////////////////////////////
@@ -214,8 +218,8 @@ struct Q2ResultNode{
 	long people;
 };
 
-bool Q2ListNodePredicate(Q2ListNode* a, Q2ListNode* b) {
-	return a->birth >= b->birth;
+bool Q2ListNodePredicate(const Q2ListNode &a, const Q2ListNode &b) {
+	return a.birth >= b.birth;
 }
 
 bool Q2ListPredicate(TagSubStruct* a, TagSubStruct* b) {
@@ -1182,10 +1186,11 @@ void readPersonHasInterestTag(char *inputDir) {
 			newTag->tagId = tagId;
 			(*TagSubBirthdays)[key] = newTag;
 		}
-		Q2ListNode *newPerson = new Q2ListNode();
-		newPerson->birth = PersonBirthdays[personId];
-		newPerson->personId = personId;
-		(*TagSubBirthdays)[key]->people.push_back(newPerson);
+		//Q2ListNode *newPerson = new Q2ListNode();
+		//newPerson->birth = PersonBirthdays[personId];
+		//newPerson->personId = personId;
+		//(*TagSubBirthdays)[key]->people.push_back(newPerson);
+		(*TagSubBirthdays)[key]->people.push_back(Q2ListNode(personId, PersonBirthdays[personId]));
 
 		startLine = lineEnd + 1;
 #ifdef DEBUGGING
@@ -1595,15 +1600,22 @@ void query1(int p1, int p2, int x, long qid) {
 	Answers[qid] = ss.str();
 }
 
-long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
+long findTagLargestComponent(vector<Q2ListNode> &people, unsigned int queryBirth, long minComponentSize) {
+//long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
 	//LPBitset newGraphPersons(N_PERSONS);
 	LPSparseBitset newGraphPersons;
+	for( unsigned long i=0,sz=people.size(); i<sz && people[i].birth >= queryBirth; i++ ){
+		newGraphPersons.set(people[i].personId);
+		indexValidPersons++;
+	}
+	/*
 	for( unsigned long i=0,sz=people.size(); i<sz && people[i]->birth >= queryBirth; i++ ){
 		newGraphPersons.set(people[i]->personId);
 		indexValidPersons++;
 	}
+	*/
 
 	// check if we have enough people to make a larger component
 	if( indexValidPersons < minComponentSize ){
@@ -1620,14 +1632,17 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	long currentCluster = -1;
 	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
 		//if( !visitedBFS.isSet(people[i]->personId) ){
-		if( visitedBFS.get(people[i]->personId) == 0 ){
+		//if( visitedBFS.get(people[i]->personId) == 0 ){
+		if( visitedBFS.get(people[i].personId) == 0 ){
 			currentCluster++;
 			componentsIds.push_back(currentCluster);
 			Q.clear();
-			Q2ListNode *cPerson = people[i];
+			//Q2ListNode *cPerson = people[i];
+			Q2ListNode cPerson = people[i];
 			long qIndex = 0;
 			long qSize = 1;
-			Q.push_back(cPerson->personId);
+			//Q.push_back(cPerson->personId);
+			Q.push_back(cPerson.personId);
 			while (qIndex < qSize) {
 				//long c = Q[qIndex];
 				long c = Q.front();
@@ -1689,7 +1704,8 @@ void query2(int k, char *date, int date_sz, long qid) {
 
 	int currentResults = 0;
 	for (long i = 0, sz = TagSubFinals.size(); i < sz; i++) {
-		vector<Q2ListNode*> &people = TagSubFinals[i]->people;
+		//vector<Q2ListNode*> &people = TagSubFinals[i]->people;
+		vector<Q2ListNode> &people = TagSubFinals[i]->people;
 		long currentTagSize = people.size();
 
 		// do not need to process further in other tags
@@ -1698,7 +1714,8 @@ void query2(int k, char *date, int date_sz, long qid) {
 		}
 		// check the max birth date of the list in order to avoid
 		// checking a list when there are no valid people
-		if (people[0]->birth < queryBirth) {
+		//if (people[0]->birth < queryBirth) {
+		if (people[0].birth < queryBirth) {
 			continue;
 		}
 
@@ -1935,6 +1952,11 @@ int BFS_query3_(long idA, long idB, int h) {
 
 
 void query3(int k, int h, char *name, int name_sz, long qid) {
+	static int entrance = 0;
+	if( entrance == 0 ){
+		entrance = 1;
+		fprintf(stderr, "query 3 started");
+	}
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
 
 	vector<long> persons;
@@ -2058,6 +2080,11 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 }
 
 void query4(int k, char *tag, int tag_sz, long qid) {
+	static int entrance = 0;
+	if (entrance == 0) {
+		entrance = 1;
+		fprintf(stderr, "query 4 started");
+	}
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
 
 	long tagIndex = TrieFind(TagToIndex, tag, tag_sz)->vIndex;
