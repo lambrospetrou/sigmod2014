@@ -271,7 +271,8 @@ long N_TAGS = 0;
 long N_SUBGRAPHS = 0;
 long N_QUERIES = 0;
 
-lp_threadpool *threadpool;
+lp_threadpool *threadpool3;
+lp_threadpool *threadpool4;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
@@ -1419,6 +1420,7 @@ void postProcessTagBirthdays() {
 
 // TODO - optimization instead of adding all the jobs : KEEP ONE FOR YOURSELF
 
+/*
 int phase2_placesFinished = 0;
 
 void* phase3_ReadForumHasTags(int tid, void *args){
@@ -1487,7 +1489,7 @@ void* phase1_ReadPlacesFiles(int tid, void* args){
 	return 0;
 }
 
-
+*/
 
 
 
@@ -2074,7 +2076,78 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	Answers[qid] = ss.str();
 }
 
-void query4(int k, char *tag, int tag_sz, long qid) {
+//////////////////////////////////////////////////////////////////////
+// QUERY 4
+//////////////////////////////////////////////////////////////////////
+
+struct Q4InnerJob{
+	int start;
+	int end;
+	vector<Query4PersonStruct> *persons;
+	MAP_INT_VecL *newGraph;
+};
+
+void *Query4InnerWorker(void *args){
+	Q4InnerJob *qArgs = (Q4InnerJob*)args;
+
+	vector<Query4PersonStruct> *persons = qArgs->persons;
+	MAP_INT_VecL *newGraph = qArgs->newGraph;
+
+	// now we have to calculate the shortest paths between them
+	int n_1 = persons->size() - 1;
+	//MAP_LONG_CHAR visitedBFS;
+	LPSparseArrayGeneric<char> visitedBFS;
+	deque<QueryBFS> Q;
+	for (int i = qArgs->start, sz = qArgs->end; i < sz; i++) {
+		visitedBFS.clear();
+		Q.clear();
+		// create a local copy of the struct
+		Query4PersonStruct cPerson = (*persons)[i];
+		long qIndex = 0;
+		long qSize = 1;
+		Q.push_back(QueryBFS(cPerson.person, 0));
+		while (qIndex < qSize) {
+			//QueryBFS &c = Q[qIndex];
+			QueryBFS c = Q.front();
+			Q.pop_front();
+			qIndex++;
+			//visitedBFS[c.person] = 2;
+			visitedBFS.set(c.person, 2);
+			// update info for the current person centrality
+			cPerson.s_p += c.depth;
+
+			// insert each unvisited neighbor of the current node
+			vector<long> &edges = (*newGraph)[c.person];
+			//long*edges = Persons[c.person].adjacentPersonsIds;
+			for (int e = 0, szz = edges.size(); e < szz; e++) {
+				//for (int e = 0, szz = Persons[c.person].adjacents; e < szz; e++) {
+				//long eId = (*edges)[e];
+				long eId = edges[e];
+				//if (visitedBFS[eId] == 0) {
+				if (visitedBFS.get(eId) == 0) {
+					//visitedBFS[eId] = 1;
+					visitedBFS.set(eId, 1);
+					Q.push_back(QueryBFS(eId, c.depth + 1));
+					qSize++;
+				}
+			}
+		}
+		// we do not have to check if n_1 == 0 since if it was the outer FOR here would not execute
+		if (cPerson.s_p == 0)
+			cPerson.centrality = 0;
+		else {
+			// calculate the centrality for this person
+			cPerson.r_p += qSize - 1;
+			cPerson.centrality = ((double) (cPerson.r_p * cPerson.r_p))/ (n_1 * cPerson.s_p);
+		}
+		// assign the calculated person to the vector
+		(*persons)[i] = cPerson;
+	}
+
+	return 0;
+}
+
+void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	static int entrance = 0;
 	if (entrance == 0) {
 		entrance = 1;
@@ -2119,61 +2192,61 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 	// safe to delete the visitedPersons since we got the people for this tag
 	delete visitedPersons;
 
+	// calculate the closeness centrality for all people in the person vector
 
-	// now we have to calculate the shortest paths between them
-	int n_1 = persons.size() - 1;
-	//MAP_INT_INT visitedBFS;
-	LPSparseArrayGeneric<char> visitedBFS;
-	//vector<QueryBFS> Q;
-	deque<QueryBFS> Q;
-	for (int i = 0, sz = persons.size(); i < sz; i++) {
-		visitedBFS.clear();
-		Q.clear();
-		Query4PersonStruct &cPerson = persons[i];
-		long qIndex = 0;
-		long qSize = 1;
-		Q.push_back(QueryBFS(cPerson.person, 0));
-		while (qIndex < qSize) {
-			//QueryBFS &c = Q[qIndex];
-			QueryBFS c = Q.front();
-			Q.pop_front();
-			qIndex++;
-			//visitedBFS[c.person] = 2;
-			visitedBFS.set(c.person, 2);
-			// update info for the current person centrality
-			cPerson.s_p += c.depth;
+	const static int Q4_threads = 4;
 
-			// insert each unvisited neighbor of the current node
-			vector<long> &edges = newGraph[c.person];
-			//vector<long> *edges = newGraph.getRef(c.person);
-			//long*edges = Persons[c.person].adjacentPersonsIds;
-			for (int e = 0, szz = edges.size(); e < szz; e++) {
-			//for (int e = 0, szz = edges->size(); e < szz; e++) {
-			//for (int e = 0, szz = Persons[c.person].adjacents; e < szz; e++) {
-				//long eId = (*edges)[e];
-				long eId = edges[e];
-				//if (visitedBFS[eId] == 0) {
-				if ( visitedBFS.get(eId) == 0) {
-				//if ( visitedPersons->isSet(eId) && visitedBFS.get(eId) == 0) {
-					//visitedBFS[eId] = 1;
-					visitedBFS.set(eId, 1);
-					Q.push_back(QueryBFS(eId, c.depth + 1));
-					qSize++;
-				}
-			}
+	int totalJobs = persons.size();
+	int perThreadJobs = totalJobs / Q4_threads;
+	int untilThreadJobsPlus = totalJobs % Q4_threads;
+	int lastEnd = 0;
+	pthread_t *worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * Q4_threads);
+	cpu_set_t mask;
+	int i=0;
+	for ( ; i < Q4_threads-1; i++) {
+		Q4InnerJob *qws = (Q4InnerJob*) malloc(sizeof(Q4InnerJob));
+		qws->start = lastEnd;
+		if (i < untilThreadJobsPlus) {
+			lastEnd += perThreadJobs + 1;
+		} else {
+			lastEnd += perThreadJobs;
 		}
-		// we do not have to check if n_1 == 0 since if it was the outer FOR here would not execute
-		if (cPerson.s_p == 0)
-			cPerson.centrality = 0;
-		else {
-			// calculate the centrality for this person
-			cPerson.r_p += qSize - 1;
-			cPerson.centrality = ((double) (cPerson.r_p * cPerson.r_p))
-					/ (n_1 * cPerson.s_p);
+		qws->end = lastEnd;
+		qws->newGraph = &newGraph;
+		qws->persons = &persons;
+
+		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query4InnerWorker), qws );
+		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		CPU_ZERO(&mask);
+		if( tid % 2 == 1 ){
+			CPU_SET(i % NUM_CORES, &mask);
+		}else{
+			CPU_SET( (i+Q4_threads) % NUM_CORES, &mask);
+		}
+		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask)!= 0) {
+			//fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
+		} else {
+			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
 		}
 	}
 
-	//delete visitedPersons;
+	// execute some calculations yourself
+	Q4InnerJob *qws = (Q4InnerJob*) malloc(sizeof(Q4InnerJob));
+	qws->start = lastEnd;
+	if (i < untilThreadJobsPlus) {
+		lastEnd += perThreadJobs + 1;
+	} else {
+		lastEnd += perThreadJobs;
+	}
+	qws->end = lastEnd;
+	qws->newGraph = &newGraph;
+	qws->persons = &persons;
+	Query4InnerWorker(qws);
+
+	// wait for them to finish
+	for (int i = 0; i < Q4_threads-1; i++) {
+		pthread_join(worker_threads[i], NULL);
+	}
 
 	// we now just have to return the K persons with the highest centrality
 	std::stable_sort(persons.begin(), persons.end(),Query4PersonStructPredicate);
@@ -2380,7 +2453,7 @@ struct Query4WorkerStruct {
 void* Query4WorkerFunction(int tid, void *args) {
 	Query4WorkerStruct *qArgs = (Query4WorkerStruct*) args;
 	//printf("tid[%d] [%d]\n", tid, *(int*)args);
-	query4(qArgs->k, qArgs->tag, qArgs->tag_sz, qArgs->qid);
+	query4(qArgs->k, qArgs->tag, qArgs->tag_sz, qArgs->qid, tid);
 
 	free(qArgs->tag);
 	free(qArgs);
@@ -2509,7 +2582,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->name = placeName;
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
-			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+			lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
@@ -2529,7 +2602,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->tag = tagName;
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
-			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
+			lp_threadpool_addjob_nolock(threadpool4,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
 			break;
@@ -2562,7 +2635,8 @@ int main(int argc, char** argv) {
 
 	long long time_global_start = getTime();
 
-	threadpool = lp_threadpool_init( WORKER_THREADS, NUM_CORES);
+	threadpool3 = lp_threadpool_init( (WORKER_THREADS >> 1), NUM_CORES);
+	threadpool4 = lp_threadpool_init( (WORKER_THREADS >> 2), NUM_CORES);
 	readQueries(queryFile);
 
 #ifdef DEBUGGING
@@ -2636,8 +2710,15 @@ int main(int argc, char** argv) {
 	executeQuery2Jobs(2);
 
 	// start workers for Q3 and Q4
-	lp_threadpool_startjobs(threadpool);
-	synchronize_complete(threadpool);
+	lp_threadpool_startjobs(threadpool3);
+	synchronize_complete(threadpool3);
+
+	fprintf(stderr,"query 3 finished");
+
+	lp_threadpool_startjobs(threadpool4);
+	synchronize_complete(threadpool4);
+
+	fprintf(stderr,"query 4 finished");
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
