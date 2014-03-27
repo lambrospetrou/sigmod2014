@@ -19,7 +19,6 @@
 #include <vector>
 #include <queue>
 //#include <map>
-#include <set>
 #include <algorithm>
 #include <iterator>
 #include <sstream>
@@ -47,7 +46,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -1804,10 +1803,12 @@ int BFS_query3(long idA, long idB, int h) {
 	int hop_limit = (h>>1) + 1;
 	int currentDepth = 0;
 
-	unordered_set<long> CurrentLevelPersons;
+	//unordered_set<long> CurrentLevelPersons;
+	LPBitset CurrentLevelPersons(N_PERSONS);
 
 	while ( ! (qIndex == qSize && qIndexR == qSizeR) ) {
-		CurrentLevelPersons.clear();
+		//CurrentLevelPersons.clear();
+		CurrentLevelPersons.clearAll();
 
 		// exit condition if no path exists under the valid length
 		if( currentDepth > hop_limit ){
@@ -1824,7 +1825,8 @@ int BFS_query3(long idA, long idB, int h) {
 			visited.set(cPerson.person, 2);
 
 			// add the current person to the level's set
-			CurrentLevelPersons.insert(cPerson.person);
+			//CurrentLevelPersons.insert(cPerson.person);
+			CurrentLevelPersons.set(cPerson.person);
 
 			long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
 			for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
@@ -1836,8 +1838,9 @@ int BFS_query3(long idA, long idB, int h) {
 					if( visitedR.get(cPerson.person) == 2 ){
 						for( long j=qIndexR-1; j>=0; j-- ){
 							if( QR[j].person == cPerson.person ){
-								if( ( (QR[j].depth + cPerson.depth) + 1 <= h ) ){
-									return QR[j].depth + cPerson.depth + 1;
+								int qrDepth = (QR[j].depth + cPerson.depth) + 1;
+								if( ( qrDepth <= h ) ){
+									return qrDepth;
 								}
 								break;
 							}
@@ -1856,6 +1859,7 @@ int BFS_query3(long idA, long idB, int h) {
 		}
 
 		unsigned long csize =  CurrentLevelPersons.size();
+		char foundCommonVertex = 0;
 
 		while( qIndexR<qSizeR && QR[qIndexR].depth==currentDepth ){
 			// PROCESS THE REVERSE SIDE
@@ -1867,7 +1871,11 @@ int BFS_query3(long idA, long idB, int h) {
 			visitedR.set(cPersonR.person, 2);
 
 			// remove this person from the level's set
-			CurrentLevelPersons.erase(cPersonR.person);
+			//CurrentLevelPersons.erase(cPersonR.person);
+			if( CurrentLevelPersons.isSet(cPersonR.person) ){
+				foundCommonVertex = 1;
+				break;
+			}
 
 			long *neighborsR = Persons[cPersonR.person].adjacentPersonsIds;
 			for (long i = 0, sz = Persons[cPersonR.person].adjacents; i < sz; i++) {
@@ -1886,12 +1894,15 @@ int BFS_query3(long idA, long idB, int h) {
 			}
 		}// end of reverse side
 
-
+		if( foundCommonVertex == 1 ){
+			return currentDepth << 1;
+		}
+/*
 		if( CurrentLevelPersons.size() != csize ){
 			// we had a removal - that means a common node
 			return currentDepth<<1;
 		}
-
+*/
 
 		currentDepth++;
 	}// end of outer while
