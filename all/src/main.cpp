@@ -46,7 +46,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -61,6 +61,7 @@ using std::tr1::hash;
 
 //typedef map<int, int> MAP_INT_INT;
 typedef std::tr1::unordered_map<int, int, hash<int> > MAP_INT_INT;
+typedef std::tr1::unordered_map<long, char, hash<long> > MAP_LONG_CHAR;
 typedef std::tr1::unordered_map<long, long, hash<long> > MAP_LONG_LONG;
 typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
 typedef std::tr1::unordered_map<long, char*, hash<long> > MAP_LONG_STRING;
@@ -75,7 +76,7 @@ struct PersonStruct {
 	long *adjacentPersonsIds;
 	long adjacents;
 
-	long *adjacentPersonWeightsSorted;
+	int *adjacentPersonWeightsSorted;
 
 	int subgraphNumber;
 }__attribute__((aligned(CACHE_LINE_SIZE)));
@@ -86,28 +87,28 @@ struct PersonCommentsStruct {
 	//MAP_LONG_LONG adjacentPersonWeights;
 	LPSparseArrayGeneric<long> commentsToPerson;
 	LPSparseArrayGeneric<long> adjacentPersonWeights;
-}__attribute__((aligned(CACHE_LINE_SIZE)));;
+}__attribute__((aligned(CACHE_LINE_SIZE)));
 
 struct TrieNode {
-	char valid;
+	//char valid;
 	long realId;
 	long vIndex;
 	TrieNode* children[VALID_PLACE_CHARS];
-}__attribute__((aligned(CACHE_LINE_SIZE)));
+};
 // Aligned for cache lines;
 
 struct CommentTrieNode {
 	// TODO - maybe we do not need the valid byte for this case and
 	// we can initialize the personId to -1 to indicate non-valid node
-	char valid;
+	//char valid;
 	long personId;
 	CommentTrieNode* children[10];
-}__attribute__((aligned(CACHE_LINE_SIZE)));
+};
 // Aligned for cache lines;
 
 struct PlaceNodeStruct {
 	long id;
-	long index;
+	//long index;
 	vector<long> personsThis;
 	vector<long> placesPartOfIndex;
 }__attribute__((aligned(CACHE_LINE_SIZE)));
@@ -130,8 +131,6 @@ struct Q2ListNode {
 	long personId;
 	unsigned int birth;
 	unsigned int component_size; // maximum cluster from this date - NOT USED YET
-	//unsigned int maxBirth; // [0] of the sorted list
-	//unsigned int peopleBelow;
 };
 
 // intermediate tree map
@@ -280,8 +279,6 @@ long N_SUBGRAPHS = 0;
 long N_QUERIES = 0;
 
 lp_threadpool *threadpool;
-lp_threadpool *threadpool_q23;
-lp_threadpool *threadpool_q4;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
@@ -299,8 +296,8 @@ vector<string> Answers;
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
 PersonCommentsStruct *PersonsComments;
-MAP_INT_INT *CommentToPerson;
-//CommentTrieNode *CommentToPerson;
+//MAP_INT_INT *CommentToPerson;
+CommentTrieNode *CommentToPerson;
 
 MAP_INT_INT *PlaceIdToIndex;
 MAP_INT_INT *OrgToPlace;
@@ -338,8 +335,8 @@ long long getTime() {
 	return t1;
 }
 
-void mergeCommentsWeights(long *weights, long a[], long low, long mid,
-		long high, long *b, long *bWeights) {
+void mergeCommentsWeights(int *weights, long a[], long low, long mid,
+		long high, long *b, int *bWeights) {
 	long i = low, j = mid + 1, k = low;
 
 	while (i <= mid && j <= high) {
@@ -378,8 +375,8 @@ void mergeCommentsWeights(long *weights, long a[], long low, long mid,
 	}
 }
 
-void mergesortComments(long* weights, long a[], long low, long high, long *b,
-		long *bWeights) {
+void mergesortComments(int* weights, long a[], long low, long high, long *b,
+		int *bWeights) {
 	if (low < high) {
 		long m = ((high - low) >> 1) + low;
 		mergesortComments(weights, a, low, m, b, bWeights);
@@ -685,6 +682,7 @@ void readPersonKnowsPerson(char *inputDir) {
 	N_SUBGRAPHS = calculateAndAssignSubgraphs();
 }
 
+
 void postProcessComments() {
 	// for each person we will get each neighbor and put our edge weight in an array
 	// to speed up look up time and then sort them
@@ -694,8 +692,8 @@ void postProcessComments() {
 			long *adjacentIds = Persons[i].adjacentPersonsIds;
 			//MAP_LONG_LONG *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
 			LPSparseArrayGeneric<long> *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
-			Persons[i].adjacentPersonWeightsSorted = (long*) malloc(sizeof(long) * adjacents);
-			long *weights = Persons[i].adjacentPersonWeightsSorted;
+			Persons[i].adjacentPersonWeightsSorted = (int*) malloc(sizeof(int) * adjacents);
+			int *weights = Persons[i].adjacentPersonWeightsSorted;
 			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz; cAdjacent++) {
 				weights[cAdjacent] = (*(weightsMap)).get(adjacentIds[cAdjacent]);
 				//weights[cAdjacent] = (*(weightsMap))[adjacentIds[cAdjacent]];
@@ -708,7 +706,7 @@ void postProcessComments() {
 			 }
 			 */
 			long *temp = (long*) malloc(sizeof(long) * (adjacents));
-			long *tempWeights = (long*) malloc(sizeof(long) * (adjacents));
+			int *tempWeights = (int*) malloc(sizeof(int) * (adjacents));
 			mergesortComments(weights, adjacentIds, 0, adjacents - 1, temp,	tempWeights);
 			free(temp);
 			free(tempWeights);
@@ -721,9 +719,10 @@ void postProcessComments() {
 		}
 	}
 	// since we have all the data needed in arrays we can delete the hash maps
-	CommentToPerson->clear();
-	delete CommentToPerson;
-	CommentToPerson = NULL;
+	//CommentToPerson->clear();
+	//delete CommentToPerson;
+	//CommentToPerson = NULL;
+	CommentTrieNode_Destructor(CommentToPerson);
 	delete[] PersonsComments;
 	PersonsComments = NULL;
 }
@@ -760,11 +759,12 @@ void readComments(char* inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long idA = atol(startLine);
+		//long idA = atol(startLine);
 		long idB = atol(idDivisor + 1);
 
 		// set the person to each comment
-		(*CommentToPerson)[idA] = idB;
+		//(*CommentToPerson)[idA] = idB;
+		CommentTrieInsert(CommentToPerson, startLine, idDivisor-startLine, idB);
 
 		//printf("%d %d\n", idA, idB);
 
@@ -800,19 +800,21 @@ void readComments(char* inputDir) {
 
 	// process the whole file in memory
 	// skip the first line
-	startLine = ((char*) memchr(buffer, '\n', 100)) + 1;
+	startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	EndOfFile = buffer + lSize;
 	while (startLine < EndOfFile) {
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long idA = atol(startLine);
-		long idB = atol(idDivisor + 1);
+		//long idA = atol(startLine);
+		//long idB = atol(idDivisor + 1);
 
 		// we have to hold the number of comments between each person
-		long personA = (*CommentToPerson)[idA];
-		long personB = (*CommentToPerson)[idB];
+		//long personA = (*CommentToPerson)[idA];
+		//long personB = (*CommentToPerson)[idB];
+		long personA = CommentTrieFind(CommentToPerson, startLine, idDivisor-startLine)->personId;
+		long personB = CommentTrieFind(CommentToPerson, idDivisor+1, lineEnd-idDivisor-1)->personId;
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
@@ -892,7 +894,6 @@ void readPlaces(char *inputDir) {
 		if (insertedPlace->realId == id) {
 			PlaceNodeStruct *node = new PlaceNodeStruct();
 			node->id = id;
-			node->index = insertedPlace->vIndex;
 			Places.push_back(node);
 			places++;
 		}
@@ -1552,7 +1553,7 @@ void query1(int p1, int p2, int x, long qid) {
 		// the comments are valid
 		PersonStruct *cPerson = &Persons[current.person];
 		long *adjacents = cPerson->adjacentPersonsIds;
-		long *weights = cPerson->adjacentPersonWeightsSorted;
+		int *weights = cPerson->adjacentPersonWeightsSorted;
 		// if there is comments limit
 		if (x != -1) {
 			for (long i = 0, sz = cPerson->adjacents;
@@ -2332,7 +2333,8 @@ void* QueryWorkerFunction(int tid, void *args) {
 ///////////////////////////////////////////////////////////////////////
 
 void _initializations() {
-	CommentToPerson = new MAP_INT_INT();
+	//CommentToPerson = new MAP_INT_INT();
+	CommentToPerson = CommentTrieNode_Constructor();
 	PlaceIdToIndex = new MAP_INT_INT();
 	OrgToPlace = new MAP_INT_INT();
 
@@ -2686,7 +2688,7 @@ TrieNode* TrieNode_Constructor() {
 	TrieNode* n = (TrieNode*) malloc(sizeof(TrieNode));
 	if (!n)
 		printErr("error allocating TrieNode");
-	n->valid = 0;
+	n->realId = -1;
 	memset(n->children, 0, VALID_PLACE_CHARS * sizeof(TrieNode*));
 	return n;
 }
@@ -2712,10 +2714,9 @@ TrieNode* TrieInsert(TrieNode* node, const char* name, char name_sz, long id,
 		ptr++;
 	}
 	// if already exists we do not overwrite but just return the existing one
-	if (1 == node->valid) {
+	if (-1 != node->realId) {
 		return node;
 	}
-	node->valid = 1;
 	node->realId = id;
 	node->vIndex = index;
 	return node;
@@ -2732,7 +2733,7 @@ TrieNode* TrieFind(TrieNode* root, const char* name, char name_sz) {
 			break;
 		}
 	}
-	if (found && root->valid) {
+	if (found && root->realId != -1) {
 		// WE HAVE A MATCH SO return the node
 		return root;
 	}
@@ -2760,15 +2761,15 @@ void CommentTrieNode_Destructor(CommentTrieNode* node) {
 	free(node);
 }
 CommentTrieNode* CommentTrieInsert(CommentTrieNode* node, const char* commentId, char id_sz, long personId) {
-	int ptr = 0;
+	int ptr = id_sz-1;
 	int pos;
-	while (ptr < id_sz) {
+	while (ptr >= 0 ) {
 		pos = commentId[ptr]-'0';
 		if (node->children[pos] == 0) {
 			node->children[pos] = CommentTrieNode_Constructor();
 		}
 		node = node->children[pos];
-		ptr++;
+		ptr--;
 	}
 	// if already exists we do not overwrite but just return the existing one
 	if( node->personId != -1 ){
@@ -2779,7 +2780,7 @@ CommentTrieNode* CommentTrieInsert(CommentTrieNode* node, const char* commentId,
 }
 CommentTrieNode* CommentTrieFind(CommentTrieNode* root, const char* commentId, char id_sz) {
 	int p, i, found = 1;
-	for (p = 0; p < id_sz; p++) {
+	for (p = id_sz-1; p >=0; p--) {
 		i = commentId[p]-'0';
 		if (root->children[i] != 0) {
 			root = root->children[i];
