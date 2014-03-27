@@ -46,7 +46,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -1498,6 +1498,7 @@ void* phase1_ReadPlacesFiles(int tid, void* args){
 // QUERY EXECUTORS
 ///////////////////////////////////////////////////////////////////////
 
+
 void query1(int p1, int p2, int x, long qid) {
 	//printf("query1: %d %d %d\n", p1, p2, x);
 
@@ -1781,7 +1782,7 @@ int BFS_query3_(long idA, long idB, int h) {
 	//free(visited);
 	return INT_MAX;
 }
-
+// TODO
 int BFS_query3(long idA, long idB, int h) {
 	//char *visited = (char*) malloc(N_PERSONS);
 	//memset(visited, 0, N_PERSONS);
@@ -1984,12 +1985,12 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 				continue;
 			// we now have to calculate the common tags between these two people
 			int cTags = 0;
-			vector<long> &tagsA = PersonToTags[idA].tags;
-			vector<long> &tagsB = PersonToTags[idB].tags;
-			std::vector<long>::const_iterator iA = tagsA.begin();
-			std::vector<long>::const_iterator endA = tagsA.end();
-			std::vector<long>::const_iterator iB = tagsB.begin();
-			std::vector<long>::const_iterator endB = tagsB.end();
+			vector<long> *tagsA = &PersonToTags[idA].tags;
+			vector<long> *tagsB = &PersonToTags[idB].tags;
+			std::vector<long>::const_iterator iA = tagsA->begin();
+			std::vector<long>::const_iterator endA = tagsA->end();
+			std::vector<long>::const_iterator iB = tagsB->begin();
+			std::vector<long>::const_iterator endB = tagsB->end();
 			for (; iA != endA && iB != endB;) {
 				if (*iA < *iB)
 					iA++;
@@ -2025,22 +2026,9 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			idA = cPair.idA;
 			idB = cPair.idB;
 
-			int cTags = cPair.commonTags;
+			//int cTags = cPair.commonTags;
 			PQ.pop();
 			int distance = BFS_query3(idA, idB, h);
-/*
-			if( idA == 516 && idB == 535 ){
-				printf("516 - 535 : %d d[%d]\n", cTags, distance);
-			}
-
-			if( idA == 527 && idB == 530 ){
-				printf("527 - 530 : %d\n", cTags);
-			}
-
-			if( idA == 530 && idB == 533 ){
-				printf("530 - 533 : %d\n", cTags);
-			}
-*/
 			if (distance <= h) {
 				// we have an answer so exit the while
 				ss << idA << "|" << idB << " ";
@@ -2212,26 +2200,14 @@ void executeQuery1Jobs(int q1threads){
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query1WorkerFunction), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
 		CPU_ZERO(&mask);
-		CPU_SET( (i % (NUM_CORES-1))+1 , &mask);
+		CPU_SET( i % NUM_CORES , &mask);
 		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
-			fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, (i % (NUM_CORES-1))+1);
+			//fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
 		}else{
-			fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, (i % (NUM_CORES-1))+1);
+			fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
 		}
 	}
 }
-
-/*
-void* Query1WorkerFunction(int tid, void *args) {
-	Query1WorkerStruct *qArgs = (Query1WorkerStruct*) args;
-	//printf("tid[%d] [%d]\n", tid, qArgs->qid);
-	query1(qArgs->p1, qArgs->p2, qArgs->x, qArgs->qid);
-
-	free(qArgs);
-	// end of job
-	return 0;
-}
-*/
 
 struct Query2WorkerStruct {
 	int k;
@@ -2449,14 +2425,6 @@ void readQueries(char *queriesFile) {
 	// initialize the vars for the job assignments
 	Query1Structs.reserve(2048);
 
-	//vector<Query2WorkerStruct*> vec2;
-	//vec2.reserve(BATCH_Q2 << 1);
-	//vector<Query3WorkerStruct*> vec3;
-	//vec3.reserve(BATCH_Q3 << 1);
-	//vector<Query4WorkerStruct*> vec4;
-	//vec4.reserve(BATCH_Q4 << 1);
-
-	char prevQType = -1;
 	long qid = 0;
 
 	FILE *input = fopen(path, "r");
@@ -2505,7 +2473,6 @@ void readQueries(char *queriesFile) {
 			qwstruct->date_sz = lineEnd-1-date;
 			qwstruct->date = strndup(date, qwstruct->date_sz);
 			qwstruct->qid = qid;
-			//vec2.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
 			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
 
@@ -2530,7 +2497,6 @@ void readQueries(char *queriesFile) {
 			qwstruct->name = placeName;
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
-//			vec3.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
@@ -2552,7 +2518,6 @@ void readQueries(char *queriesFile) {
 			qwstruct->tag = tagName;
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
-//			vec4.push_back(qwstruct);
 			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
@@ -2564,12 +2529,9 @@ void readQueries(char *queriesFile) {
 		}
 		}
 		startLine = lineEnd + 1;
-		prevQType = queryType;
 		qid++;
 	}
 	free(buffer);
-
-	//addPoolJobs(prevQType, vec1, vec2, vec3, vec4);
 }
 
 int main(int argc, char** argv) {
