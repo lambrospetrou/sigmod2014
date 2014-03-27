@@ -46,7 +46,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -62,6 +62,7 @@ using std::tr1::hash;
 //typedef map<int, int> MAP_INT_INT;
 typedef std::tr1::unordered_map<int, int, hash<int> > MAP_INT_INT;
 typedef std::tr1::unordered_map<long, char, hash<long> > MAP_LONG_CHAR;
+typedef std::tr1::unordered_map<long, int, hash<long> > MAP_LONG_INT;
 typedef std::tr1::unordered_map<long, long, hash<long> > MAP_LONG_LONG;
 typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
 typedef std::tr1::unordered_map<long, char*, hash<long> > MAP_LONG_STRING;
@@ -83,10 +84,10 @@ struct PersonStruct {
 // Aligned for cache lines;
 
 struct PersonCommentsStruct {
-	//MAP_LONG_LONG commentsToPerson;
-	//MAP_LONG_LONG adjacentPersonWeights;
-	LPSparseArrayGeneric<long> commentsToPerson;
-	LPSparseArrayGeneric<long> adjacentPersonWeights;
+	MAP_LONG_LONG commentsToPerson;
+	MAP_LONG_INT adjacentPersonWeights;
+	//LPSparseArrayGeneric<long> commentsToPerson;
+	//LPSparseArrayGeneric<long> adjacentPersonWeights;
 }__attribute__((aligned(CACHE_LINE_SIZE)));
 
 struct TrieNode {
@@ -690,13 +691,13 @@ void postProcessComments() {
 		if (Persons[i].adjacents > 0) {
 			long adjacents = Persons[i].adjacents;
 			long *adjacentIds = Persons[i].adjacentPersonsIds;
-			//MAP_LONG_LONG *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
-			LPSparseArrayGeneric<long> *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
+			MAP_LONG_INT *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
+			//LPSparseArrayGeneric<long> *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
 			Persons[i].adjacentPersonWeightsSorted = (int*) malloc(sizeof(int) * adjacents);
 			int *weights = Persons[i].adjacentPersonWeightsSorted;
 			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz; cAdjacent++) {
-				weights[cAdjacent] = (*(weightsMap)).get(adjacentIds[cAdjacent]);
-				//weights[cAdjacent] = (*(weightsMap))[adjacentIds[cAdjacent]];
+				//weights[cAdjacent] = (*(weightsMap)).get(adjacentIds[cAdjacent]);
+				weights[cAdjacent] = (*(weightsMap))[adjacentIds[cAdjacent]];
 			}
 			// now we need to sort them
 			/*
@@ -818,21 +819,21 @@ void readComments(char* inputDir) {
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
-			int a_b = PersonsComments[personA].commentsToPerson.get(personB) + 1;
-			PersonsComments[personA].commentsToPerson.set(personB, a_b);
-			//int a_b = PersonsComments[personA].commentsToPerson[personB] + 1;
-			//PersonsComments[personA].commentsToPerson[personB] = a_b;
+			//int a_b = PersonsComments[personA].commentsToPerson.get(personB) + 1;
+			//PersonsComments[personA].commentsToPerson.set(personB, a_b);
+			int a_b = PersonsComments[personA].commentsToPerson[personB] + 1;
+			PersonsComments[personA].commentsToPerson[personB] = a_b;
 
 			///////////////////////////////////////////////////////////////////
 			// - Leave only the min(comments A-to-B, comments B-to-A) at each edge
 			///////////////////////////////////////////////////////////////////
-			int b_a = PersonsComments[personB].commentsToPerson.get(personA);
-			//int b_a = PersonsComments[personB].commentsToPerson[personA];
+			//int b_a = PersonsComments[personB].commentsToPerson.get(personA);
+			int b_a = PersonsComments[personB].commentsToPerson[personA];
 			if (a_b <= b_a) {
-				PersonsComments[personA].adjacentPersonWeights.set(personB, a_b);
-				PersonsComments[personB].adjacentPersonWeights.set(personA, a_b);
-				//PersonsComments[personA].adjacentPersonWeights[personB] = a_b;
-				//PersonsComments[personB].adjacentPersonWeights[personA] = a_b;
+				//PersonsComments[personA].adjacentPersonWeights.set(personB, a_b);
+				//PersonsComments[personB].adjacentPersonWeights.set(personA, a_b);
+				PersonsComments[personA].adjacentPersonWeights[personB] = a_b;
+				PersonsComments[personB].adjacentPersonWeights[personA] = a_b;
 			}
 		}
 		//printf("%ld %ld %ld\n", idA, idB, Persons[personA].commentsToPerson[personB] );
