@@ -47,7 +47,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -542,12 +542,15 @@ long calculateAndAssignSubgraphs() {
 		if (visited[cPerson] != 0)
 			continue;
 		// start BFS from the current person
-		vector<long> Q;
+		//vector<long> Q;
+		deque<long> Q;
 		Q.push_back(cPerson);
 		long qIndex = 0;
 		long qSize = 1;
 		while (qIndex < qSize) {
-			long cP = Q[qIndex];
+			//long cP = Q[qIndex];
+			long cP = Q.front();
+			Q.pop_front();
 			qIndex++;
 			// set as visited
 			visited[cP] = 2;
@@ -1520,14 +1523,17 @@ void query1(int p1, int p2, int x, long qid) {
 	char *visited = (char*) malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
 	//LPSparseArrayGeneric<long> visited;
-	vector<QueryBFS> Q;
+	//vector<QueryBFS> Q;
+	deque<QueryBFS> Q;
 
 	// insert the source node into the queue
 	Q.push_back(QueryBFS(p1, 0));
 	unsigned long index = 0;
 	unsigned long size = 1;
 	while (index < size) {
-		QueryBFS current = Q[index];
+		//QueryBFS current = Q[index];
+		QueryBFS current = Q.front();
+		Q.pop_front();
 		index++;
 
 		//printf("current: %ld %d\n", current.person, current.depth);
@@ -1609,8 +1615,8 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 	LPSparseArrayGeneric<char> visitedBFS;
 	//LPBitset visitedBFS(N_PERSONS);
 	vector<long> componentsIds;
-	vector<long> Q;
-	Q.reserve(128);
+	//vector<long> Q;
+	deque<long> Q;
 	long currentCluster = -1;
 	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
 		//if( !visitedBFS.isSet(people[i]->personId) ){
@@ -1623,7 +1629,9 @@ long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth
 			long qSize = 1;
 			Q.push_back(cPerson->personId);
 			while (qIndex < qSize) {
-				long c = Q[qIndex];
+				//long c = Q[qIndex];
+				long c = Q.front();
+				Q.pop_front();
 				qIndex++;
 
 				//if( visitedBFS.isSet(c) )
