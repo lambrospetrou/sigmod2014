@@ -38,15 +38,15 @@ using std::tr1::unordered_set;
 using std::tr1::hash;
 
 //#define DEBUGGING 1
-#define FILE_VBUF_SIZE 1<<20
-#define FILE_BUFFER_SIZE 1<<15
+#define FILE_VBUF_SIZE 1<<10
+#define FILE_BUFFER_SIZE 1<<20
 
 #define CACHE_LINE_SIZE 64
 
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -86,12 +86,9 @@ struct PersonStruct {
 struct PersonCommentsStruct {
 	MAP_LONG_LONG commentsToPerson;
 	MAP_LONG_INT adjacentPersonWeights;
-	//LPSparseArrayGeneric<long> commentsToPerson;
-	//LPSparseArrayGeneric<long> adjacentPersonWeights;
-}__attribute__((aligned(CACHE_LINE_SIZE)));
+};
 
 struct TrieNode {
-	//char valid;
 	long realId;
 	long vIndex;
 	TrieNode* children[VALID_PLACE_CHARS];
@@ -99,9 +96,6 @@ struct TrieNode {
 // Aligned for cache lines;
 
 struct CommentTrieNode {
-	// TODO - maybe we do not need the valid byte for this case and
-	// we can initialize the personId to -1 to indicate non-valid node
-	//char valid;
 	long personId;
 	CommentTrieNode* children[10];
 };
@@ -109,29 +103,27 @@ struct CommentTrieNode {
 
 struct PlaceNodeStruct {
 	long id;
-	//long index;
 	vector<long> personsThis;
 	vector<long> placesPartOfIndex;
-}__attribute__((aligned(CACHE_LINE_SIZE)));
+};
 // Aligned for cache lines;
 
 struct PersonTags {
 	vector<long> tags;
-}__attribute__((aligned(CACHE_LINE_SIZE)));
+};
 // Aligned for cache lines;
 
 struct TagNode {
 	long id;
 	TrieNode *tagNode;
 	vector<long> forums;
-}__attribute__((aligned(CACHE_LINE_SIZE)));
+};
 // Aligned for cache lines;
 
 // final sorted lists
 struct Q2ListNode {
 	long personId;
 	unsigned int birth;
-	unsigned int component_size; // maximum cluster from this date - NOT USED YET
 };
 
 // intermediate tree map
@@ -139,7 +131,7 @@ struct TagSubStruct {
 	long tagId;
 	long subId;
 	vector<Q2ListNode*> people;
-}__attribute__((aligned(CACHE_LINE_SIZE)));;
+};
 
 /////////////////////////////
 // QUERY SPECIFIC
@@ -394,7 +386,6 @@ long countFileLines(FILE *file) {
 }
 
 long countFileLines(char *file) {
-	//static const auto BUFFER_SIZE = 16 * 1024;
 	int fd = open(file, O_RDONLY);
 	if (fd == -1)
 		printErr("Error while opening file for line counting");
@@ -467,6 +458,7 @@ unsigned long long getDateAsULL(const char *numStr, int num_sz) {
 	return num;
 }
 
+// takes two integers and returns a unique integer for this combination
 unsigned long CantorPairingFunction(long k1, long k2) {
 	return (((k1 + k2) * (k1 + k2 + 14)) >> 1) + k2;
 }
@@ -521,13 +513,6 @@ void readPersons(char* inputDir) {
 		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
 		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
 		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
-		/*
-		int divisorsCount = 0;
-		for( dateStartDivisor=dateStartDivisor+1; divisorsCount<3; dateStartDivisor++ ){
-			if( *dateStartDivisor == '|' )
-				divisorsCount++;
-		}
-		*/
 
 		int dateInt = getDateAsInt(dateStartDivisor + 1, 10);
 		//printf("%d\n", dateInt);
@@ -1196,7 +1181,6 @@ void readPersonHasInterestTag(char *inputDir) {
 		Q2ListNode *newPerson = new Q2ListNode();
 		newPerson->birth = PersonBirthdays[personId];
 		newPerson->personId = personId;
-		newPerson->component_size = 0;
 		(*TagSubBirthdays)[key]->people.push_back(newPerson);
 
 		startLine = lineEnd + 1;
@@ -1532,9 +1516,9 @@ void query1(int p1, int p2, int x, long qid) {
 
 	int answer = -1;
 
-	//char *visited = (char*) malloc(N_PERSONS);
-	//memset(visited, 0, N_PERSONS);
-	LPSparseArrayGeneric<long> visited;
+	char *visited = (char*) malloc(N_PERSONS);
+	memset(visited, 0, N_PERSONS);
+	//LPSparseArrayGeneric<long> visited;
 	vector<QueryBFS> Q;
 
 	// insert the source node into the queue
@@ -1547,8 +1531,8 @@ void query1(int p1, int p2, int x, long qid) {
 
 		//printf("current: %ld %d\n", current.person, current.depth);
 		// mark node as visited - BLACK
-		//visited[current.person] = 2;
-		visited.set(current.person,2);
+		visited[current.person] = 2;
+		//visited.set(current.person,2);
 
 		// we must add the current neighbors into the queue if
 		// the comments are valid
@@ -1560,13 +1544,14 @@ void query1(int p1, int p2, int x, long qid) {
 			for (long i = 0, sz = cPerson->adjacents;
 					(i < sz) && (weights[i] > x); i++) {
 				long cAdjacent = adjacents[i];
-				//if (visited[cAdjacent] == 0) {
-				if (visited.get(cAdjacent) == 0) {
+				if (visited[cAdjacent] == 0) {
+				//if (visited.get(cAdjacent) == 0) {
 					if (cAdjacent == p2) {
 						answer = current.depth + 1;
 						break;
 					}
-					visited.set(cAdjacent,1);
+					//visited.set(cAdjacent,1);
+					visited[cAdjacent]=1;
 					Q.push_back(QueryBFS(cAdjacent, current.depth + 1));
 					size++;
 				}
@@ -1576,14 +1561,15 @@ void query1(int p1, int p2, int x, long qid) {
 			for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
 				long cAdjacent = adjacents[i];
 				// if node not visited and not added
-				//if (visited[cAdjacent] == 0) {
-				if (visited.get(cAdjacent) == 0) {
+				if (visited[cAdjacent] == 0) {
+				//if (visited.get(cAdjacent) == 0) {
 					if (cAdjacent == p2) {
 						answer = current.depth + 1;
 						break;
 					}
 					// mark node as added - GREY
-					visited.set(cAdjacent,1);
+					//visited.set(cAdjacent,1);
+					visited[cAdjacent]=1;
 					Q.push_back(QueryBFS(cAdjacent, current.depth + 1));
 					size++;
 				}
@@ -1752,10 +1738,10 @@ void query2(int k, char *date, int date_sz, long qid) {
 	Answers[qid] = ss.str().c_str();
 }
 
-int BFS_query3_(long idA, long idB, int h) {
-	//char *visited = (char*) malloc(N_PERSONS);
-	//memset(visited, 0, N_PERSONS);
-	LPSparseArrayGeneric<char> visited;
+int BFS_query3(long idA, long idB, int h) {
+	char *visited = (char*) malloc(N_PERSONS);
+	memset(visited, 0, N_PERSONS);
+	//LPSparseArrayGeneric<char> visited;
 
 	vector<QueryBFS> Q;
 	long qIndex = 0;
@@ -1774,32 +1760,33 @@ int BFS_query3_(long idA, long idB, int h) {
 			break;
 		}
 		// mark person BLACK - visited
-		//visited[cPerson.person] = 2;
-		visited.set(cPerson.person, 2);
+		visited[cPerson.person] = 2;
+		//visited.set(cPerson.person, 2);
 
 		long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
 		for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
 			long cB = neighbors[i];
 			// if person is not visited and not added yet
-			//if (visited[cB] == 0) {
-			if (visited.get(cB) == 0) {
+			if (visited[cB] == 0) {
+			//if (visited.get(cB) == 0) {
 				// check if this is our person
 				if (idB == cB) {
 					//free(visited);
 					return cPerson.depth + 1;
 				}
 				// mark person as GREY - added
-				visited.set(cB, 1);
+				//visited.set(cB, 1);
+				visited[cB]=1;
 				Q.push_back(QueryBFS(cB, cPerson.depth + 1));
 				qSize++;
 			}
 		}
 	}
-	//free(visited);
+	free(visited);
 	return INT_MAX;
 }
 // TODO
-int BFS_query3(long idA, long idB, int h) {
+int BFS_query3_(long idA, long idB, int h) {
 	//char *visited = (char*) malloc(N_PERSONS);
 	//memset(visited, 0, N_PERSONS);
 
