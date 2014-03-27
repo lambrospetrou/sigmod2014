@@ -46,7 +46,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -93,6 +93,15 @@ struct TrieNode {
 	long realId;
 	long vIndex;
 	TrieNode* children[VALID_PLACE_CHARS];
+}__attribute__((aligned(CACHE_LINE_SIZE)));
+// Aligned for cache lines;
+
+struct CommentTrieNode {
+	// TODO - maybe we do not need the valid byte for this case and
+	// we can initialize the personId to -1 to indicate non-valid node
+	char valid;
+	long personId;
+	CommentTrieNode* children[10];
 }__attribute__((aligned(CACHE_LINE_SIZE)));
 // Aligned for cache lines;
 
@@ -228,9 +237,13 @@ bool Q2ListPredicate(TagSubStruct* a, TagSubStruct* b) {
 
 TrieNode* TrieNode_Constructor();
 void TrieNode_Destructor(TrieNode* node);
-TrieNode* TrieInsert(TrieNode* node, const char* name, char name_sz, long id,
-		long index);
+TrieNode* TrieInsert(TrieNode* node, const char* name, char name_sz, long id, long index);
 TrieNode* TrieFind(TrieNode* root, const char* name, char name_sz);
+
+CommentTrieNode* CommentTrieNode_Constructor();
+void CommentTrieNode_Destructor(CommentTrieNode* node);
+CommentTrieNode* CommentTrieInsert(CommentTrieNode* node, const char* commentId, char id_sz, long personId);
+CommentTrieNode* CommentTrieFind(CommentTrieNode* root, const char* commentId, char id_sz);
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBAL STRUCTURES
@@ -287,6 +300,7 @@ vector<string> Answers;
 // reading the comments files. DO NOT USE THEM ANYWHERE
 PersonCommentsStruct *PersonsComments;
 MAP_INT_INT *CommentToPerson;
+//CommentTrieNode *CommentToPerson;
 
 MAP_INT_INT *PlaceIdToIndex;
 MAP_INT_INT *OrgToPlace;
@@ -2204,7 +2218,7 @@ void executeQuery1Jobs(int q1threads){
 		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
 			//fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
 		}else{
-			fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
+			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
 		}
 	}
 }
@@ -2587,6 +2601,8 @@ int main(int argc, char** argv) {
 	///////////////////////////////////////////////////////////////////
 	postProcessComments();
 
+	fprintf(stderr, "finished processing comments\n");
+
 	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
 	executeQuery1Jobs(WORKER_THREADS);
 
@@ -2625,6 +2641,8 @@ int main(int argc, char** argv) {
 	sprintf(msg, "tags process time: %ld", time_tags_end - time_global_start);
 	printOut(msg);
 #endif
+
+	fprintf(stderr, "finished processing all other files\n");
 
 
 	// start workers
@@ -2720,4 +2738,61 @@ TrieNode* TrieFind(TrieNode* root, const char* name, char name_sz) {
 	}
 	return 0;
 }
+
+
+////////////////////////////////////////////////////////////////////////
+// COMMENT TRIE IMPLEMENTATION
+////////////////////////////////////////////////////////////////////////
+CommentTrieNode* CommentTrieNode_Constructor() {
+	CommentTrieNode* n = (CommentTrieNode*) malloc(sizeof(CommentTrieNode));
+	if (!n)
+		printErr("error allocating CommentTrieNode");
+	n->personId = -1;
+	memset(n->children, 0, 10 * sizeof(CommentTrieNode*));
+	return n;
+}
+void CommentTrieNode_Destructor(CommentTrieNode* node) {
+	for (int i = 0; i < 10; i++) {
+		if (node->children[i] != 0) {
+			CommentTrieNode_Destructor(node->children[i]);
+		}
+	}
+	free(node);
+}
+CommentTrieNode* CommentTrieInsert(CommentTrieNode* node, const char* commentId, char id_sz, long personId) {
+	int ptr = 0;
+	int pos;
+	while (ptr < id_sz) {
+		pos = commentId[ptr]-'0';
+		if (node->children[pos] == 0) {
+			node->children[pos] = CommentTrieNode_Constructor();
+		}
+		node = node->children[pos];
+		ptr++;
+	}
+	// if already exists we do not overwrite but just return the existing one
+	if( node->personId != -1 ){
+		return node;
+	}
+	node->personId = personId;
+	return node;
+}
+CommentTrieNode* CommentTrieFind(CommentTrieNode* root, const char* commentId, char id_sz) {
+	int p, i, found = 1;
+	for (p = 0; p < id_sz; p++) {
+		i = commentId[p]-'0';
+		if (root->children[i] != 0) {
+			root = root->children[i];
+		} else {
+			found = 0;
+			break;
+		}
+	}
+	if (found && root->personId != -1) {
+		// WE HAVE A MATCH SO return the node
+		return root;
+	}
+	return 0;
+}
+
 
