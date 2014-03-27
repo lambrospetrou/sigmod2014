@@ -267,7 +267,6 @@ long N_SUBGRAPHS = 0;
 long N_QUERIES = 0;
 
 lp_threadpool *threadpool;
-lp_threadpool *threadpool_q1;
 lp_threadpool *threadpool_q23;
 lp_threadpool *threadpool_q4;
 
@@ -2666,9 +2665,8 @@ int main(int argc, char** argv) {
 #endif
 
 
-	lp_threadpool_startjobs(threadpool);
 	// start workers
-	//lp_threadpool_startjobs(threadpool);
+	lp_threadpool_startjobs(threadpool);
 	synchronize_complete(threadpool);
 
 #ifdef DEBUGGING
