@@ -308,7 +308,7 @@ int *PersonBirthdays;
 typedef std::tr1::unordered_map<unsigned long, TagSubStruct*, hash<unsigned long> > MAP_LONG_TSPTR;
 //typedef std::map<unsigned long, TagSubStruct*> MAP_LONG_TSPTR;
 MAP_LONG_TSPTR *TagSubBirthdays;
-vector<TagSubStruct*> TagSubFinals;
+vector<TagSubStruct*> *TagSubFinals;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1403,13 +1403,13 @@ void postProcessTagBirthdays() {
 	for (MAP_LONG_TSPTR::iterator it = TagSubBirthdays->begin(),
 			end = TagSubBirthdays->end(); it != end;	it++) {
 		TagSubStruct*tagStruct = (*it).second;
-		TagSubFinals.push_back(tagStruct);
+		TagSubFinals->push_back(tagStruct);
 		// sort the birthdays of each TagSubgraph
 		std::stable_sort(tagStruct->people.begin(), tagStruct->people.end(),
 				Q2ListNodePredicate);
 	}
 	// sort the final list of tags descending on the list size
-	std::stable_sort(TagSubFinals.begin(), TagSubFinals.end(), Q2ListPredicate);
+	std::stable_sort(TagSubFinals->begin(), TagSubFinals->end(), Q2ListPredicate);
 
 	// dynamic memory allocation to DELETE
 	delete TagSubBirthdays;
@@ -1703,9 +1703,9 @@ void query2(int k, char *date, int date_sz, long qid) {
 	list<Q2ResultNode> results;
 
 	int currentResults = 0;
-	for (long i = 0, sz = TagSubFinals.size(); i < sz; i++) {
+	for (long i = 0, sz = TagSubFinals->size(); i < sz; i++) {
 		//vector<Q2ListNode*> &people = TagSubFinals[i]->people;
-		vector<Q2ListNode> &people = TagSubFinals[i]->people;
+		vector<Q2ListNode> &people = (*TagSubFinals)[i]->people;
 		long currentTagSize = people.size();
 
 		// do not need to process further in other tags
@@ -1726,7 +1726,7 @@ void query2(int k, char *date, int date_sz, long qid) {
 		if (currentResults < k) {
 			// NOT NEEDED - initialized above
 			// minComponentSize = 0;
-			results.push_back(Q2ResultNode(TagSubFinals[i]->tagId, largestTagComponent));
+			results.push_back(Q2ResultNode((*TagSubFinals)[i]->tagId, largestTagComponent));
 			currentResults++;
 			if (currentResults == k) {
 				results.sort(Q2ResultListPredicate);
@@ -1740,9 +1740,9 @@ void query2(int k, char *date, int date_sz, long qid) {
 						end = results.end(); itPerson != end; itPerson++) {
 					//if ( (*itPerson).people < largestTagComponent) {
 					if ( (*itPerson).people < largestTagComponent
-							|| (strcmp( TagIdToName[(*itPerson).tagId], TagIdToName[TagSubFinals[i]->tagId] ) >= 0  && (*itPerson).people == largestTagComponent )) {
+							|| (strcmp( TagIdToName[(*itPerson).tagId], TagIdToName[(*TagSubFinals)[i]->tagId] ) >= 0  && (*itPerson).people == largestTagComponent )) {
 						// insert here
-						results.insert(itPerson, Q2ResultNode(TagSubFinals[i]->tagId,largestTagComponent));
+						results.insert(itPerson, Q2ResultNode((*TagSubFinals)[i]->tagId,largestTagComponent));
 						// discard the last one - min
 						results.pop_back();
 						// update the minimum component
@@ -2368,6 +2368,10 @@ void _initializations() {
 	PlaceIdToIndex = new MAP_INT_INT();
 	OrgToPlace = new MAP_INT_INT();
 
+	// Q2
+	TagSubFinals = new vector<TagSubStruct*>();
+
+
 	PlacesToId = TrieNode_Constructor();
 	Places.reserve(2048);
 
@@ -2377,7 +2381,15 @@ void _initializations() {
 
 }
 
+void _destoryQ2Index(){
+	for( long i=0,sz=TagSubFinals->size(); i<sz; i++ ){
+		delete (*TagSubFinals)[i];
+	}
+	delete TagSubFinals;
+}
+
 void _destructor() {
+	_destoryQ2Index();
 	delete[] Persons;
 	delete[] PersonToTags;
 	TrieNode_Destructor(PlacesToId);
