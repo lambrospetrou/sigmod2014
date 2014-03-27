@@ -1,3 +1,7 @@
+query3(4, 3, South_America)
+query3(4, 3, Indonesia)
+query3(6, 5, North_America)
+query3(4, 3, Pakistan)
 query1(576, 400, -1)
 query1(58, 402, 0)
 query1(266, 106, -1)

@@ -19,11 +19,13 @@
 #include <vector>
 #include <queue>
 //#include <map>
+#include <set>
 #include <algorithm>
 #include <iterator>
 #include <sstream>
 
 #include <tr1/unordered_map>
+#include <tr1/unordered_set>
 
 #include "lplibs/LPBitset.h"
 #include "lplibs/LPThreadpool.h"
@@ -33,6 +35,7 @@
 
 using namespace std;
 using std::tr1::unordered_map;
+using std::tr1::unordered_set;
 using std::tr1::hash;
 
 //#define DEBUGGING 1
@@ -1734,10 +1737,9 @@ void query2(int k, char *date, int date_sz, long qid) {
 	Answers[qid] = ss.str().c_str();
 }
 
-int BFS_query3(long idA, long idB, int h) {
+int BFS_query3_(long idA, long idB, int h) {
 	//char *visited = (char*) malloc(N_PERSONS);
 	//memset(visited, 0, N_PERSONS);
-
 	LPSparseArrayGeneric<char> visited;
 
 	vector<QueryBFS> Q;
@@ -1758,21 +1760,21 @@ int BFS_query3(long idA, long idB, int h) {
 		}
 		// mark person BLACK - visited
 		//visited[cPerson.person] = 2;
-		visited.set(cPerson.person,2);
+		visited.set(cPerson.person, 2);
 
 		long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
 		for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
 			long cB = neighbors[i];
 			// if person is not visited and not added yet
 			//if (visited[cB] == 0) {
-			if ( visited.get(cB) == 0) {
+			if (visited.get(cB) == 0) {
 				// check if this is our person
 				if (idB == cB) {
 					//free(visited);
 					return cPerson.depth + 1;
 				}
 				// mark person as GREY - added
-				visited.set(cB,1);
+				visited.set(cB, 1);
 				Q.push_back(QueryBFS(cB, cPerson.depth + 1));
 				qSize++;
 			}
@@ -1781,6 +1783,124 @@ int BFS_query3(long idA, long idB, int h) {
 	//free(visited);
 	return INT_MAX;
 }
+
+int BFS_query3(long idA, long idB, int h) {
+	//char *visited = (char*) malloc(N_PERSONS);
+	//memset(visited, 0, N_PERSONS);
+
+	LPSparseArrayGeneric<char> visited;
+	LPSparseArrayGeneric<char> visitedR;
+
+	vector<QueryBFS> QR;
+	long qIndexR = 0;
+	long qSizeR = 1;
+	QR.push_back(QueryBFS(idB, 0));
+
+	vector<QueryBFS> Q;
+	long qIndex = 0;
+	long qSize = 1;
+	Q.push_back(QueryBFS(idA, 0));
+
+	int hop_limit = (h>>1) + 1;
+	int currentDepth = 0;
+
+	unordered_set<long> CurrentLevelPersons;
+
+	while ( ! (qIndex == qSize && qIndexR == qSizeR) ) {
+		CurrentLevelPersons.clear();
+
+		// exit condition if no path exists under the valid length
+		if( currentDepth > hop_limit ){
+			break;
+		}
+
+		while( qIndex<qSize && Q[qIndex].depth == currentDepth ){
+			// move the forward side
+			// DO NOT USE REFERENCE FOR THE POPPED ITEM - IT CAUSES PROBLEMS
+			QueryBFS cPerson = Q[qIndex];
+			qIndex++;
+
+			// mark person BLACK - visited
+			visited.set(cPerson.person, 2);
+
+			// add the current person to the level's set
+			CurrentLevelPersons.insert(cPerson.person);
+
+			long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
+			for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
+				long cB = neighbors[i];
+				// if person is not visited and not added yet
+				if (visited.get(cB) == 0) {
+					// the following is to check the 2nd case in
+					// http://courses.csail.mit.edu/6.006/spring12/lectures/lecture17.pdf slide 8
+					if( visitedR.get(cPerson.person) == 2 ){
+						for( long j=qIndexR-1; j>=0; j-- ){
+							if( QR[j].person == cPerson.person ){
+								if( ( (QR[j].depth + cPerson.depth) + 1 <= h ) ){
+									return QR[j].depth + cPerson.depth + 1;
+								}
+								break;
+							}
+						}
+					}
+					// check if this is our person
+					if (idB == cB) {
+						return cPerson.depth + 1;
+					}
+					// mark person as GREY - added
+					visited.set(cB, 1);
+					Q.push_back(QueryBFS(cB, cPerson.depth + 1));
+					qSize++;
+				}
+			}
+		}
+
+		unsigned long csize =  CurrentLevelPersons.size();
+
+		while( qIndexR<qSizeR && QR[qIndexR].depth==currentDepth ){
+			// PROCESS THE REVERSE SIDE
+			// process the level nodes from Destination
+			QueryBFS cPersonR = QR[qIndexR];
+			qIndexR++;
+
+			// mark person BLACK - visited
+			visitedR.set(cPersonR.person, 2);
+
+			// remove this person from the level's set
+			CurrentLevelPersons.erase(cPersonR.person);
+
+			long *neighborsR = Persons[cPersonR.person].adjacentPersonsIds;
+			for (long i = 0, sz = Persons[cPersonR.person].adjacents; i < sz; i++) {
+				long cA = neighborsR[i];
+				// if person is not visited and not added yet
+				if (visitedR.get(cA) == 0) {
+					// check if this is our person
+					if (idA == cA) {
+						return cPersonR.depth + 1;
+					}
+					// mark person as GREY - added
+					visitedR.set(cA, 1);
+					QR.push_back(QueryBFS(cA, cPersonR.depth + 1));
+					qSizeR++;
+				}
+			}
+		}// end of reverse side
+
+
+		if( CurrentLevelPersons.size() != csize ){
+			// we had a removal - that means a common node
+			return currentDepth<<1;
+		}
+
+
+		currentDepth++;
+	}// end of outer while
+
+	//free(visited);
+	return INT_MAX;
+}
+
+
 
 void query3(int k, int h, char *name, int name_sz, long qid) {
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
@@ -1885,12 +2005,26 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 		long idB = -1;
 		//long cTags = -1;
 		while (!PQ.empty()) {
-			const Query3PQ &cPair = PQ.top();
+			const Query3PQ cPair = PQ.top();
 			idA = cPair.idA;
 			idB = cPair.idB;
-			//cTags = cPair.commonTags;
+
+			int cTags = cPair.commonTags;
 			PQ.pop();
 			int distance = BFS_query3(idA, idB, h);
+/*
+			if( idA == 516 && idB == 535 ){
+				printf("516 - 535 : %d d[%d]\n", cTags, distance);
+			}
+
+			if( idA == 527 && idB == 530 ){
+				printf("527 - 530 : %d\n", cTags);
+			}
+
+			if( idA == 530 && idB == 533 ){
+				printf("530 - 533 : %d\n", cTags);
+			}
+*/
 			if (distance <= h) {
 				// we have an answer so exit the while
 				ss << idA << "|" << idB << " ";
