@@ -16,6 +16,7 @@
 
 #include <string>
 #include <list>
+#include <deque>
 #include <vector>
 #include <queue>
 //#include <map>
@@ -46,7 +47,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -1743,12 +1744,15 @@ int BFS_query3(long idA, long idB, int h) {
 	memset(visited, 0, N_PERSONS);
 	//LPSparseArrayGeneric<char> visited;
 
-	vector<QueryBFS> Q;
+	//vector<QueryBFS> Q;
+	deque<QueryBFS> Q;
 	long qIndex = 0;
 	long qSize = 1;
 	Q.push_back(QueryBFS(idA, 0));
 	while (qIndex < qSize) {
-		QueryBFS cPerson = Q[qIndex];
+		//QueryBFS cPerson = Q[qIndex];
+		QueryBFS cPerson = Q.front();
+		Q.pop_front();
 		qIndex++;
 
 		// we have reached the hop limit of the query
@@ -2090,7 +2094,8 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 	int n_1 = persons.size() - 1;
 	//MAP_INT_INT visitedBFS;
 	LPSparseArrayGeneric<char> visitedBFS;
-	vector<QueryBFS> Q;
+	//vector<QueryBFS> Q;
+	deque<QueryBFS> Q;
 	for (int i = 0, sz = persons.size(); i < sz; i++) {
 		visitedBFS.clear();
 		Q.clear();
@@ -2099,7 +2104,9 @@ void query4(int k, char *tag, int tag_sz, long qid) {
 		long qSize = 1;
 		Q.push_back(QueryBFS(cPerson.person, 0));
 		while (qIndex < qSize) {
-			QueryBFS &c = Q[qIndex];
+			//QueryBFS &c = Q[qIndex];
+			QueryBFS c = Q.front();
+			Q.pop_front();
 			qIndex++;
 			//visitedBFS[c.person] = 2;
 			visitedBFS.set(c.person, 2);
