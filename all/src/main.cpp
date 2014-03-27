@@ -1804,16 +1804,17 @@ int BFS_query3(long idA, long idB, int h) {
 	int currentDepth = 0;
 
 	//unordered_set<long> CurrentLevelPersons;
-	LPBitset CurrentLevelPersons(N_PERSONS);
+	//LPBitset CurrentLevelPersons(N_PERSONS);
+	char CurrentLevelPersons[N_PERSONS];
+	memset(CurrentLevelPersons, 0, N_PERSONS);
 
 	while ( ! (qIndex == qSize && qIndexR == qSizeR) ) {
-		//CurrentLevelPersons.clear();
-		CurrentLevelPersons.clearAll();
-
 		// exit condition if no path exists under the valid length
 		if( currentDepth > hop_limit ){
 			break;
 		}
+
+		memset(CurrentLevelPersons, 0, N_PERSONS);
 
 		while( qIndex<qSize && Q[qIndex].depth == currentDepth ){
 			// move the forward side
@@ -1826,7 +1827,8 @@ int BFS_query3(long idA, long idB, int h) {
 
 			// add the current person to the level's set
 			//CurrentLevelPersons.insert(cPerson.person);
-			CurrentLevelPersons.set(cPerson.person);
+			//CurrentLevelPersons.set(cPerson.person);
+			CurrentLevelPersons[cPerson.person] = 1;
 
 			long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
 			for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
@@ -1858,7 +1860,7 @@ int BFS_query3(long idA, long idB, int h) {
 			}
 		}
 
-		unsigned long csize =  CurrentLevelPersons.size();
+		//unsigned long csize =  CurrentLevelPersons.size();
 		char foundCommonVertex = 0;
 
 		while( qIndexR<qSizeR && QR[qIndexR].depth==currentDepth ){
@@ -1872,7 +1874,8 @@ int BFS_query3(long idA, long idB, int h) {
 
 			// remove this person from the level's set
 			//CurrentLevelPersons.erase(cPersonR.person);
-			if( CurrentLevelPersons.isSet(cPersonR.person) ){
+			//if( CurrentLevelPersons.isSet(cPersonR.person) ){
+			if( CurrentLevelPersons[cPersonR.person] == 1 ){
 				foundCommonVertex = 1;
 				break;
 			}
@@ -1903,6 +1906,9 @@ int BFS_query3(long idA, long idB, int h) {
 			return currentDepth<<1;
 		}
 */
+
+		//CurrentLevelPersons.clear();
+		//CurrentLevelPersons.clearAll();
 
 		currentDepth++;
 	}// end of outer while
