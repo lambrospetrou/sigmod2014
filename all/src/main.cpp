@@ -46,7 +46,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -2212,11 +2212,11 @@ void executeQuery1Jobs(int q1threads){
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query1WorkerFunction), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
 		CPU_ZERO(&mask);
-		CPU_SET( ((i+1) % NUM_CORES) , &mask);
+		CPU_SET( (i % (NUM_CORES-1))+1 , &mask);
 		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
-			fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, ((i+1) % NUM_CORES));
+			fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, (i % (NUM_CORES-1))+1);
 		}else{
-			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, ((i+1) % NUM_CORES));
+			fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, (i % (NUM_CORES-1))+1);
 		}
 	}
 }
@@ -2449,11 +2449,11 @@ void readQueries(char *queriesFile) {
 	// initialize the vars for the job assignments
 	Query1Structs.reserve(2048);
 
-	vector<Query2WorkerStruct*> vec2;
+	//vector<Query2WorkerStruct*> vec2;
 	//vec2.reserve(BATCH_Q2 << 1);
-	vector<Query3WorkerStruct*> vec3;
+	//vector<Query3WorkerStruct*> vec3;
 	//vec3.reserve(BATCH_Q3 << 1);
-	vector<Query4WorkerStruct*> vec4;
+	//vector<Query4WorkerStruct*> vec4;
 	//vec4.reserve(BATCH_Q4 << 1);
 
 	char prevQType = -1;
@@ -2626,7 +2626,7 @@ int main(int argc, char** argv) {
 	postProcessComments();
 
 	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
-	executeQuery1Jobs(WORKER_THREADS - 1);
+	executeQuery1Jobs(WORKER_THREADS);
 
 #ifdef DEBUGGING
 	long time_comments_end = getTime();
