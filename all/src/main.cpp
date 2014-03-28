@@ -299,6 +299,9 @@ MAP_INT_INT *OrgToPlace;
 MAP_INT_INT *TagIdToIndex;
 MAP_LONG_STRING TagIdToName;
 
+std::tr1::unordered_set<long> *Query4Tags;
+std::tr1::unordered_set<long> *Query4TagForums;
+
 // TODO
 int *PersonBirthdays;
 typedef std::tr1::unordered_map<unsigned long, TagSubStruct*, hash<unsigned long> > MAP_LONG_TSPTR;
@@ -1304,6 +1307,8 @@ void readForumHasTag(char *inputDir) {
 	char msg[100];
 #endif
 
+	Query4TagForums = new unordered_set<long>();
+
 	// process the whole file in memory
 	// skip the first line
 	char *startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
@@ -1318,10 +1323,14 @@ void readForumHasTag(char *inputDir) {
 		long forumId = atol(startLine);
 		long tagId = atol(idDivisor + 1);
 
-		// insert the forum into the tag
-		long tagIndex = (*TagIdToIndex)[tagId];
-		Tags[tagIndex]->forums.push_back(forumId);
-		//printf("%ld %ld\n", idA, idB);
+		// only save the forums that are related to a tag we want
+		if( Query4Tags->find(tagId) != Query4Tags->end() ){
+			// insert the forum into the tag
+			long tagIndex = (*TagIdToIndex)[tagId];
+			Tags[tagIndex]->forums.push_back(forumId);
+
+			Query4TagForums->insert(forumId);
+		}
 
 		startLine = lineEnd + 1;
 #ifdef DEBUGGING
@@ -1372,8 +1381,10 @@ void readForumHasMember(char *inputDir) {
 		long forumId = atol(startLine);
 		long personId = atol(idDivisor + 1);
 
-		// insert the person directly into the forum members
-		Forums[forumId].push_back(personId);
+		if( Query4TagForums->find(forumId) != Query4TagForums->end() ){
+			// insert the person directly into the forum members
+			Forums[forumId].push_back(personId);
+		}
 
 		lineEnd = (char*) memchr(dateDivisor, '\n', LONGEST_LINE_READING);
 		startLine = lineEnd + 1;
@@ -2217,19 +2228,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query4InnerWorker), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
-		/*
-		CPU_ZERO(&mask);
-		if( tid % 2 == 1 ){
-			CPU_SET(i % NUM_CORES, &mask);
-		}else{
-			CPU_SET( (i+Q4_threads) % NUM_CORES, &mask);
-		}
-		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask)!= 0) {
-			//fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
-		} else {
-			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
-		}
-		*/
 	}
 
 	// execute some calculations yourself
@@ -2315,15 +2313,6 @@ void executeQuery1Jobs(int q1threads){
 		qws->end = lastEnd;
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query1WorkerFunction), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
-		/*
-		CPU_ZERO(&mask);
-		CPU_SET( i % NUM_CORES , &mask);
-		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
-			//fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
-		}else{
-			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
-		}
-		*/
 	}
 
 	// DO NOT NEED TO wait for them to finish for now since we are reading files at the same time
@@ -2408,19 +2397,6 @@ void executeQuery2Jobs(int q2threads){
 		}
 	}
 }
-
-/*
-void* Query2WorkerFunction(int tid, void *args) {
-	Query2WorkerStruct *qArgs = (Query2WorkerStruct*) args;
-	//printf("tid[%d] [%d]\n", tid, *(int*)args);
-	query2(qArgs->k, qArgs->date, qArgs->date_sz, qArgs->qid);
-
-	free(qArgs->date);
-	free(qArgs);
-	// end of job
-	return 0;
-}
-*/
 
 struct Query3WorkerStruct {
 	int k;
@@ -2530,8 +2506,7 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			//query1(atoi(startLine+7), atoi(second), atoi(third), qid);
 
-			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(
-					sizeof(Query1WorkerStruct));
+			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(sizeof(Query1WorkerStruct));
 			qwstruct->p1 = atol(startLine + 7);
 			qwstruct->p2 = atol(second);
 			qwstruct->x = atol(third);
@@ -2555,7 +2530,6 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
 			Query2Structs.push_back(qwstruct);
-			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query2WorkerFunction), (void*)qwstruct );
 
 			break;
 		}
@@ -2571,15 +2545,13 @@ void readQueries(char *queriesFile) {
 
 			char *placeName = (char*) malloc(name_sz + 1);
 			strncpy(placeName, name, name_sz + 1);
-			Query3WorkerStruct *qwstruct = (Query3WorkerStruct*) malloc(
-					sizeof(Query3WorkerStruct));
+			Query3WorkerStruct *qwstruct = (Query3WorkerStruct*) malloc(sizeof(Query3WorkerStruct));
 			qwstruct->k = atoi(startLine + 7);
 			qwstruct->h = atoi(second);
 			qwstruct->name = placeName;
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
 			lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
-			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
 		}
@@ -2599,7 +2571,9 @@ void readQueries(char *queriesFile) {
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
 			lp_threadpool_addjob_nolock(threadpool4,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
-			//lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
+
+			// TODO - add the asked Tag into the set
+			Query4Tags->insert(TrieFind(TagToIndex, tagName, tag_sz)->realId);
 
 			break;
 		}
@@ -2624,16 +2598,15 @@ int main(int argc, char** argv) {
 	CPU_ZERO(&mask);
 	CPU_SET( 0 , &mask);
 
-
 	// MAKE GLOBAL INITIALIZATIONS
 	char msg[100];
 	_initializations();
 
 	long long time_global_start = getTime();
 
-	threadpool3 = lp_threadpool_init( (WORKER_THREADS >> 1), NUM_CORES);
-	threadpool4 = lp_threadpool_init( (WORKER_THREADS >> 2), NUM_CORES);
-	readQueries(queryFile);
+	//threadpool3 = lp_threadpool_init( (WORKER_THREADS >> 1), NUM_CORES);
+	//threadpool4 = lp_threadpool_init( (WORKER_THREADS >> 2), NUM_CORES);
+	//readQueries(queryFile);
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
@@ -2693,8 +2666,19 @@ int main(int argc, char** argv) {
 
 	// Q4
 	readTags(inputDir);
+
+	// HERE WE READ THE QUERIES IN ORDER TO DETERMINE WHICH TAGS ARE REQUIRED BY THE QUERIES
+	threadpool3 = lp_threadpool_init( (WORKER_THREADS >> 1), NUM_CORES);
+	threadpool4 = lp_threadpool_init( (WORKER_THREADS >> 2), NUM_CORES);
+	Query4Tags = new unordered_set<long>();
+	readQueries(queryFile);
+	///////////////////////////////////
+
 	readForumHasTag(inputDir);
 	readForumHasMember(inputDir);
+
+	delete Query4Tags;
+	delete Query4TagForums;
 
 #ifdef DEBUGGING
 	long time_tags_end = getTime();
@@ -2709,20 +2693,14 @@ int main(int argc, char** argv) {
 
 	// start workers for Q3 and Q4
 	lp_threadpool_startjobs(threadpool3);
-	//synchronize_complete(threadpool3);
-	//fprintf(stderr,"query 3 finished");
 	lp_threadpool_startjobs(threadpool4);
-
-	readComments(inputDir);
-	postProcessComments();
-
 
 	///////////////////////////////////////////////////////////////////
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	//readComments(inputDir);
-	//postProcessComments();
+	readComments(inputDir);
+	postProcessComments();
 
 	fprintf(stderr, "finished processing comments\n");
 
@@ -2734,7 +2712,6 @@ int main(int argc, char** argv) {
 
 	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
 	executeQuery1Jobs(WORKER_THREADS);
-
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
