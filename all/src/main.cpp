@@ -46,12 +46,13 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define Q4_JOB_WORKERS 2
-#define Q3_THREADPOOOL_THREADS 2
-#define Q4_THREADPOOOL_THREADS 4
 
 #define NUM_CORES 8
-#define WORKER_THREADS NUM_CORES
+#define Q4_JOB_WORKERS 4
+#define Q4_THREADPOOOL_THREADS 2
+#define Q3_THREADPOOOL_THREADS 2
+#define Q1_WORKER_THREADS NUM_CORES
+
 #define NUM_THREADS WORKER_THREADS+1
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -65,6 +66,77 @@ typedef std::tr1::unordered_map<long, int, hash<long> > MAP_LONG_INT;
 typedef std::tr1::unordered_map<long, long, hash<long> > MAP_LONG_LONG;
 typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
 typedef std::tr1::unordered_map<long, char*, hash<long> > MAP_LONG_STRING;
+
+#include "sparsehash/dense_hash_map.h"
+#include "sparsehash/sparse_hash_map.h"
+using GOOGLE_NAMESPACE::dense_hash_map;
+using GOOGLE_NAMESPACE::sparse_hash_map;
+
+// A version of each of the hashtable classes we test, that has been
+// augumented to provide a common interface.  For instance, the
+// sparse_hash_map and dense_hash_map versions set empty-key and
+// deleted-key (we can do this because all our tests use int-like
+// keys), so the users don't have to.  The hash_map version adds
+// resize(), so users can just call resize() for all tests without
+// worrying about whether the map-type supports it or not.
+
+template<typename K, typename V, typename H>
+class EasyUseSparseHashMap : public sparse_hash_map<K,V,H> {
+ public:
+  EasyUseSparseHashMap() {
+    this->set_deleted_key(-1);
+  }
+};
+
+template<typename K, typename V>
+class EasySparseHashMap : public sparse_hash_map<K,V> {
+ public:
+  EasySparseHashMap() {
+    this->set_deleted_key(-1);
+  }
+};
+
+template<typename K, typename V, typename H>
+class EasyUseDenseHashMap : public dense_hash_map<K,V,H> {
+ public:
+  EasyUseDenseHashMap() {
+    this->set_empty_key(-1);
+    this->set_deleted_key(-2);
+  }
+};
+
+template<typename K, typename V>
+class EasyDenseHashMap : public dense_hash_map<K,V> {
+ public:
+  EasyDenseHashMap() {
+    this->set_empty_key(-1);
+    this->set_deleted_key(-2);
+  }
+};
+
+// For pointers, we only set the empty key.
+template<typename K, typename V, typename H>
+class EasyUseSparseHashMap<K*, V, H> : public sparse_hash_map<K*,V,H> {
+ public:
+  EasyUseSparseHashMap() { }
+};
+
+template<typename K, typename V, typename H>
+class EasyUseDenseHashMap<K*, V, H> : public dense_hash_map<K*,V,H> {
+ public:
+  EasyUseDenseHashMap() {
+    this->set_empty_key((K*)(~0));
+  }
+};
+
+// Google's HashMap
+typedef EasyDenseHashMap<long,long> DMAP_LONG_LONG;
+typedef EasyDenseHashMap<int,int> DMAP_INT_INT;
+typedef EasySparseHashMap<long,long> SMAP_LONG_LONG;
+
+// TODO - THE HASHMAP THAT WILL BE USED BELOW IN THE CODE
+typedef DMAP_LONG_LONG FINAL_MAP_LONG_LONG;
+typedef DMAP_INT_INT FINAL_MAP_INT_INT;
 
 struct PersonStruct {
 	PersonStruct() {
@@ -83,8 +155,9 @@ struct PersonStruct {
 // Aligned for cache lines;
 
 struct PersonCommentsStruct {
-	MAP_LONG_LONG commentsToPerson;
-	MAP_LONG_INT adjacentPersonWeights;
+	//MAP_LONG_LONG commentsToPerson;
+	//MAP_LONG_INT adjacentPersonWeights;
+	//FINAL_MAP_LONG_LONG adjacentPersonWeights;
 };
 
 struct TrieNode {
@@ -282,6 +355,9 @@ TrieNode *PlacesToId;
 vector<PlaceNodeStruct*> Places;
 PersonTags *PersonToTags;
 
+FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
+FINAL_MAP_LONG_LONG *PersonAdjacentPersonWeight;
+
 vector<TagNode*> Tags;
 TrieNode *TagToIndex; // required by Q4
 
@@ -292,14 +368,14 @@ vector<string> Answers;
 
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
-PersonCommentsStruct *PersonsComments;
-MAP_INT_INT *CommentToPerson;
+//PersonCommentsStruct *PersonsComments;
+FINAL_MAP_INT_INT *CommentToPerson;
 //CommentTrieNode *CommentToPerson;
 
-MAP_INT_INT *PlaceIdToIndex;
-MAP_INT_INT *OrgToPlace;
+FINAL_MAP_INT_INT *PlaceIdToIndex;
+FINAL_MAP_INT_INT *OrgToPlace;
 
-MAP_INT_INT *TagIdToIndex;
+FINAL_MAP_INT_INT *TagIdToIndex;
 MAP_LONG_STRING TagIdToName;
 
 std::tr1::unordered_set<long> *Query4Tags;
@@ -535,7 +611,7 @@ void readPersons(char* inputDir) {
 
 	// initialize persons
 	Persons = new PersonStruct[N_PERSONS];
-	PersonsComments = new PersonCommentsStruct[N_PERSONS];
+	//PersonsComments = new PersonCommentsStruct[N_PERSONS];
 	PersonToTags = new PersonTags[N_PERSONS];
 }
 
@@ -685,13 +761,15 @@ void postProcessComments() {
 		if (Persons[i].adjacents > 0) {
 			long adjacents = Persons[i].adjacents;
 			long *adjacentIds = Persons[i].adjacentPersonsIds;
-			MAP_LONG_INT *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
+			//FINAL_MAP_LONG_LONG *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
 			//LPSparseArrayGeneric<long> *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
 			Persons[i].adjacentPersonWeightsSorted = (int*) malloc(sizeof(int) * adjacents);
 			int *weights = Persons[i].adjacentPersonWeightsSorted;
 			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz; cAdjacent++) {
 				//weights[cAdjacent] = (*(weightsMap)).get(adjacentIds[cAdjacent]);
-				weights[cAdjacent] = (*(weightsMap))[adjacentIds[cAdjacent]];
+				//weights[cAdjacent] = (*(weightsMap))[adjacentIds[cAdjacent]];
+				long key = CantorPairingFunction(i, adjacentIds[cAdjacent]);
+				weights[cAdjacent] = (*PersonAdjacentPersonWeight)[key];
 			}
 			// now we need to sort them
 			/*
@@ -717,9 +795,10 @@ void postProcessComments() {
 	//CommentToPerson->clear();
 	delete CommentToPerson;
 	CommentToPerson = NULL;
-	//CommentTrieNode_Destructor(CommentToPerson);
-	delete[] PersonsComments;
-	PersonsComments = NULL;
+	delete CommentsPersonToPerson;
+	delete PersonAdjacentPersonWeight;
+	//delete[] PersonsComments;
+	//PersonsComments = NULL;
 }
 
 void readComments(char* inputDir) {
@@ -794,6 +873,9 @@ void readComments(char* inputDir) {
 	comments=0;
 #endif
 
+	CommentsPersonToPerson = new FINAL_MAP_LONG_LONG();
+	PersonAdjacentPersonWeight = new FINAL_MAP_LONG_LONG();
+
 	// process the whole file in memory
 	// skip the first line
 	startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
@@ -814,21 +896,28 @@ void readComments(char* inputDir) {
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
-			//int a_b = PersonsComments[personA].commentsToPerson.get(personB) + 1;
-			//PersonsComments[personA].commentsToPerson.set(personB, a_b);
-			int a_b = PersonsComments[personA].commentsToPerson[personB] + 1;
-			PersonsComments[personA].commentsToPerson[personB] = a_b;
+			long key_a_b = CantorPairingFunction(personA, personB);
+			long key_b_a = CantorPairingFunction(personB, personA);
+
+			int a_b = (*CommentsPersonToPerson)[key_a_b] + 1;
+			(*CommentsPersonToPerson)[key_a_b] = a_b;
+
+			//int a_b = PersonsComments[personA].commentsToPerson[personB] + 1;
+			//PersonsComments[personA].commentsToPerson[personB] = a_b;
 
 			///////////////////////////////////////////////////////////////////
 			// - Leave only the min(comments A-to-B, comments B-to-A) at each edge
 			///////////////////////////////////////////////////////////////////
 			//int b_a = PersonsComments[personB].commentsToPerson.get(personA);
-			int b_a = PersonsComments[personB].commentsToPerson[personA];
+			//int b_a = PersonsComments[personB].commentsToPerson[personA];
+			int b_a = (*CommentsPersonToPerson)[key_b_a];
 			if (a_b <= b_a) {
 				//PersonsComments[personA].adjacentPersonWeights.set(personB, a_b);
 				//PersonsComments[personB].adjacentPersonWeights.set(personA, a_b);
-				PersonsComments[personA].adjacentPersonWeights[personB] = a_b;
-				PersonsComments[personB].adjacentPersonWeights[personA] = a_b;
+				//PersonsComments[personA].adjacentPersonWeights[personB] = a_b;
+				//PersonsComments[personB].adjacentPersonWeights[personA] = a_b;
+				(*PersonAdjacentPersonWeight)[key_a_b] = a_b;
+				(*PersonAdjacentPersonWeight)[key_b_a] = a_b;
 			}
 		}
 		//printf("%ld %ld %ld\n", idA, idB, Persons[personA].commentsToPerson[personB] );
@@ -2446,10 +2535,10 @@ void* Query4WorkerFunction(int tid, void *args) {
 ///////////////////////////////////////////////////////////////////////
 
 void _initializations() {
-	CommentToPerson = new MAP_INT_INT();
+	CommentToPerson = new FINAL_MAP_INT_INT();
 	//CommentToPerson = CommentTrieNode_Constructor();
-	PlaceIdToIndex = new MAP_INT_INT();
-	OrgToPlace = new MAP_INT_INT();
+	PlaceIdToIndex = new FINAL_MAP_INT_INT();
+	OrgToPlace = new FINAL_MAP_INT_INT();
 
 	// Q2
 	TagSubFinals = new vector<TagSubStruct*>();
@@ -2459,7 +2548,7 @@ void _initializations() {
 
 	TagToIndex = TrieNode_Constructor();
 	Tags.reserve(2048);
-	TagIdToIndex = new MAP_INT_INT();
+	TagIdToIndex = new FINAL_MAP_INT_INT();
 
 }
 
@@ -2723,7 +2812,7 @@ int main(int argc, char** argv) {
 
 
 	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
-	executeQuery1Jobs(WORKER_THREADS);
+	executeQuery1Jobs(Q1_WORKER_THREADS);
 
 	synchronize_complete(threadpool4);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
