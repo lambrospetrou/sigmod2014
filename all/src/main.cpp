@@ -46,10 +46,10 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define Q4_JOB_WORKERS 4
-#define Q4_THREADPOOOL_THREADS 2
-#define Q3_THREADPOOOL_THREADS 2
+#define Q4_THREADPOOOL_THREADS 1
+#define Q3_THREADPOOOL_THREADS 4
 #define Q1_WORKER_THREADS NUM_CORES
 
 #define NUM_THREADS WORKER_THREADS+1
@@ -2408,6 +2408,9 @@ void *readCommentsAsyncWorker(void *args){
 pthread_t* readCommentsAsync(){
 	pthread_t* cThread = (pthread_t*)malloc(sizeof(pthread_t));
 	pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
+	cpu_set_t mask;
+	CPU_ZERO(&mask);
+	CPU_SET( 0 , &mask);
 	return cThread;
 }
 
@@ -2775,16 +2778,17 @@ int main(int argc, char** argv) {
 
 	fprintf(stderr, "finished processing all other files\n");
 
+	synchronize_complete(threadpool3);
+	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_q3_start)/1000000.0);
+
 	// start workers for Q4
 	lp_threadpool_startjobs(threadpool4);
 	long time_q4_start = getTime();
 
-	synchronize_complete(threadpool3);
-	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_q3_start)/1000000.0);
-
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
 	pthread_join(*commentsThread, NULL);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
+	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
 
 	synchronize_complete(threadpool4);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
