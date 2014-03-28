@@ -2406,16 +2406,6 @@ void executeQuery2Jobs(int q2threads){
 		}else{
 			pthread_create(&worker2_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query2WorkerFunction), qws );
 		}
-		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
-		/*
-		CPU_ZERO(&mask);
-		CPU_SET( (q2threads-i-1) % NUM_CORES , &mask);
-		if (pthread_setaffinity_np(worker2_threads[i], sizeof(cpu_set_t), &mask) != 0) {
-			//fprintf(stderr, "Error setting thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
-		}else{
-			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
-		}
-		*/
 	}
 }
 
@@ -2720,22 +2710,25 @@ int main(int argc, char** argv) {
 	// start workers for Q3 and Q4
 	lp_threadpool_startjobs(threadpool3);
 	//synchronize_complete(threadpool3);
-
 	//fprintf(stderr,"query 3 finished");
-
 	lp_threadpool_startjobs(threadpool4);
-	synchronize_complete(threadpool4);
-
-	fprintf(stderr,"query 4 finished");
-
 
 	readComments(inputDir);
+	postProcessComments();
+
+	synchronize_complete(threadpool4);
+	fprintf(stderr,"query 4 finished");
+
+	synchronize_complete(threadpool3);
+	fprintf(stderr,"query 3 finished");
+
 
 	///////////////////////////////////////////////////////////////////
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	postProcessComments();
+	//readComments(inputDir);
+	//postProcessComments();
 
 	fprintf(stderr, "finished processing comments\n");
 
