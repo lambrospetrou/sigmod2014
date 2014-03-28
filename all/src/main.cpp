@@ -47,7 +47,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -290,8 +290,8 @@ vector<string> Answers;
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
 PersonCommentsStruct *PersonsComments;
-//MAP_INT_INT *CommentToPerson;
-CommentTrieNode *CommentToPerson;
+MAP_INT_INT *CommentToPerson;
+//CommentTrieNode *CommentToPerson;
 
 MAP_INT_INT *PlaceIdToIndex;
 MAP_INT_INT *OrgToPlace;
@@ -713,9 +713,9 @@ void postProcessComments() {
 	}
 	// since we have all the data needed in arrays we can delete the hash maps
 	//CommentToPerson->clear();
-	//delete CommentToPerson;
-	//CommentToPerson = NULL;
-	CommentTrieNode_Destructor(CommentToPerson);
+	delete CommentToPerson;
+	CommentToPerson = NULL;
+	//CommentTrieNode_Destructor(CommentToPerson);
 	delete[] PersonsComments;
 	PersonsComments = NULL;
 }
@@ -752,12 +752,12 @@ void readComments(char* inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		//long idA = atol(startLine);
+		long idA = atol(startLine);
 		long idB = atol(idDivisor + 1);
 
 		// set the person to each comment
-		//(*CommentToPerson)[idA] = idB;
-		CommentTrieInsert(CommentToPerson, startLine, idDivisor-startLine, idB);
+		(*CommentToPerson)[idA] = idB;
+		//CommentTrieInsert(CommentToPerson, startLine, idDivisor-startLine, idB);
 
 		//printf("%d %d\n", idA, idB);
 
@@ -800,14 +800,14 @@ void readComments(char* inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		//long idA = atol(startLine);
-		//long idB = atol(idDivisor + 1);
+		long idA = atol(startLine);
+		long idB = atol(idDivisor + 1);
 
 		// we have to hold the number of comments between each person
-		//long personA = (*CommentToPerson)[idA];
-		//long personB = (*CommentToPerson)[idB];
-		long personA = CommentTrieFind(CommentToPerson, startLine, idDivisor-startLine)->personId;
-		long personB = CommentTrieFind(CommentToPerson, idDivisor+1, lineEnd-idDivisor-1)->personId;
+		long personA = (*CommentToPerson)[idA];
+		long personB = (*CommentToPerson)[idB];
+		//long personA = CommentTrieFind(CommentToPerson, startLine, idDivisor-startLine)->personId;
+		//long personB = CommentTrieFind(CommentToPerson, idDivisor+1, lineEnd-idDivisor-1)->personId;
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
@@ -1245,7 +1245,6 @@ void readTags(char *inputDir) {
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		nameDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
-		*lineEnd = '\0';
 		*nameDivisor = '\0';
 		long id = atol(startLine);
 		char *name = idDivisor + 1;
@@ -2440,8 +2439,8 @@ void* Query4WorkerFunction(int tid, void *args) {
 ///////////////////////////////////////////////////////////////////////
 
 void _initializations() {
-	//CommentToPerson = new MAP_INT_INT();
-	CommentToPerson = CommentTrieNode_Constructor();
+	CommentToPerson = new MAP_INT_INT();
+	//CommentToPerson = CommentTrieNode_Constructor();
 	PlaceIdToIndex = new MAP_INT_INT();
 	OrgToPlace = new MAP_INT_INT();
 
@@ -2664,6 +2663,7 @@ int main(int argc, char** argv) {
 	readPersonHasInterestTag(inputDir);
 	postProcessTagBirthdays();
 
+
 	// Q4
 	readTags(inputDir);
 
@@ -2676,9 +2676,10 @@ int main(int argc, char** argv) {
 
 	readForumHasTag(inputDir);
 	readForumHasMember(inputDir);
-
 	delete Query4Tags;
 	delete Query4TagForums;
+
+
 
 #ifdef DEBUGGING
 	long time_tags_end = getTime();
