@@ -46,14 +46,13 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
+#define Q4_JOB_WORKERS 2
+#define Q3_THREADPOOOL_THREADS 2
+#define Q4_THREADPOOOL_THREADS 4
+
 #define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
-
-#define Q4_JOB_WORKERS 8
-#define Q3_THREADPOOOL_THREADS 2
-#define Q4_THREADPOOOL_THREADS 2
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // structs
@@ -535,7 +534,6 @@ void readPersons(char* inputDir) {
 	free(buffer);
 
 	// initialize persons
-	//Persons = malloc(sizeof(PersonStruct)*N_PERSONS);
 	Persons = new PersonStruct[N_PERSONS];
 	PersonsComments = new PersonCommentsStruct[N_PERSONS];
 	PersonToTags = new PersonTags[N_PERSONS];
@@ -739,6 +737,7 @@ void readComments(char* inputDir) {
 	}
 	long lSize;
 	char *buffer = getFileBytes(input, &lSize);
+	fclose(input);
 
 #ifdef DEBUGGING
 	char msg[100];
@@ -761,7 +760,6 @@ void readComments(char* inputDir) {
 
 		// set the person to each comment
 		(*CommentToPerson)[idA] = idB;
-		//CommentTrieInsert(CommentToPerson, startLine, idDivisor-startLine, idB);
 
 		//printf("%d %d\n", idA, idB);
 
@@ -771,7 +769,7 @@ void readComments(char* inputDir) {
 #endif
 	}
 	// close the comment_hasCreator_Person
-	fclose(input);
+
 	free(buffer);
 
 #ifdef DEBUGGING
@@ -790,6 +788,7 @@ void readComments(char* inputDir) {
 		printErr("could not open comment_replyOf_Comment.csv!");
 	}
 	buffer = getFileBytes(input, &lSize);
+	fclose(input);
 
 #ifdef DEBUGGING
 	comments=0;
@@ -1963,11 +1962,13 @@ int BFS_query3_(long idA, long idB, int h) {
 
 
 void query3(int k, int h, char *name, int name_sz, long qid) {
-	/*static int entrance = 0;
+	/*
+	static int entrance = 0;
 	if( entrance == 0 ){
 		entrance = 1;
-		fprintf(stderr, "query 3 started");
-	}*/
+		fprintf(stderr, "query 3 started\n");
+	}
+	*/
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
 
 	vector<long> persons;
@@ -2162,11 +2163,13 @@ void *Query4InnerWorker(void *args){
 }
 
 void query4(int k, char *tag, int tag_sz, long qid, int tid) {
+	/*
 	static int entrance = 0;
 	if (entrance == 0) {
 		entrance = 1;
 		fprintf(stderr, "query 4 started");
 	}
+	*/
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
 
 	long tagIndex = TrieFind(TagToIndex, tag, tag_sz)->vIndex;
@@ -2699,7 +2702,10 @@ int main(int argc, char** argv) {
 	executeQuery2Jobs(2);
 
 	// start workers for Q3 and Q4
+	long time_q3_start = getTime();
 	lp_threadpool_startjobs(threadpool3);
+
+	long time_q4_start = getTime();
 	lp_threadpool_startjobs(threadpool4);
 
 	///////////////////////////////////////////////////////////////////
@@ -2711,14 +2717,16 @@ int main(int argc, char** argv) {
 
 	fprintf(stderr, "finished processing comments\n");
 
-	synchronize_complete(threadpool4);
-	fprintf(stderr,"query 4 finished");
-
 	synchronize_complete(threadpool3);
-	fprintf(stderr,"query 3 finished");
+	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_q3_start)/1000000.0);
+
+
 
 	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
 	executeQuery1Jobs(WORKER_THREADS);
+
+	synchronize_complete(threadpool4);
+	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
