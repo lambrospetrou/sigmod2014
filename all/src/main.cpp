@@ -46,7 +46,6 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-
 #define NUM_CORES 8
 #define Q4_JOB_WORKERS 4
 #define Q4_THREADPOOOL_THREADS 2
@@ -135,8 +134,8 @@ typedef EasyDenseHashMap<int,int> DMAP_INT_INT;
 typedef EasySparseHashMap<long,long> SMAP_LONG_LONG;
 
 // TODO - THE HASHMAP THAT WILL BE USED BELOW IN THE CODE
-typedef DMAP_LONG_LONG FINAL_MAP_LONG_LONG;
-typedef DMAP_INT_INT FINAL_MAP_INT_INT;
+typedef MAP_LONG_LONG FINAL_MAP_LONG_LONG;
+typedef MAP_INT_INT FINAL_MAP_INT_INT;
 
 struct PersonStruct {
 	PersonStruct() {
@@ -360,6 +359,7 @@ FINAL_MAP_LONG_LONG *PersonAdjacentPersonWeight;
 
 vector<TagNode*> Tags;
 TrieNode *TagToIndex; // required by Q4
+MAP_LONG_STRING TagIdToName;
 
 MAP_INT_VecL Forums;
 //vector<ForumNodeStruct*> Forums;
@@ -368,15 +368,10 @@ vector<string> Answers;
 
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
-//PersonCommentsStruct *PersonsComments;
 FINAL_MAP_INT_INT *CommentToPerson;
-//CommentTrieNode *CommentToPerson;
-
 FINAL_MAP_INT_INT *PlaceIdToIndex;
 FINAL_MAP_INT_INT *OrgToPlace;
-
 FINAL_MAP_INT_INT *TagIdToIndex;
-MAP_LONG_STRING TagIdToName;
 
 std::tr1::unordered_set<long> *Query4Tags;
 std::tr1::unordered_set<long> *Query4TagForums;
@@ -542,7 +537,7 @@ unsigned long long getDateAsULL(const char *numStr, int num_sz) {
 }
 
 // takes two integers and returns a unique integer for this combination
-unsigned long CantorPairingFunction(long k1, long k2) {
+static inline unsigned long CantorPairingFunction(long k1, long k2) {
 	return (((k1 + k2) * (k1 + k2 + 14)) >> 1) + k2;
 }
 
@@ -580,6 +575,7 @@ void readPersons(char* inputDir) {
 	}
 	long lSize;
 	char *buffer = getFileBytes(input, &lSize);
+	fclose(input);
 
 	// process the whole file in memory
 	// skip the first line
@@ -606,12 +602,10 @@ void readPersons(char* inputDir) {
 		startLine = lineEnd + 1;
 	}
 	// close the comment_hasCreator_Person
-	fclose(input);
 	free(buffer);
 
 	// initialize persons
 	Persons = new PersonStruct[N_PERSONS];
-	//PersonsComments = new PersonCommentsStruct[N_PERSONS];
 	PersonToTags = new PersonTags[N_PERSONS];
 }
 
@@ -623,13 +617,11 @@ long calculateAndAssignSubgraphs() {
 		if (visited[cPerson] != 0)
 			continue;
 		// start BFS from the current person
-		//vector<long> Q;
 		deque<long> Q;
 		Q.push_back(cPerson);
 		long qIndex = 0;
 		long qSize = 1;
 		while (qIndex < qSize) {
-			//long cP = Q[qIndex];
 			long cP = Q.front();
 			Q.pop_front();
 			qIndex++;
@@ -753,54 +745,6 @@ void readPersonKnowsPerson(char *inputDir) {
 	N_SUBGRAPHS = calculateAndAssignSubgraphs();
 }
 
-
-void postProcessComments() {
-	// for each person we will get each neighbor and put our edge weight in an array
-	// to speed up look up time and then sort them
-	for (long i = 0, sz = N_PERSONS; i < sz; i++) {
-		if (Persons[i].adjacents > 0) {
-			long adjacents = Persons[i].adjacents;
-			long *adjacentIds = Persons[i].adjacentPersonsIds;
-			//FINAL_MAP_LONG_LONG *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
-			//LPSparseArrayGeneric<long> *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
-			Persons[i].adjacentPersonWeightsSorted = (int*) malloc(sizeof(int) * adjacents);
-			int *weights = Persons[i].adjacentPersonWeightsSorted;
-			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz; cAdjacent++) {
-				//weights[cAdjacent] = (*(weightsMap)).get(adjacentIds[cAdjacent]);
-				//weights[cAdjacent] = (*(weightsMap))[adjacentIds[cAdjacent]];
-				long key = CantorPairingFunction(i, adjacentIds[cAdjacent]);
-				weights[cAdjacent] = (*PersonAdjacentPersonWeight)[key];
-			}
-			// now we need to sort them
-			/*
-			 printf("\n\nUnsorted: \n");
-			 for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
-			 printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], weights[cAdjacent]);
-			 }
-			 */
-			long *temp = (long*) malloc(sizeof(long) * (adjacents));
-			int *tempWeights = (int*) malloc(sizeof(int) * (adjacents));
-			mergesortComments(weights, adjacentIds, 0, adjacents - 1, temp,	tempWeights);
-			free(temp);
-			free(tempWeights);
-			/*
-			 printf("\nSorted: \n");
-			 for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
-			 printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], Persons[i].adjacentPersonWeightsSorted[cAdjacent]);
-			 }
-			 */
-		}
-	}
-	// since we have all the data needed in arrays we can delete the hash maps
-	//CommentToPerson->clear();
-	delete CommentToPerson;
-	CommentToPerson = NULL;
-	delete CommentsPersonToPerson;
-	delete PersonAdjacentPersonWeight;
-	//delete[] PersonsComments;
-	//PersonsComments = NULL;
-}
-
 void readComments(char* inputDir) {
 	char path[1024];
 
@@ -888,11 +832,9 @@ void readComments(char* inputDir) {
 		long idA = atol(startLine);
 		long idB = atol(idDivisor + 1);
 
-		// we have to hold the number of comments between each person
+		// get the person ids for each comment id
 		long personA = (*CommentToPerson)[idA];
 		long personB = (*CommentToPerson)[idB];
-		//long personA = CommentTrieFind(CommentToPerson, startLine, idDivisor-startLine)->personId;
-		//long personB = CommentTrieFind(CommentToPerson, idDivisor+1, lineEnd-idDivisor-1)->personId;
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
@@ -902,20 +844,11 @@ void readComments(char* inputDir) {
 			int a_b = (*CommentsPersonToPerson)[key_a_b] + 1;
 			(*CommentsPersonToPerson)[key_a_b] = a_b;
 
-			//int a_b = PersonsComments[personA].commentsToPerson[personB] + 1;
-			//PersonsComments[personA].commentsToPerson[personB] = a_b;
-
 			///////////////////////////////////////////////////////////////////
 			// - Leave only the min(comments A-to-B, comments B-to-A) at each edge
 			///////////////////////////////////////////////////////////////////
-			//int b_a = PersonsComments[personB].commentsToPerson.get(personA);
-			//int b_a = PersonsComments[personB].commentsToPerson[personA];
 			int b_a = (*CommentsPersonToPerson)[key_b_a];
 			if (a_b <= b_a) {
-				//PersonsComments[personA].adjacentPersonWeights.set(personB, a_b);
-				//PersonsComments[personB].adjacentPersonWeights.set(personA, a_b);
-				//PersonsComments[personA].adjacentPersonWeights[personB] = a_b;
-				//PersonsComments[personB].adjacentPersonWeights[personA] = a_b;
 				(*PersonAdjacentPersonWeight)[key_a_b] = a_b;
 				(*PersonAdjacentPersonWeight)[key_b_a] = a_b;
 			}
@@ -935,6 +868,55 @@ void readComments(char* inputDir) {
 #endif
 
 }
+
+void postProcessComments() {
+	// for each person we will get each neighbor and put our edge weight in an array
+	// to speed up look up time and then sort them
+	for (long i = 0, sz = N_PERSONS; i < sz; i++) {
+		if (Persons[i].adjacents > 0) {
+			long adjacents = Persons[i].adjacents;
+			long *adjacentIds = Persons[i].adjacentPersonsIds;
+			//FINAL_MAP_LONG_LONG *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
+			//LPSparseArrayGeneric<long> *weightsMap = &(PersonsComments[i].adjacentPersonWeights);
+			Persons[i].adjacentPersonWeightsSorted = (int*) malloc(sizeof(int) * adjacents);
+			int *weights = Persons[i].adjacentPersonWeightsSorted;
+			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz; cAdjacent++) {
+				//weights[cAdjacent] = (*(weightsMap)).get(adjacentIds[cAdjacent]);
+				//weights[cAdjacent] = (*(weightsMap))[adjacentIds[cAdjacent]];
+				long key = CantorPairingFunction(i, adjacentIds[cAdjacent]);
+				weights[cAdjacent] = (*PersonAdjacentPersonWeight)[key];
+			}
+			// now we need to sort them
+			/*
+			 printf("\n\nUnsorted: \n");
+			 for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
+			 printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], weights[cAdjacent]);
+			 }
+			 */
+			long *temp = (long*) malloc(sizeof(long) * (adjacents));
+			int *tempWeights = (int*) malloc(sizeof(int) * (adjacents));
+			mergesortComments(weights, adjacentIds, 0, adjacents - 1, temp,	tempWeights);
+			free(temp);
+			free(tempWeights);
+			/*
+			 printf("\nSorted: \n");
+			 for( long cAdjacent=0,szz=adjacents; cAdjacent<szz; cAdjacent++){
+			 printf("[%ld,%ld] ",Persons[i].adjacentPersonsIds[cAdjacent], Persons[i].adjacentPersonWeightsSorted[cAdjacent]);
+			 }
+			 */
+		}
+	}
+	// since we have all the data needed in arrays we can delete the hash maps
+	CommentToPerson->clear();
+	delete CommentToPerson;
+	CommentsPersonToPerson->clear();
+	delete CommentsPersonToPerson;
+	PersonAdjacentPersonWeight->clear();
+	delete PersonAdjacentPersonWeight;
+	//delete[] PersonsComments;
+	//PersonsComments = NULL;
+}
+
 
 void readPlaces(char *inputDir) {
 	char path[1024];
@@ -2416,6 +2398,19 @@ void executeQuery1Jobs(int q1threads){
 	}
 }
 
+void *readCommentsAsyncWorker(void *args){
+	readComments(inputDir);
+	postProcessComments();
+	fprintf(stderr, "finished processing comments\n");
+	return 0;
+}
+
+pthread_t* readCommentsAsync(){
+	pthread_t* cThread = (pthread_t*)malloc(sizeof(pthread_t));
+	pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
+	return cThread;
+}
+
 struct Query2WorkerStruct {
 	int k;
 	char *date;
@@ -2474,7 +2469,6 @@ void executeQuery2Jobs(int q2threads){
 	int perThreadJobs = totalJobs / q2threads;
 	int untilThreadJobsPlus = totalJobs % q2threads;
 	int lastEnd = 0;
-	cpu_set_t mask;
 	worker2_threads = (pthread_t*)malloc(sizeof(pthread_t)*q2threads);
 	for (int i = 0; i < q2threads; i++) {
 		QWorker *qws = (QWorker*)malloc(sizeof(QWorker));
@@ -2713,32 +2707,18 @@ int main(int argc, char** argv) {
 
 	/////////////////////////////////
 	readPersons(inputDir);
-	readPersonKnowsPerson(inputDir);
-
-#ifdef DEBUGGING
-	long time_persons_end = getTime();
-	sprintf(msg, "persons graph time: %ld", time_persons_end - time_global_start);
-	printOut(msg);
-#endif
-
-	/*
-	readComments(inputDir);
 
 	///////////////////////////////////////////////////////////////////
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	postProcessComments();
+	pthread_t *commentsThread = readCommentsAsync();
 
-	fprintf(stderr, "finished processing comments\n");
-
-	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
-	executeQuery1Jobs(WORKER_THREADS);
-	*/
+	readPersonKnowsPerson(inputDir);
 
 #ifdef DEBUGGING
-	long time_comments_end = getTime();
-	sprintf(msg, "comments process time: %ld", time_comments_end - time_global_start);
+	long time_persons_end = getTime();
+	sprintf(msg, "persons graph time: %ld", time_persons_end - time_global_start);
 	printOut(msg);
 #endif
 
@@ -2757,26 +2737,34 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-	// Q3
+	// Q3 - last file needed
 	readPersonHasInterestTag(inputDir);
+
+	// Q2 - requirement
 	postProcessTagBirthdays();
 
 	// Q4
 	readTags(inputDir);
 
 	// HERE WE READ THE QUERIES IN ORDER TO DETERMINE WHICH TAGS ARE REQUIRED BY THE QUERIES
-	//threadpool3 = lp_threadpool_init( (WORKER_THREADS >> 1), NUM_CORES);
 	threadpool3 = lp_threadpool_init( Q3_THREADPOOOL_THREADS, NUM_CORES);
 	threadpool4 = lp_threadpool_init( Q4_THREADPOOOL_THREADS, NUM_CORES);
 	Query4Tags = new unordered_set<long>();
 	readQueries(queryFile);
 	///////////////////////////////////
 
+	// execute the queries 2 and destroy the index
+	executeQuery2Jobs(2);
+
+	// start workers for Q3
+	lp_threadpool_startjobs(threadpool3);
+	long time_q3_start = getTime();
+
+	// required by 4
 	readForumHasTag(inputDir);
 	readForumHasMember(inputDir);
 	delete Query4Tags;
 	delete Query4TagForums;
-
 
 
 #ifdef DEBUGGING
@@ -2787,31 +2775,15 @@ int main(int argc, char** argv) {
 
 	fprintf(stderr, "finished processing all other files\n");
 
-	// execute the queries 2 and destroy the index
-	executeQuery2Jobs(2);
-
-	// start workers for Q3 and Q4
-	long time_q3_start = getTime();
-	lp_threadpool_startjobs(threadpool3);
-
-	long time_q4_start = getTime();
+	// start workers for Q4
 	lp_threadpool_startjobs(threadpool4);
-
-	///////////////////////////////////////////////////////////////////
-	// PROCESS THE COMMENTS OF EACH PERSON A
-	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
-	///////////////////////////////////////////////////////////////////
-	readComments(inputDir);
-	postProcessComments();
-
-	fprintf(stderr, "finished processing comments\n");
+	long time_q4_start = getTime();
 
 	synchronize_complete(threadpool3);
 	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_q3_start)/1000000.0);
 
-
-
-	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
+	// now we can start executing QUERY 1 - we use WORKER_THREADS
+	pthread_join(*commentsThread, NULL);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 
 	synchronize_complete(threadpool4);
