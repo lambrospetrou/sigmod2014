@@ -51,11 +51,13 @@ void lp_threadpool_startjobs(lp_threadpool* pool){
 	for (int i = 0; i < threads; i++) {
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		/*
 		CPU_ZERO(&mask);
 		CPU_SET( (i % pool->ncores) , &mask);
 		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
 			fprintf(stderr, "lp_threadpool_startjobs::Error setting thread affinity tid[%d]\n", i);
 		}
+		*/
 	}
 	pool->worker_threads = worker_threads;
 }

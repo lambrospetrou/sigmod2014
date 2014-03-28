@@ -47,7 +47,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -2217,6 +2217,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query4InnerWorker), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		/*
 		CPU_ZERO(&mask);
 		if( tid % 2 == 1 ){
 			CPU_SET(i % NUM_CORES, &mask);
@@ -2228,6 +2229,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		} else {
 			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
 		}
+		*/
 	}
 
 	// execute some calculations yourself
@@ -2313,6 +2315,7 @@ void executeQuery1Jobs(int q1threads){
 		qws->end = lastEnd;
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query1WorkerFunction), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		/*
 		CPU_ZERO(&mask);
 		CPU_SET( i % NUM_CORES , &mask);
 		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
@@ -2320,6 +2323,7 @@ void executeQuery1Jobs(int q1threads){
 		}else{
 			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
 		}
+		*/
 	}
 
 	// DO NOT NEED TO wait for them to finish for now since we are reading files at the same time
@@ -2403,6 +2407,7 @@ void executeQuery2Jobs(int q2threads){
 			pthread_create(&worker2_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query2WorkerFunction), qws );
 		}
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		/*
 		CPU_ZERO(&mask);
 		CPU_SET( (q2threads-i-1) % NUM_CORES , &mask);
 		if (pthread_setaffinity_np(worker2_threads[i], sizeof(cpu_set_t), &mask) != 0) {
@@ -2410,6 +2415,7 @@ void executeQuery2Jobs(int q2threads){
 		}else{
 			//fprintf(stderr, "Successfully set thread affinity for tid[%d][%d]\n", i, i % NUM_CORES);
 		}
+		*/
 	}
 }
 
