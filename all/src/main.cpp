@@ -2327,9 +2327,9 @@ void executeQuery1Jobs(int q1threads){
 	}
 
 	// DO NOT NEED TO wait for them to finish for now since we are reading files at the same time
-	//for (int i = 0; i < q1threads; i++) {
-		//pthread_join(worker_threads[i], NULL);
-	//}
+	for (int i = 0; i < q1threads; i++) {
+		pthread_join(worker_threads[i], NULL);
+	}
 }
 
 struct Query2WorkerStruct {
@@ -2661,6 +2661,7 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
+	/*
 	readComments(inputDir);
 
 	///////////////////////////////////////////////////////////////////
@@ -2673,6 +2674,7 @@ int main(int argc, char** argv) {
 
 	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
 	executeQuery1Jobs(WORKER_THREADS);
+	*/
 
 #ifdef DEBUGGING
 	long time_comments_end = getTime();
@@ -2717,14 +2719,32 @@ int main(int argc, char** argv) {
 
 	// start workers for Q3 and Q4
 	lp_threadpool_startjobs(threadpool3);
-	synchronize_complete(threadpool3);
+	//synchronize_complete(threadpool3);
 
-	fprintf(stderr,"query 3 finished");
+	//fprintf(stderr,"query 3 finished");
 
 	lp_threadpool_startjobs(threadpool4);
 	synchronize_complete(threadpool4);
 
 	fprintf(stderr,"query 4 finished");
+
+
+	readComments(inputDir);
+
+	///////////////////////////////////////////////////////////////////
+	// PROCESS THE COMMENTS OF EACH PERSON A
+	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
+	///////////////////////////////////////////////////////////////////
+	postProcessComments();
+
+	fprintf(stderr, "finished processing comments\n");
+
+	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
+	executeQuery1Jobs(WORKER_THREADS);
+
+
+
+
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
