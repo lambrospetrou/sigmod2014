@@ -47,7 +47,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -2716,12 +2716,6 @@ int main(int argc, char** argv) {
 	readComments(inputDir);
 	postProcessComments();
 
-	synchronize_complete(threadpool4);
-	fprintf(stderr,"query 4 finished");
-
-	synchronize_complete(threadpool3);
-	fprintf(stderr,"query 3 finished");
-
 
 	///////////////////////////////////////////////////////////////////
 	// PROCESS THE COMMENTS OF EACH PERSON A
@@ -2732,11 +2726,14 @@ int main(int argc, char** argv) {
 
 	fprintf(stderr, "finished processing comments\n");
 
+	synchronize_complete(threadpool4);
+	fprintf(stderr,"query 4 finished");
+
+	synchronize_complete(threadpool3);
+	fprintf(stderr,"query 3 finished");
+
 	// now we can start executing QUERY 1 - we use WORKER_THREADS - 1
 	executeQuery1Jobs(WORKER_THREADS);
-
-
-
 
 
 #ifdef DEBUGGING
