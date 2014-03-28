@@ -19,7 +19,6 @@
 #include <deque>
 #include <vector>
 #include <queue>
-//#include <map>
 #include <algorithm>
 #include <iterator>
 #include <sstream>
@@ -50,6 +49,11 @@ using std::tr1::hash;
 #define NUM_CORES 8
 #define WORKER_THREADS NUM_CORES
 #define NUM_THREADS WORKER_THREADS+1
+
+#define Q4_JOB_WORKERS 8
+#define Q3_THREADPOOOL_THREADS 2
+#define Q4_THREADPOOOL_THREADS 2
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // structs
@@ -2204,7 +2208,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	// calculate the closeness centrality for all people in the person vector
 
-	const static int Q4_threads = 4;
+	const static int Q4_threads = Q4_JOB_WORKERS;
 
 	int totalJobs = persons.size();
 	int perThreadJobs = totalJobs / Q4_threads;
@@ -2593,9 +2597,11 @@ int main(int argc, char** argv) {
 	queryFile = argv[2];
 
 	// make the master thread to run only on the 1st core
+	/*
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
 	CPU_SET( 0 , &mask);
+	*/
 
 	// MAKE GLOBAL INITIALIZATIONS
 	char msg[100];
@@ -2663,13 +2669,13 @@ int main(int argc, char** argv) {
 	readPersonHasInterestTag(inputDir);
 	postProcessTagBirthdays();
 
-
 	// Q4
 	readTags(inputDir);
 
 	// HERE WE READ THE QUERIES IN ORDER TO DETERMINE WHICH TAGS ARE REQUIRED BY THE QUERIES
-	threadpool3 = lp_threadpool_init( (WORKER_THREADS >> 1), NUM_CORES);
-	threadpool4 = lp_threadpool_init( (WORKER_THREADS >> 2), NUM_CORES);
+	//threadpool3 = lp_threadpool_init( (WORKER_THREADS >> 1), NUM_CORES);
+	threadpool3 = lp_threadpool_init( Q3_THREADPOOOL_THREADS, NUM_CORES);
+	threadpool4 = lp_threadpool_init( Q4_THREADPOOOL_THREADS, NUM_CORES);
 	Query4Tags = new unordered_set<long>();
 	readQueries(queryFile);
 	///////////////////////////////////
