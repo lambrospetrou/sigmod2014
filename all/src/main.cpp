@@ -55,6 +55,8 @@ using std::tr1::hash;
 
 #define NUM_THREADS WORKER_THREADS+1
 
+int isLarge = 0;
+
 ///////////////////////////////////////////////////////////////////////////////
 // structs
 ///////////////////////////////////////////////////////////////////////////////
@@ -551,6 +553,10 @@ void readPersons(char* inputDir) {
 	fclose(input);
 	//long lines = countFileLines(path);
 	N_PERSONS = lines - 1;
+
+	if( N_PERSONS > 20000 ){
+		isLarge = 1;
+	}
 
 #ifdef DEBUGGING
 	char msg[100];
@@ -1830,11 +1836,10 @@ void query2(int k, char *date, int date_sz, long qid) {
 }
 
 int BFS_query3(long idA, long idB, int h) {
-	char *visited = (char*) malloc(N_PERSONS);
-	memset(visited, 0, N_PERSONS);
-	//LPSparseArrayGeneric<char> visited;
+	//char *visited = (char*) malloc(N_PERSONS);
+	//memset(visited, 0, N_PERSONS);
+	LPBitset visited(N_PERSONS);
 
-	//vector<QueryBFS> Q;
 	deque<QueryBFS> Q;
 	long qIndex = 0;
 	long qSize = 1;
@@ -1845,6 +1850,10 @@ int BFS_query3(long idA, long idB, int h) {
 		Q.pop_front();
 		qIndex++;
 
+		// we need this if we have used bitset as visited
+		//if( visited[cPerson.person] )
+			//continue;
+
 		// we have reached the hop limit of the query
 		// so we have to exit since the person we want to reach cannot be found
 		// in less than h-hops since he should have already be found
@@ -1854,180 +1863,37 @@ int BFS_query3(long idA, long idB, int h) {
 			break;
 		}
 		// mark person BLACK - visited
-		visited[cPerson.person] = 2;
-		//visited.set(cPerson.person, 2);
+		//visited[cPerson.person] = 2;
+		//visited.set(cPerson.person);
 
 		long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
 		for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
 			long cB = neighbors[i];
 			// if person is not visited and not added yet
-			if (visited[cB] == 0) {
-			//if (visited.get(cB) == 0) {
+			//if (visited[cB] == 0) {
+			if (!visited.isSet(cB)) {
 				// check if this is our person
 				if (idB == cB) {
 					//free(visited);
 					return cPerson.depth + 1;
 				}
 				// mark person as GREY - added
-				//visited.set(cB, 1);
-				visited[cB]=1;
+				visited.set(cB);
+				//visited[cB]=1;
 				Q.push_back(QueryBFS(cB, cPerson.depth + 1));
 				qSize++;
 			}
 		}
 	}
-	free(visited);
-	return INT_MAX;
-}
-// TODO
-int BFS_query3_(long idA, long idB, int h) {
-	//char *visited = (char*) malloc(N_PERSONS);
-	//memset(visited, 0, N_PERSONS);
-
-	LPSparseArrayGeneric<char> visited;
-	LPSparseArrayGeneric<char> visitedR;
-
-	vector<QueryBFS> QR;
-	long qIndexR = 0;
-	long qSizeR = 1;
-	QR.push_back(QueryBFS(idB, 0));
-
-	vector<QueryBFS> Q;
-	long qIndex = 0;
-	long qSize = 1;
-	Q.push_back(QueryBFS(idA, 0));
-
-	int hop_limit = (h>>1) + 1;
-	int currentDepth = 0;
-
-	//unordered_set<long> CurrentLevelPersons;
-	//LPBitset CurrentLevelPersons(N_PERSONS);
-	char CurrentLevelPersons[N_PERSONS];
-	memset(CurrentLevelPersons, 0, N_PERSONS);
-
-	while ( ! (qIndex == qSize && qIndexR == qSizeR) ) {
-		// exit condition if no path exists under the valid length
-		if( currentDepth > hop_limit ){
-			break;
-		}
-
-		memset(CurrentLevelPersons, 0, N_PERSONS);
-
-		while( qIndex<qSize && Q[qIndex].depth == currentDepth ){
-			// move the forward side
-			// DO NOT USE REFERENCE FOR THE POPPED ITEM - IT CAUSES PROBLEMS
-			QueryBFS cPerson = Q[qIndex];
-			qIndex++;
-
-			// mark person BLACK - visited
-			visited.set(cPerson.person, 2);
-
-			// add the current person to the level's set
-			//CurrentLevelPersons.insert(cPerson.person);
-			//CurrentLevelPersons.set(cPerson.person);
-			CurrentLevelPersons[cPerson.person] = 1;
-
-			long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
-			for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
-				long cB = neighbors[i];
-				// if person is not visited and not added yet
-				if (visited.get(cB) == 0) {
-					// the following is to check the 2nd case in
-					// http://courses.csail.mit.edu/6.006/spring12/lectures/lecture17.pdf slide 8
-					if( visitedR.get(cPerson.person) == 2 ){
-						for( long j=qIndexR-1; j>=0; j-- ){
-							if( QR[j].person == cPerson.person ){
-								int qrDepth = (QR[j].depth + cPerson.depth) + 1;
-								if( ( qrDepth <= h ) ){
-									return qrDepth;
-								}
-								break;
-							}
-						}
-					}
-					// check if this is our person
-					if (idB == cB) {
-						return cPerson.depth + 1;
-					}
-					// mark person as GREY - added
-					visited.set(cB, 1);
-					Q.push_back(QueryBFS(cB, cPerson.depth + 1));
-					qSize++;
-				}
-			}
-		}
-
-		//unsigned long csize =  CurrentLevelPersons.size();
-		char foundCommonVertex = 0;
-
-		while( qIndexR<qSizeR && QR[qIndexR].depth==currentDepth ){
-			// PROCESS THE REVERSE SIDE
-			// process the level nodes from Destination
-			QueryBFS cPersonR = QR[qIndexR];
-			qIndexR++;
-
-			// mark person BLACK - visited
-			visitedR.set(cPersonR.person, 2);
-
-			// remove this person from the level's set
-			//CurrentLevelPersons.erase(cPersonR.person);
-			//if( CurrentLevelPersons.isSet(cPersonR.person) ){
-			if( CurrentLevelPersons[cPersonR.person] == 1 ){
-				foundCommonVertex = 1;
-				break;
-			}
-
-			long *neighborsR = Persons[cPersonR.person].adjacentPersonsIds;
-			for (long i = 0, sz = Persons[cPersonR.person].adjacents; i < sz; i++) {
-				long cA = neighborsR[i];
-				// if person is not visited and not added yet
-				if (visitedR.get(cA) == 0) {
-					// check if this is our person
-					if (idA == cA) {
-						return cPersonR.depth + 1;
-					}
-					// mark person as GREY - added
-					visitedR.set(cA, 1);
-					QR.push_back(QueryBFS(cA, cPersonR.depth + 1));
-					qSizeR++;
-				}
-			}
-		}// end of reverse side
-
-		if( foundCommonVertex == 1 ){
-			return currentDepth << 1;
-		}
-/*
-		if( CurrentLevelPersons.size() != csize ){
-			// we had a removal - that means a common node
-			return currentDepth<<1;
-		}
-*/
-
-		//CurrentLevelPersons.clear();
-		//CurrentLevelPersons.clearAll();
-
-		currentDepth++;
-	}// end of outer while
-
 	//free(visited);
 	return INT_MAX;
 }
 
-
-
 void query3(int k, int h, char *name, int name_sz, long qid) {
-	/*
-	static int entrance = 0;
-	if( entrance == 0 ){
-		entrance = 1;
-		fprintf(stderr, "query 3 started\n");
-	}
-	*/
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
 
 	vector<long> persons;
-	LPSparseBitset *visitedPersons = new LPSparseBitset();
+	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
 	// get all the persons that are related to the place passed in
 	char *visitedPlace = (char*) malloc(Places.size());
 	memset(visitedPlace, 0, Places.size());
@@ -2073,7 +1939,8 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	free(visitedPlace);
 	delete visitedPersons;
 
-	fprintf(stderr, "3[%lu]", persons.size());
+	if( isLarge )
+		fprintf(stderr, "3[%d-%lu]",k, persons.size());
 
 	//printf("found for place [%*s] persons[%ld] index[%ld]\n", name_sz, name, persons.size(), index);
 
@@ -2247,7 +2114,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}
 	}
 
-	fprintf(stderr, "4[%lu]", persons.size());
+	if(isLarge)
+		fprintf(stderr, "4[%lu]", persons.size());
 
 	// now I want to create a new graph containing only the required edges
 	// to speed up the shortest paths between all of them
@@ -2776,11 +2644,13 @@ int main(int argc, char** argv) {
 	//fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_q3_start)/1000000.0);
 	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
+
 	// start workers for Q4
 	lp_threadpool_startjobs(threadpool4);
 	synchronize_complete(threadpool4);
 	//fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
