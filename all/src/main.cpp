@@ -38,7 +38,7 @@ using std::tr1::unordered_set;
 using std::tr1::hash;
 
 //#define DEBUGGING 1
-#define FILE_VBUF_SIZE 1<<15
+#define FILE_VBUF_SIZE 1<<20
 #define FILE_BUFFER_SIZE 1<<20
 
 #define CACHE_LINE_SIZE 64
@@ -52,6 +52,8 @@ using std::tr1::hash;
 #define Q3_THREADPOOOL_THREADS 8
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES
+
+#define COMMENTS_WORKERS NUM_CORES
 
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -545,12 +547,22 @@ static inline int getDateAsInt(char *date, int date_sz) {
 	return dateNum;
 }
 
-unsigned long long getDateAsULL(const char *numStr, int num_sz) {
-	unsigned long long num = 0;
+long getStrAsLong(const char *numStr, int num_sz) {
+	long num = 0;
 	for (int i = 0; i < num_sz; i++) {
 		// dateNum = dateNum*8 + dateNum*2 = dateNum * 10
 		num = (num << 3) + (num << 1);
 		num += numStr[i] - '0';
+	}
+	return num;
+}
+
+static inline long getStrAsLong(const char *numStr) {
+	long num = 0;
+	for ( ;*numStr; numStr++) {
+		// dateNum = dateNum*8 + dateNum*2 = dateNum * 10
+		num = (num << 3) + (num << 1);
+		num += *numStr - '0';
 	}
 	return num;
 }
@@ -576,7 +588,6 @@ void readPersons(char* inputDir) {
 	setvbuf(input, NULL, _IOFBF, FILE_VBUF_SIZE);
 	long lines = countFileLines(input);
 	fclose(input);
-	//long lines = countFileLines(path);
 	N_PERSONS = lines - 1;
 
 	if( N_PERSONS > 20000 ){
@@ -607,11 +618,9 @@ void readPersons(char* inputDir) {
 	char *lineEnd;
 	char *dateStartDivisor;
 	while (startLine < EndOfFile) {
-		//lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
-		//for( dateStartDivisor=startLine; *dateStartDivisor != '|'; dateStartDivisor++);
 		dateStartDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		*dateStartDivisor = '\0';
-		long idPerson = atol(startLine);
+		long idPerson = getStrAsLong(startLine);
 		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
 		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
 		dateStartDivisor = (char*) memchr(dateStartDivisor + 1, '|', LONGEST_LINE_READING);
@@ -694,15 +703,13 @@ void readPersonKnowsPerson(char *inputDir) {
 	// allocate memory to contain the whole file:
 	char* buffer = (char*) malloc(sizeof(char) * lSize);
 	if (buffer == NULL) {
-		printErr(
-				"readPersonKnowsPerson:: No memory while reading Person_Knows_Person!!!");
+		printErr("readPersonKnowsPerson:: No memory while reading Person_Knows_Person!!!");
 	}
 
 	// copy the file into the buffer:
 	size_t result = fread(buffer, 1, lSize, input);
 	if (result != lSize) {
-		printErr(
-				"readPersonKnowsPerson:: Could not read the whole file in memory!!!");
+		printErr("readPersonKnowsPerson:: Could not read the whole file in memory!!!");
 	}
 
 	long edges = 0;
@@ -719,8 +726,8 @@ void readPersonKnowsPerson(char *inputDir) {
 		char *lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long idA = atol(startLine);
-		long idB = atol(idDivisor + 1);
+		long idA = getStrAsLong(startLine);
+		long idB = getStrAsLong(idDivisor + 1);
 		//printf("%d %d\n", idA, idB);
 
 		if (idA != prevId) {
@@ -803,8 +810,8 @@ void readComments(char* inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long idA = atol(startLine);
-		long idB = atol(idDivisor + 1);
+		long idA = getStrAsLong(startLine);
+		long idB = getStrAsLong(idDivisor + 1);
 
 		// set the person to each comment
 		(*CommentToPerson)[idA] = idB;
@@ -836,7 +843,6 @@ void readComments(char* inputDir) {
 		printErr("could not open comment_replyOf_Comment.csv!");
 	}
 	buffer = getFileBytes(input, &lSize);
-	fclose(input);
 
 #ifdef DEBUGGING
 	comments=0;
@@ -844,8 +850,8 @@ void readComments(char* inputDir) {
 
 	CommentsPersonToPerson = new FINAL_MAP_LONG_LONG();
 
+	long idA,idB, personA, personB;
 	// process the whole file in memory
-	// skip the first line
 	startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	EndOfFile = buffer + lSize;
 	while (startLine < EndOfFile) {
@@ -853,39 +859,28 @@ void readComments(char* inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long idA = atol(startLine);
-		long idB = atol(idDivisor + 1);
+		idA = getStrAsLong(startLine);
+		idB = getStrAsLong(idDivisor+1);
+		//idA = getStrAsLong(startLine, idDivisor-startLine);
+		//idB = getStrAsLong(idDivisor+1, lineEnd-idDivisor-1);
+		startLine = lineEnd + 1;
 
 		// get the person ids for each comment id
-		long personA = (*CommentToPerson)[idA];
-		long personB = (*CommentToPerson)[idB];
+		personA = (*CommentToPerson)[idA];
+		personB = (*CommentToPerson)[idB];
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
 			long key_a_b = CantorPairingFunction(personA, personB);
 			++(*CommentsPersonToPerson)[key_a_b];
-
-/*
-			long a_b = (*CommentsPersonToPerson)[key_a_b] + 1;
-			(*CommentsPersonToPerson)[key_a_b] = a_b;
-
-			///////////////////////////////////////////////////////////////////
-			// - Leave only the min(comments A-to-B, comments B-to-A) at each edge
-			///////////////////////////////////////////////////////////////////
-			long b_a = (*CommentsPersonToPerson)[key_b_a];
-			if (a_b <= b_a) {
-				(*PersonAdjacentPersonWeight)[key_a_b] = a_b;
-				(*PersonAdjacentPersonWeight)[key_b_a] = a_b;
-			}
-*/
 		}
-		//printf("%ld %ld %ld\n", idA, idB, Persons[personA].commentsToPerson[personB] );
+		//printf("%ld %ld\n", idA, idB);
 
-		startLine = lineEnd + 1;
 #ifdef DEBUGGING
 		comments++;
 #endif
 	}
+	fclose(input);
 	free(buffer);
 
 #ifdef DEBUGGING
@@ -962,7 +957,7 @@ void readPlaces(char *inputDir) {
 		nameDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*nameDivisor = '\0';
-		long id = atol(startLine);
+		long id = getStrAsLong(startLine);
 		char *name = idDivisor + 1;
 
 		// insert the place into the Trie for PlacesToId
@@ -1025,8 +1020,8 @@ void readPlacePartOfPlace(char *inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long idA = atol(startLine);
-		long idB = atol(idDivisor + 1);
+		long idA = getStrAsLong(startLine);
+		long idB = getStrAsLong(idDivisor + 1);
 
 		if (idA != idB) {
 			// insert the place idA into the part of place idB
@@ -1082,8 +1077,8 @@ void readPersonLocatedAtPlace(char *inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long idPerson = atol(startLine);
-		long idPlace = atol(idDivisor + 1);
+		long idPerson = getStrAsLong(startLine);
+		long idPlace = getStrAsLong(idDivisor + 1);
 
 		// insert the place idA into the part of place idB
 		long indexPlace = (*PlaceIdToIndex)[idPlace];
@@ -1140,8 +1135,8 @@ void readOrgsLocatedAtPlace(char *inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long idOrg = atol(startLine);
-		long idPlace = atol(idDivisor + 1);
+		long idOrg = getStrAsLong(startLine);
+		long idPlace = getStrAsLong(idDivisor + 1);
 
 		// insert the place idA into the part of place idB
 		long indexPlace = (*PlaceIdToIndex)[idPlace];
@@ -1198,8 +1193,8 @@ void readPersonWorksStudyAtOrg(char *inputDir) {
 			orgDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 			*idDivisor = '\0';
 			*orgDivisor = '\0';
-			long idPerson = atol(startLine);
-			long idOrg = atol(idDivisor + 1);
+			long idPerson = getStrAsLong(startLine);
+			long idOrg = getStrAsLong(idDivisor + 1);
 
 			// insert the place idA into the part of place idB
 			long indexPlace = (*OrgToPlace)[idOrg];
@@ -1260,8 +1255,8 @@ void readPersonHasInterestTag(char *inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long personId = atol(startLine);
-		long tagId = atol(idDivisor + 1);
+		long personId = getStrAsLong(startLine);
+		long tagId = getStrAsLong(idDivisor + 1);
 
 		PersonToTags[personId].tags.push_back(tagId);
 		//printf("%ld %ld\n", idA, idB);
@@ -1335,7 +1330,7 @@ void readTags(char *inputDir) {
 		nameDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*nameDivisor = '\0';
-		long id = atol(startLine);
+		long id = getStrAsLong(startLine);
 		char *name = idDivisor + 1;
 		int name_sz = nameDivisor - name;
 
@@ -1408,8 +1403,8 @@ void readForumHasTag(char *inputDir) {
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*lineEnd = '\0';
-		long forumId = atol(startLine);
-		long tagId = atol(idDivisor + 1);
+		long forumId = getStrAsLong(startLine);
+		long tagId = getStrAsLong(idDivisor + 1);
 
 		// only save the forums that are related to a tag we want
 		if( Query4Tags->find(tagId) != Query4Tags->end() ){
@@ -1466,8 +1461,8 @@ void readForumHasMember(char *inputDir) {
 		dateDivisor = (char*) memchr(idDivisor + 1, '|', LONGEST_LINE_READING);
 		*idDivisor = '\0';
 		*dateDivisor = '\0';
-		long forumId = atol(startLine);
-		long personId = atol(idDivisor + 1);
+		long forumId = getStrAsLong(startLine);
+		long personId = getStrAsLong(idDivisor + 1);
 
 		if( Query4TagForums->find(forumId) != Query4TagForums->end() ){
 			// insert the person directly into the forum members
@@ -2123,8 +2118,8 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	Answers[qid] = ss.str();
 	*/
 	// now we have to pop the K most common tag pairs
-// but we also have to check that the distance between them
-// is below the H-hops needed by the query.
+	// but we also have to check that the distance between them
+	// is below the H-hops needed by the query.
 	if( GlobalPQ.top().idA == GlobalPQ.top().idB )
 				GlobalPQ.pop();
 	std::stringstream ss;
@@ -2132,22 +2127,22 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 		if (GlobalPQ.empty())
 			break;
 		long idA, idB;
-//long cTags = -1;
+		//long cTags = -1;
 		while (!GlobalPQ.empty()) {
 			const Query3PQ cPair = GlobalPQ.top();
 			idA = cPair.idA;
 			idB = cPair.idB;
 
-//int cTags = cPair.commonTags;
+			//int cTags = cPair.commonTags;
 			GlobalPQ.pop();
 			int distance = BFS_query3(idA, idB, h);
 			if (distance <= h) {
-// we have an answer so exit the while
+				// we have an answer so exit the while
 				ss << idA << "|" << idB << " ";
 				break;
 			}
 		}
-//ss << idA << "|" << idB << "[" << cTags << "] ";
+		//ss << idA << "|" << idB << "[" << cTags << "] ";
 	}
 	Answers[qid] = ss.str();
 }
@@ -2581,7 +2576,7 @@ void readQueries(char *queriesFile) {
 	char *lineEnd;
 	while (startLine < EndOfFile) {
 		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
-		int queryType = atoi(startLine + 5);
+		int queryType = getStrAsLong(startLine + 5);
 
 		// handle the new query
 		switch (queryType) {
@@ -2590,12 +2585,12 @@ void readQueries(char *queriesFile) {
 			*(second - 1) = '\0';
 			char *third = ((char*) memchr(second, ',', LONGEST_LINE_READING)) + 1;
 			*(lineEnd - 1) = '\0';
-			//query1(atoi(startLine+7), atoi(second), atoi(third), qid);
+			//query1(getStrAsLong(startLine+7), getStrAsLong(second), getStrAsLong(third), qid);
 
 			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(sizeof(Query1WorkerStruct));
-			qwstruct->p1 = atol(startLine + 7);
-			qwstruct->p2 = atol(second);
-			qwstruct->x = atol(third);
+			qwstruct->p1 = getStrAsLong(startLine + 7);
+			qwstruct->p2 = getStrAsLong(second);
+			qwstruct->x = getStrAsLong(third);
 			qwstruct->qid = qid;
 			Query1Structs.push_back(qwstruct);
 			//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerFunction), (void*)qwstruct );
@@ -2607,10 +2602,10 @@ void readQueries(char *queriesFile) {
 			*(second - 1) = '\0';
 			*(lineEnd - 1) = '\0';
 			char *date = second + 1; // to skip one space
-			//query2(atoi(startLine + 7), date, lineEnd - 1 - date, qid);
+			//query2(getStrAsLong(startLine + 7), date, lineEnd - 1 - date, qid);
 
 			Query2WorkerStruct *qwstruct = (Query2WorkerStruct*) malloc(sizeof(Query2WorkerStruct));
-			qwstruct->k = atoi(startLine + 7);
+			qwstruct->k = getStrAsLong(startLine + 7);
 			qwstruct->date_sz = lineEnd-1-date;
 			qwstruct->date = strndup(date, qwstruct->date_sz);
 			qwstruct->qid = qid;
@@ -2627,13 +2622,13 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = third + 1; // to skip one space
 			int name_sz = lineEnd - 1 - name;
-			//query3(atoi(startLine + 7), atoi(second), name, name_sz, qid);
+			//query3(getStrAsLong(startLine + 7), getStrAsLong(second), name, name_sz, qid);
 
 			char *placeName = (char*) malloc(name_sz + 1);
 			strncpy(placeName, name, name_sz + 1);
 			Query3WorkerStruct *qwstruct = (Query3WorkerStruct*) malloc(sizeof(Query3WorkerStruct));
-			qwstruct->k = atoi(startLine + 7);
-			qwstruct->h = atoi(second);
+			qwstruct->k = getStrAsLong(startLine + 7);
+			qwstruct->h = getStrAsLong(second);
 			qwstruct->name = placeName;
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
@@ -2647,12 +2642,12 @@ void readQueries(char *queriesFile) {
 			*(lineEnd - 1) = '\0';
 			char *name = second + 1; // to skip one space
 			int tag_sz = lineEnd - 1 - name;
-			//query4(atoi(startLine + 7), name, tag_sz, qid);
+			//query4(getStrAsLong(startLine + 7), name, tag_sz, qid);
 
 			char *tagName = (char*) malloc(tag_sz + 1);
 			strncpy(tagName, name, tag_sz + 1);
 			Query4WorkerStruct *qwstruct = (Query4WorkerStruct*) malloc(sizeof(Query4WorkerStruct));
-			qwstruct->k = atoi(startLine + 7);
+			qwstruct->k = getStrAsLong(startLine + 7);
 			qwstruct->tag = tagName;
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
@@ -2708,6 +2703,8 @@ int main(int argc, char** argv) {
 	///////////////////////////////////////////////////////////////////
 	//pthread_t *commentsThread = readCommentsAsync();
 	readCommentsAsyncWorker(NULL);
+
+	exit(1);
 
 	// Q4 - we read this first in order to read the queries file now
 	readTags(inputDir);
