@@ -246,6 +246,31 @@ public:
 	}
 };
 
+bool Query3PQ_ComparatorStatic(const Query3PQ &left, long rightIdA, long rightIdB, int rightCommonTags) {
+	if (left.commonTags > rightCommonTags)
+		return false;
+	if (left.commonTags < rightCommonTags)
+		return true;
+	if (left.idA < rightIdA)
+		return false;
+	if (left.idA > rightIdA)
+		return true;
+	if (left.idB <= rightIdB)
+		return false;
+	return true;
+}
+bool Query3PQ_ComparatorMinStatic(const Query3PQ &left, long rightIdA, long rightIdB, int rightCommonTags) {
+	return !Query3PQ_ComparatorStatic(left, rightIdA, rightIdB, rightCommonTags);
+}
+class Query3PQ_ComparatorMin {
+public:
+	bool operator()(const Query3PQ &left, const Query3PQ &right) {
+		return Query3PQ_ComparatorMinStatic(left, right.idA, right.idB, right.commonTags);
+	}
+};
+
+
+
 struct Query4PersonStruct {
 	Query4PersonStruct(long id, int sp, int rp, double central) {
 		person = id;
@@ -1835,25 +1860,15 @@ void query2(int k, char *date, int date_sz, long qid) {
 	Answers[qid] = ss.str().c_str();
 }
 
-int BFS_query3(long idA, long idB, int h) {
-	//char *visited = (char*) malloc(N_PERSONS);
-	//memset(visited, 0, N_PERSONS);
-	LPBitset visited(N_PERSONS);
-
+int BFS_query3(long idA, int h, unordered_set<long> &visited) {
 	deque<QueryBFS> Q;
 	long qIndex = 0;
 	long qSize = 1;
 	Q.push_back(QueryBFS(idA, 0));
 	while (qIndex < qSize) {
-		//QueryBFS cPerson = Q[qIndex];
 		QueryBFS cPerson = Q.front();
 		Q.pop_front();
 		qIndex++;
-
-		// we need this if we have used bitset as visited
-		//if( visited[cPerson.person] )
-			//continue;
-
 		// we have reached the hop limit of the query
 		// so we have to exit since the person we want to reach cannot be found
 		// in less than h-hops since he should have already be found
@@ -1862,56 +1877,46 @@ int BFS_query3(long idA, long idB, int h) {
 		if (cPerson.depth > h) {
 			break;
 		}
-		// mark person BLACK - visited
-		//visited[cPerson.person] = 2;
-		//visited.set(cPerson.person);
-
 		long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
 		for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
 			long cB = neighbors[i];
 			// if person is not visited and not added yet
-			//if (visited[cB] == 0) {
-			if (!visited.isSet(cB)) {
-				// check if this is our person
-				if (idB == cB) {
-					//free(visited);
-					return cPerson.depth + 1;
-				}
-				// mark person as GREY - added
-				visited.set(cB);
-				//visited[cB]=1;
+			if( visited.count(cB) == 0 ){
+				// mark person
+				visited.insert(cB);
 				Q.push_back(QueryBFS(cB, cPerson.depth + 1));
 				qSize++;
 			}
 		}
 	}
-	//free(visited);
-	return INT_MAX;
+	//fprintf(stderr,"can reach %ld people\n", visited.size());
+	return visited.size();
 }
 
 struct Query3PersonStruct{
-	Query3PersonStruct(long id, int cid, int t){
+	Query3PersonStruct(long id, int t){
 		personId = id;
-		clusterId = cid;
 		numOfTags = t;
 	}
 	long personId;
-	int clusterId;
 	int numOfTags;
 };
-
-void ClusterPersons(vector<long> &persons, vector<Query3PersonStruct> &clustered){
-	// TODO - NOT NEEDED AFTER ALL SINCE PERSON COMPONENTS ARE BASED ON THE INITIAL GRAPH
-	// THAT IS ALREADY CLUSTERED
+bool Query3PersonStructPredicate(const Query3PersonStruct& d1,const Query3PersonStruct& d2) {
+	if (d1.numOfTags == d2.numOfTags)
+		return d1.personId <= d2.personId;
+	return d1.numOfTags > d2.numOfTags;
 }
+
 
 void query3(int k, int h, char *name, int name_sz, long qid) {
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
 
 	unordered_map<int, vector<Query3PersonStruct> > ComponentsMap;
 
-	vector<Query3PersonStruct> persons;
-	//vector<long> persons;
+	long totalPersons=0;
+
+	// TODO - could use unordered set for memory issues since this could be way smaller
+	// like in most of the queries
 	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
 	LPBitset *visitedPlace = new LPBitset(Places.size());
 	TrieNode *place = TrieFind(PlacesToId, name, name_sz);
@@ -1919,7 +1924,6 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	deque<long> Q_places;
 	Q_places.push_back(index);
 	// set as added
-	//visitedPlace[index] = 1;
 	visitedPlace->set(index);
 	long qIndex = 0;
 	long qSize = 1;
@@ -1931,15 +1935,14 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 		PlaceNodeStruct *cPlaceStruct = Places[cPlace];
 		std::vector<long>::iterator cPerson = cPlaceStruct->personsThis.begin();
 		std::vector<long>::iterator end = cPlaceStruct->personsThis.end();
-		//persons.reserve(persons.size() + (end - cPerson));
 		for (; cPerson != end; cPerson++) {
 			if (visitedPersons->isSet(*cPerson))
 				continue;
 			visitedPersons->set(*cPerson);
-			//persons.push_back(*cPerson);
-			persons.push_back(Query3PersonStruct(
-					*cPerson, Persons[*cPerson].subgraphNumber,
-					PersonToTags[*cPerson].tags.size()));
+			ComponentsMap[Persons[*cPerson].subgraphNumber].push_back(Query3PersonStruct(
+					*cPerson, PersonToTags[*cPerson].tags.size()));
+
+			totalPersons++;
 		}
 
 		for (std::vector<long>::iterator it =
@@ -1958,85 +1961,121 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	delete visitedPlace;
 	delete visitedPersons;
 
+	fprintf(stderr, "3[%d-%lu]",k, totalPersons);
+	/*
 	if( isLarge ){
-		fprintf(stderr, "3[%d-%lu]",k, persons.size());
+		fprintf(stderr, "3[%d-%lu]",k, totalPersons);
 		return;
 	}
+	*/
 
 	//printf("found for place [%*s] persons[%ld] index[%ld]\n", name_sz, name, persons.size(), index);
 
-	// TODO - CALCULATE THE COMPONENTS OF THE PERSONS GOTHERED
 
+	// the global queue that will hold the Top-K pairs
+	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_ComparatorMin> GlobalPQ;
+	GlobalPQ.push(Query3PQ(INT_MAX,INT_MAX,0)); // insert the sentinel with common tags
 
-
-	// now we have all the required persons so we have to calculate the common tags
-	// for each pair and insert them into the priority queue in order to get the maximum K later
-	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_Comparator> PQ;
-	for (long i = 0, end = persons.size() - 1; i < end; ++i) {
-		long idA = persons[i].personId;
-		//for( std::vector<long>::iterator idA = persons.begin(),end=persons.begin()+persons.size()-1; idA != end ; ++idA ){
-		//for( std::vector<long>::iterator idB = idA+1; idB != persons.end(); ++idB ){
-		for (long j = i + 1, endd = persons.size(); j < endd; ++j) {
-			long idB = persons[j].personId;
-			// WE DO NOT HAVE TO CHECK THESE PEOPLE IF THEY ARE NOT IN THE SAME SUBGRAPH
-			if (Persons[idA].subgraphNumber != Persons[idB].subgraphNumber)
+	// for each cluster calculate the common tags and check if we have a new Top-K pair
+	unordered_map<int, vector<Query3PersonStruct> >::iterator clBegin = ComponentsMap.begin();
+	unordered_map<int, vector<Query3PersonStruct> >::iterator clEnd = ComponentsMap.end();
+	unordered_set<long> visited;
+	for( ; clBegin != clEnd; clBegin++ ){
+		vector<Query3PersonStruct> *currentClusterPersons = &((*clBegin).second);
+		// we cannot find pairs in 1-person clusters
+		if( currentClusterPersons->size() < 2 )
+			continue;
+		std::stable_sort(currentClusterPersons->begin(), currentClusterPersons->end(), Query3PersonStructPredicate);
+		int minimumCommonTags = GlobalPQ.top().commonTags;
+		// since the maximum tags of this cluster are less than the global minimum
+		// there is no chance to find a valid pair
+		if( (GlobalPQ.size()-1) >= k ){
+			if( currentClusterPersons->at(0).numOfTags < minimumCommonTags )
 				continue;
-			// we now have to calculate the common tags between these two people
-			int cTags = 0;
-			vector<long> *tagsA = &PersonToTags[idA].tags;
-			vector<long> *tagsB = &PersonToTags[idB].tags;
-			std::vector<long>::const_iterator iA = tagsA->begin();
-			std::vector<long>::const_iterator endA = tagsA->end();
-			std::vector<long>::const_iterator iB = tagsB->begin();
-			std::vector<long>::const_iterator endB = tagsB->end();
-			for (; iA != endA && iB != endB;) {
-				if (*iA < *iB)
-					iA++;
-				else if (*iB < *iA)
-					iB++;
-				else if (*iA == *iB) {
-					cTags++;
-					iA++;
-					iB++;
-				}
-			}
-			//printf("idA[%ld] idB[%ld] common[%ld]\n", idA, idB, cTags);
-			if (idA <= idB) {
-				PQ.push(Query3PQ(idA, idB, cTags));
-			} else {
-				PQ.push(Query3PQ(idB, idA, cTags));
-			}
+			if( currentClusterPersons->at(1).numOfTags < minimumCommonTags )
+				continue;
 		}
-	}
+		// for each person in the cluster
+		for( int i=0, sz=currentClusterPersons->size()-1; i<sz; i++ ){
+			// we cannot find suitable common tags by this person since his tags are less
+			// than the current minimum
+			Query3PersonStruct *currentPerson = &(currentClusterPersons->at(i));
+			if( (GlobalPQ.size()-1) >= k && currentPerson->numOfTags < minimumCommonTags )
+				continue;
+			visited.clear();
+			// we have to do a BFS from this person until max-k hops to find our reachability
+			// in order to avoid calculating common tags with people that are further than necessary
+			// TODO - check if it is faster to be done for a pair each time after having a valid common tag number
+			BFS_query3(currentPerson->personId, h, visited);
+			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
+				// TODO -  ADD A CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
+				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
+				// skip him if we know for sure that we are more than h-hops away
+				if( visited.count(secondPerson->personId) == 0 )
+					continue;
+				// we now have to calculate the common tags between these two people
+				int cTags = 0;
+				vector<long> *tagsA = &PersonToTags[currentPerson->personId].tags;
+				vector<long> *tagsB = &PersonToTags[secondPerson->personId].tags;
+				std::vector<long>::const_iterator iA = tagsA->begin();
+				std::vector<long>::const_iterator endA = tagsA->end();
+				std::vector<long>::const_iterator iB = tagsB->begin();
+				std::vector<long>::const_iterator endB = tagsB->end();
+				for (; iA != endA && iB != endB;) {
+					if (*iA < *iB)
+						iA++;
+					else if (*iB < *iA)
+						iB++;
+					else if (*iA == *iB) {
+						cTags++;
+						iA++;
+						iB++;
+					}
+				}// end of common tags calculation
+
+				// just insert the new pair in the answers - we have to take into account the sentinel element
+				if( GlobalPQ.size() < k ){
+					if (currentPerson->personId <= secondPerson->personId) {
+						GlobalPQ.push(Query3PQ(currentPerson->personId, secondPerson->personId, cTags));
+					} else {
+						GlobalPQ.push(Query3PQ(secondPerson->personId, currentPerson->personId, cTags));
+					}
+					minimumCommonTags = GlobalPQ.top().commonTags;
+				}else{
+					// we have to check if the new pair has more common tags than the answers so far
+					long leftId, rightId;
+					if (currentPerson->personId <= secondPerson->personId) {
+						leftId = currentPerson->personId;
+						rightId = secondPerson->personId;
+					}else{
+						rightId = currentPerson->personId;
+						leftId = secondPerson->personId;
+					}
+					if( Query3PQ_ComparatorStatic( GlobalPQ.top(), leftId, rightId, cTags ) ){
+						GlobalPQ.pop();
+						GlobalPQ.push(Query3PQ(leftId, rightId, cTags));
+						minimumCommonTags = GlobalPQ.top().commonTags;
+					}
+				}
+			}// end of checking pairs for current person
+		}// end of cluster's people
+	}// end of processing the clusters
 
 	// now we have to pop the K most common tag pairs
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
+	vector<Query3PQ> answers;
 	std::stringstream ss;
+	if( GlobalPQ.top().idA == GlobalPQ.top().idB )
+			GlobalPQ.pop();
 	for (; k > 0; k--) {
-		if( PQ.empty() )
+		if( GlobalPQ.empty() )
 			break;
-		long idA = -1;
-		long idB = -1;
-		//long cTags = -1;
-		while (!PQ.empty()) {
-			const Query3PQ cPair = PQ.top();
-			idA = cPair.idA;
-			idB = cPair.idB;
-
-			//int cTags = cPair.commonTags;
-			PQ.pop();
-			int distance = BFS_query3(idA, idB, h);
-			if (distance <= h) {
-				// we have an answer so exit the while
-				ss << idA << "|" << idB << " ";
-				break;
-			}
-		}
-		//ss << idA << "|" << idB << "[" << cTags << "] ";
+		answers.push_back(GlobalPQ.top());
+		GlobalPQ.pop();
 	}
-	//Answers3.push_back(ss.str());
-	//printf("q3: [%s]\n", ss.str().c_str());
+	for( int i=answers.size()-1; i>=0; i-- )
+		ss << answers[i].idA << "|" << answers[i].idB << " ";
 	Answers[qid] = ss.str();
 }
 
@@ -2663,6 +2702,7 @@ int main(int argc, char** argv) {
 	synchronize_complete(threadpool3);
 	//fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_q3_start)/1000000.0);
 	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
 
 	// start workers for Q4
 	lp_threadpool_startjobs(threadpool4);
