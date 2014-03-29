@@ -1889,70 +1889,95 @@ int BFS_query3(long idA, long idB, int h) {
 	return INT_MAX;
 }
 
+struct Query3PersonStruct{
+	Query3PersonStruct(long id, int cid, int t){
+		personId = id;
+		clusterId = cid;
+		numOfTags = t;
+	}
+	long personId;
+	int clusterId;
+	int numOfTags;
+};
+
+void ClusterPersons(vector<long> &persons, vector<Query3PersonStruct> &clustered){
+	// TODO - NOT NEEDED AFTER ALL SINCE PERSON COMPONENTS ARE BASED ON THE INITIAL GRAPH
+	// THAT IS ALREADY CLUSTERED
+}
+
 void query3(int k, int h, char *name, int name_sz, long qid) {
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
 
-	vector<long> persons;
+	unordered_map<int, vector<Query3PersonStruct> > ComponentsMap;
+
+	vector<Query3PersonStruct> persons;
+	//vector<long> persons;
 	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
-	// get all the persons that are related to the place passed in
-	char *visitedPlace = (char*) malloc(Places.size());
-	memset(visitedPlace, 0, Places.size());
+	LPBitset *visitedPlace = new LPBitset(Places.size());
 	TrieNode *place = TrieFind(PlacesToId, name, name_sz);
 	long index = place->vIndex;
-	vector<long> Q_places;
+	deque<long> Q_places;
 	Q_places.push_back(index);
 	// set as added
-	visitedPlace[index] = 1;
+	//visitedPlace[index] = 1;
+	visitedPlace->set(index);
 	long qIndex = 0;
 	long qSize = 1;
 	while (qIndex < qSize) {
-		long cPlace = Q_places[qIndex];
+		long cPlace = Q_places.front();
+		Q_places.pop_front();
 		qIndex++;
 		// set visited
-		visitedPlace[cPlace] = 2;
 		PlaceNodeStruct *cPlaceStruct = Places[cPlace];
-		//std::copy (cPlaceStruct->personsThis.begin(),cPlaceStruct->personsThis.end(),std::back_inserter(persons));
 		std::vector<long>::iterator cPerson = cPlaceStruct->personsThis.begin();
 		std::vector<long>::iterator end = cPlaceStruct->personsThis.end();
-		persons.reserve(persons.size() + (end - cPerson));
+		//persons.reserve(persons.size() + (end - cPerson));
 		for (; cPerson != end; cPerson++) {
-			//if( visitedPersons[*cPerson] )
 			if (visitedPersons->isSet(*cPerson))
 				continue;
 			visitedPersons->set(*cPerson);
-			persons.push_back(*cPerson);
+			//persons.push_back(*cPerson);
+			persons.push_back(Query3PersonStruct(
+					*cPerson, Persons[*cPerson].subgraphNumber,
+					PersonToTags[*cPerson].tags.size()));
 		}
 
 		for (std::vector<long>::iterator it =
 				cPlaceStruct->placesPartOfIndex.begin();
 				it != cPlaceStruct->placesPartOfIndex.end(); ++it) {
 			// if not visited
-			if (visitedPlace[*it] == 0) {
+			if (visitedPlace->isSet(*it) == 0) {
 				// set as added
-				visitedPlace[*it] = 1;
+				visitedPlace->set(*it);
 				Q_places.push_back(*it);
 				qSize++;
-				//printf("added place[%ld] of [%ld]persons\n", *it, Places[*it]->personsThis.size() );
 			}
 		}
 	}
-	free(visitedPlace);
+	//delete[] visitedPlace;
+	delete visitedPlace;
 	delete visitedPersons;
 
-	if( isLarge )
+	if( isLarge ){
 		fprintf(stderr, "3[%d-%lu]",k, persons.size());
+		return;
+	}
 
 	//printf("found for place [%*s] persons[%ld] index[%ld]\n", name_sz, name, persons.size(), index);
+
+	// TODO - CALCULATE THE COMPONENTS OF THE PERSONS GOTHERED
+
+
 
 	// now we have all the required persons so we have to calculate the common tags
 	// for each pair and insert them into the priority queue in order to get the maximum K later
 	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_Comparator> PQ;
 	for (long i = 0, end = persons.size() - 1; i < end; ++i) {
-		long idA = persons[i];
+		long idA = persons[i].personId;
 		//for( std::vector<long>::iterator idA = persons.begin(),end=persons.begin()+persons.size()-1; idA != end ; ++idA ){
 		//for( std::vector<long>::iterator idB = idA+1; idB != persons.end(); ++idB ){
 		for (long j = i + 1, endd = persons.size(); j < endd; ++j) {
-			long idB = persons[j];
+			long idB = persons[j].personId;
 			// WE DO NOT HAVE TO CHECK THESE PEOPLE IF THEY ARE NOT IN THE SAME SUBGRAPH
 			if (Persons[idA].subgraphNumber != Persons[idB].subgraphNumber)
 				continue;
@@ -2087,13 +2112,6 @@ void *Query4InnerWorker(void *args){
 }
 
 void query4(int k, char *tag, int tag_sz, long qid, int tid) {
-	/*
-	static int entrance = 0;
-	if (entrance == 0) {
-		entrance = 1;
-		fprintf(stderr, "query 4 started");
-	}
-	*/
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
 
 	long tagIndex = TrieFind(TagToIndex, tag, tag_sz)->vIndex;
@@ -2114,8 +2132,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}
 	}
 
-	if(isLarge)
+	if(isLarge){
 		fprintf(stderr, "4[%lu]", persons.size());
+		return;
+	}
 
 	// now I want to create a new graph containing only the required edges
 	// to speed up the shortest paths between all of them
@@ -2644,12 +2664,12 @@ int main(int argc, char** argv) {
 	//fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_q3_start)/1000000.0);
 	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
-
 	// start workers for Q4
 	lp_threadpool_startjobs(threadpool4);
 	synchronize_complete(threadpool4);
 	//fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
 
 
 #ifdef DEBUGGING
