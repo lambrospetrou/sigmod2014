@@ -1800,7 +1800,6 @@ void query2(int k, char *date, int date_sz, long qid) {
 
 	int currentResults = 0;
 	for (long i = 0, sz = TagSubFinals->size(); i < sz; i++) {
-		//vector<Q2ListNode*> &people = TagSubFinals[i]->people;
 		vector<Q2ListNode> &people = (*TagSubFinals)[i]->people;
 		long currentTagSize = people.size();
 
@@ -1810,7 +1809,6 @@ void query2(int k, char *date, int date_sz, long qid) {
 		}
 		// check the max birth date of the list in order to avoid
 		// checking a list when there are no valid people
-		//if (people[0]->birth < queryBirth) {
 		if (people[0].birth < queryBirth) {
 			continue;
 		}
@@ -1834,7 +1832,6 @@ void query2(int k, char *date, int date_sz, long qid) {
 				//char found = 0;
 				for (list<Q2ResultNode>::iterator itPerson = results.begin(),
 						end = results.end(); itPerson != end; itPerson++) {
-					//if ( (*itPerson).people < largestTagComponent) {
 					if ( (*itPerson).people < largestTagComponent
 							|| (strcmp( TagIdToName[(*itPerson).tagId], TagIdToName[(*TagSubFinals)[i]->tagId] ) >= 0  && (*itPerson).people == largestTagComponent )) {
 						// insert here
@@ -1858,6 +1855,52 @@ void query2(int k, char *date, int date_sz, long qid) {
 		ss << TagIdToName[(*itTag).tagId] << " ";
 	}
 	Answers[qid] = ss.str().c_str();
+}
+
+int BFS_query3(long idA, long idB, int h) {
+	LPBitset visited(N_PERSONS);
+	//char *visited = (char*) malloc(N_PERSONS);
+	//memset(visited, 0, N_PERSONS);
+
+	deque<QueryBFS> Q;
+	long qIndex = 0;
+	long qSize = 1;
+	Q.push_back(QueryBFS(idA, 0));
+	while (qIndex < qSize) {
+		QueryBFS cPerson = Q.front();
+		Q.pop_front();
+		qIndex++;
+
+		// we have reached the hop limit of the query
+		// so we have to exit since the person we want to reach cannot be found
+		// in less than h-hops since he should have already be found
+		// while pushing the neighbors below. The destination node should
+		// never appear here since he will never be pushed into the Queue.
+		if (cPerson.depth > h) {
+			break;
+		}
+
+		long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
+		for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
+			long cB = neighbors[i];
+			// if person is not visited and not added yet
+			//if (visited[cB] == 0) {
+			if (!visited.isSet(cB)) {
+				// check if this is our person
+				if (idB == cB) {
+					//free(visited);
+					return cPerson.depth + 1;
+				}
+				// mark person as GREY - added
+				visited.set(cB);
+				//visited[cB]=1;
+				Q.push_back(QueryBFS(cB, cPerson.depth + 1));
+				qSize++;
+			}
+		}
+	}
+	//free(visited);
+	return INT_MAX;
 }
 
 int BFS_query3(long idA, int h, unordered_set<long> &visited) {
@@ -2000,19 +2043,19 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			// we cannot find suitable common tags by this person since his tags are less
 			// than the current minimum
 			Query3PersonStruct *currentPerson = &(currentClusterPersons->at(i));
-			if( (GlobalPQ.size()-1) >= k && currentPerson->numOfTags < minimumCommonTags )
+			if( GlobalPQ.size() >= (unsigned int)k && currentPerson->numOfTags < minimumCommonTags )
 				continue;
 			visited.clear();
 			// we have to do a BFS from this person until max-k hops to find our reachability
 			// in order to avoid calculating common tags with people that are further than necessary
 			// TODO - check if it is faster to be done for a pair each time after having a valid common tag number
-			BFS_query3(currentPerson->personId, h, visited);
+			//BFS_query3(currentPerson->personId, h, visited);
 			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
 				// TODO -  ADD A CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
 				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
 				// skip him if we know for sure that we are more than h-hops away
-				if( visited.count(secondPerson->personId) == 0 )
-					continue;
+				//if( visited.count(secondPerson->personId) == 0 )
+					//continue;
 				// we now have to calculate the common tags between these two people
 				int cTags = 0;
 				vector<long> *tagsA = &PersonToTags[currentPerson->personId].tags;
@@ -2034,7 +2077,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 				}// end of common tags calculation
 
 				// just insert the new pair in the answers - we have to take into account the sentinel element
-				if( GlobalPQ.size() < k ){
+				if( GlobalPQ.size() < (unsigned int)k ){
 					if (currentPerson->personId <= secondPerson->personId) {
 						GlobalPQ.push(Query3PQ(currentPerson->personId, secondPerson->personId, cTags));
 					} else {
@@ -2052,7 +2095,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 						leftId = secondPerson->personId;
 					}
 					if( Query3PQ_ComparatorStatic( GlobalPQ.top(), leftId, rightId, cTags ) ){
-						GlobalPQ.pop();
+						//GlobalPQ.pop();
 						GlobalPQ.push(Query3PQ(leftId, rightId, cTags));
 						minimumCommonTags = GlobalPQ.top().commonTags;
 					}
@@ -2064,6 +2107,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	// now we have to pop the K most common tag pairs
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
+	/*
 	vector<Query3PQ> answers;
 	std::stringstream ss;
 	if( GlobalPQ.top().idA == GlobalPQ.top().idB )
@@ -2076,6 +2120,35 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	}
 	for( int i=answers.size()-1; i>=0; i-- )
 		ss << answers[i].idA << "|" << answers[i].idB << " ";
+	Answers[qid] = ss.str();
+	*/
+	// now we have to pop the K most common tag pairs
+// but we also have to check that the distance between them
+// is below the H-hops needed by the query.
+	if( GlobalPQ.top().idA == GlobalPQ.top().idB )
+				GlobalPQ.pop();
+	std::stringstream ss;
+	for (; k > 0; k--) {
+		if (GlobalPQ.empty())
+			break;
+		long idA, idB;
+//long cTags = -1;
+		while (!GlobalPQ.empty()) {
+			const Query3PQ cPair = GlobalPQ.top();
+			idA = cPair.idA;
+			idB = cPair.idB;
+
+//int cTags = cPair.commonTags;
+			GlobalPQ.pop();
+			int distance = BFS_query3(idA, idB, h);
+			if (distance <= h) {
+// we have an answer so exit the while
+				ss << idA << "|" << idB << " ";
+				break;
+			}
+		}
+//ss << idA << "|" << idB << "[" << cTags << "] ";
+	}
 	Answers[qid] = ss.str();
 }
 
