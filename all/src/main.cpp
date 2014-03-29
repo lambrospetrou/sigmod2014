@@ -49,8 +49,9 @@ using std::tr1::hash;
 #define NUM_CORES 8
 #define Q4_JOB_WORKERS 2
 #define Q4_THREADPOOOL_THREADS 4
-#define Q3_THREADPOOOL_THREADS 3
+#define Q3_THREADPOOOL_THREADS 8
 #define Q1_WORKER_THREADS NUM_CORES
+#define Q2_WORKER_THREADS NUM_CORES
 
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -333,7 +334,6 @@ char *CSV_PERSON_HASINTEREST_TAG = "/person_hasInterest_tag.csv";
 // Q4
 char *CSV_FORUM_HAS_TAG = "/forum_hasTag_tag.csv";
 char *CSV_FORUM_HAS_MEMBER = "/forum_hasMember_person.csv";
-//char *CSV_FORUM_HAS_MEMBER = "/forum_hasMember_person_mod.csv";
 
 long N_PERSONS = 0;
 long N_TAGS = 0;
@@ -359,7 +359,6 @@ vector<string> Answers;
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
 FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
-FINAL_MAP_LONG_LONG *PersonAdjacentPersonWeight;
 FINAL_MAP_INT_INT *CommentToPerson;
 
 FINAL_MAP_INT_INT *PlaceIdToIndex;
@@ -813,7 +812,6 @@ void readComments(char* inputDir) {
 #endif
 
 	CommentsPersonToPerson = new FINAL_MAP_LONG_LONG();
-	PersonAdjacentPersonWeight = new FINAL_MAP_LONG_LONG();
 
 	// process the whole file in memory
 	// skip the first line
@@ -834,8 +832,9 @@ void readComments(char* inputDir) {
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
 			long key_a_b = CantorPairingFunction(personA, personB);
-			long key_b_a = CantorPairingFunction(personB, personA);
+			++(*CommentsPersonToPerson)[key_a_b];
 
+/*
 			long a_b = (*CommentsPersonToPerson)[key_a_b] + 1;
 			(*CommentsPersonToPerson)[key_a_b] = a_b;
 
@@ -847,7 +846,7 @@ void readComments(char* inputDir) {
 				(*PersonAdjacentPersonWeight)[key_a_b] = a_b;
 				(*PersonAdjacentPersonWeight)[key_b_a] = a_b;
 			}
-
+*/
 		}
 		//printf("%ld %ld %ld\n", idA, idB, Persons[personA].commentsToPerson[personB] );
 
@@ -868,6 +867,11 @@ void readComments(char* inputDir) {
 void postProcessComments() {
 	// for each person we will get each neighbor and put our edge weight in an array
 	// to speed up look up time and then sort them
+	long adjacentId;
+	long key_a_b;
+	long key_b_a;
+	long weightAB;
+	long weightBA;
 	for (long i = 0, sz = N_PERSONS; i < sz; i++) {
 		if (Persons[i].adjacents > 0) {
 			long adjacents = Persons[i].adjacents;
@@ -875,8 +879,13 @@ void postProcessComments() {
 			int *weights = (int*) malloc(sizeof(int) * adjacents);
 			Persons[i].adjacentPersonWeightsSorted = weights;
 			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz; cAdjacent++) {
-				long key = CantorPairingFunction(i, adjacentIds[cAdjacent]);
-				weights[cAdjacent] = (*PersonAdjacentPersonWeight)[key];
+				adjacentId = adjacentIds[cAdjacent];
+				key_a_b = CantorPairingFunction(i, adjacentId);
+				key_b_a = CantorPairingFunction(adjacentId, i);
+				weightAB = (*CommentsPersonToPerson)[key_a_b];
+				weightBA = (*CommentsPersonToPerson)[key_b_a];
+				//weights[cAdjacent] = (*PersonAdjacentPersonWeight)[key];
+				weights[cAdjacent] = ( weightAB < weightBA ) ? weightAB : weightBA;
 			}
 			long *temp = (long*) malloc(sizeof(long) * (adjacents));
 			int *tempWeights = (int*) malloc(sizeof(int) * (adjacents));
@@ -890,8 +899,6 @@ void postProcessComments() {
 	delete CommentToPerson;
 	CommentsPersonToPerson->clear();
 	delete CommentsPersonToPerson;
-	PersonAdjacentPersonWeight->clear();
-	delete PersonAdjacentPersonWeight;
 }
 
 
@@ -2066,6 +2073,8 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	free(visitedPlace);
 	delete visitedPersons;
 
+	fprintf(stderr, "3[%lu]", persons.size());
+
 	//printf("found for place [%*s] persons[%ld] index[%ld]\n", name_sz, name, persons.size(), index);
 
 	// now we have all the required persons so we have to calculate the common tags
@@ -2238,6 +2247,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}
 	}
 
+	fprintf(stderr, "4[%lu]", persons.size());
+
 	// now I want to create a new graph containing only the required edges
 	// to speed up the shortest paths between all of them
 	//LPSparseArrayGeneric<vector<long> > newGraph;
@@ -2340,7 +2351,7 @@ void* Query1WorkerFunction(void *args) {
 		query1(currentJob->p1, currentJob->p2, currentJob->x, currentJob->qid);
 		free(currentJob);
 		// the following can be omitted for speedups
-		Query1Structs[i] = 0;
+		//Query1Structs[i] = 0;
 	}
 
 	free(qws);
@@ -2355,7 +2366,6 @@ void executeQuery1Jobs(int q1threads){
 	int untilThreadJobsPlus = totalJobs % q1threads;
 	int lastEnd = 0;
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*q1threads);
-	cpu_set_t mask;
 	for (int i = 0; i < q1threads; i++) {
 		QWorker *qws = (QWorker*)malloc(sizeof(QWorker));
 		qws->start = lastEnd;
@@ -2372,6 +2382,11 @@ void executeQuery1Jobs(int q1threads){
 	// DO NOT NEED TO wait for them to finish for now since we are reading files at the same time
 	for (int i = 0; i < q1threads; i++) {
 		pthread_join(worker_threads[i], NULL);
+	}
+	// free all the memory being held for the comments
+	for( long i=0; i<N_PERSONS; i++ ){
+		free(Persons[i].adjacentPersonWeightsSorted);
+		Persons[i].adjacentPersonWeightsSorted = 0;
 	}
 }
 
@@ -2391,7 +2406,7 @@ pthread_t* readCommentsAsync(){
 	pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
-	CPU_SET( 0 , &mask);
+	CPU_SET( 1 , &mask);
 	return cThread;
 }
 
@@ -2694,6 +2709,22 @@ int main(int argc, char** argv) {
 	//pthread_t *commentsThread = readCommentsAsync();
 	readCommentsAsyncWorker(NULL);
 
+	// Q4 - we read this first in order to read the queries file now
+	readTags(inputDir);
+
+	// HERE WE READ THE QUERIES IN ORDER TO DETERMINE WHICH TAGS ARE REQUIRED BY THE QUERIES
+	threadpool3 = lp_threadpool_init( Q3_THREADPOOOL_THREADS, NUM_CORES);
+	threadpool4 = lp_threadpool_init( Q4_THREADPOOOL_THREADS, NUM_CORES);
+	Query4Tags = new unordered_set<long>();
+	readQueries(queryFile);
+	///////////////////////////////////
+
+	// now we can start executing QUERY 1 - we use WORKER_THREADS
+	//pthread_join(*commentsThread, NULL);
+	executeQuery1Jobs(Q1_WORKER_THREADS);
+	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+
 #ifdef DEBUGGING
 	long time_persons_end = getTime();
 	sprintf(msg, "persons graph time: %ld", time_persons_end - time_global_start);
@@ -2721,21 +2752,8 @@ int main(int argc, char** argv) {
 	// Q2 - requirement
 	postProcessTagBirthdays();
 
-	// Q4
-	readTags(inputDir);
-
-	// HERE WE READ THE QUERIES IN ORDER TO DETERMINE WHICH TAGS ARE REQUIRED BY THE QUERIES
-	threadpool3 = lp_threadpool_init( Q3_THREADPOOOL_THREADS, NUM_CORES);
-	threadpool4 = lp_threadpool_init( Q4_THREADPOOOL_THREADS, NUM_CORES);
-	Query4Tags = new unordered_set<long>();
-	readQueries(queryFile);
-	///////////////////////////////////
-
 	// execute the queries 2 and destroy the index
-	executeQuery2Jobs(2);
-
-	// start workers for Q3
-	lp_threadpool_startjobs(threadpool3);
+	executeQuery2Jobs(Q2_WORKER_THREADS);
 
 	// required by 4
 	readForumHasTag(inputDir);
@@ -2750,21 +2768,16 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-	fprintf(stderr, "finished processing all other files\n");
+	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
-	// start workers for Q4
-	lp_threadpool_startjobs(threadpool4);
-
-	// now we can start executing QUERY 1 - we use WORKER_THREADS
-	//pthread_join(*commentsThread, NULL);
-	executeQuery1Jobs(Q1_WORKER_THREADS);
-	//fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
-	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
+	// start workers for Q3
+	lp_threadpool_startjobs(threadpool3);
 	synchronize_complete(threadpool3);
 	//fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_q3_start)/1000000.0);
 	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
+	// start workers for Q4
+	lp_threadpool_startjobs(threadpool4);
 	synchronize_complete(threadpool4);
 	//fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
