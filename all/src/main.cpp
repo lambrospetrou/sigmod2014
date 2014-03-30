@@ -46,10 +46,10 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define Q4_JOB_WORKERS 2
 #define Q4_THREADPOOOL_THREADS 4
-#define Q3_THREADPOOOL_THREADS 8
+#define Q3_THREADPOOOL_THREADS 4
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES
 
@@ -910,7 +910,6 @@ void postProcessComments() {
 				key_b_a = CantorPairingFunction(adjacentId, i);
 				weightAB = (*CommentsPersonToPerson)[key_a_b];
 				weightBA = (*CommentsPersonToPerson)[key_b_a];
-				//weights[cAdjacent] = (*PersonAdjacentPersonWeight)[key];
 				weights[cAdjacent] = ( weightAB < weightBA ) ? weightAB : weightBA;
 			}
 			long *temp = (long*) malloc(sizeof(long) * (adjacents));
@@ -1716,26 +1715,19 @@ long findTagLargestComponent(vector<Q2ListNode> &people, unsigned int queryBirth
 	// now we have to calculate the shortest paths between them
 	LPSparseArrayGeneric<long> components;
 	LPSparseArrayGeneric<char> visitedBFS;
-	//LPBitset visitedBFS(N_PERSONS);
 	vector<long> componentsIds;
-	//vector<long> Q;
 	deque<long> Q;
 	long currentCluster = -1;
 	for (long i = 0, sz = indexValidPersons; i < sz; i++) {
-		//if( !visitedBFS.isSet(people[i]->personId) ){
-		//if( visitedBFS.get(people[i]->personId) == 0 ){
 		if( visitedBFS.get(people[i].personId) == 0 ){
 			currentCluster++;
 			componentsIds.push_back(currentCluster);
 			Q.clear();
-			//Q2ListNode *cPerson = people[i];
 			Q2ListNode cPerson = people[i];
 			long qIndex = 0;
 			long qSize = 1;
-			//Q.push_back(cPerson->personId);
 			Q.push_back(cPerson.personId);
 			while (qIndex < qSize) {
-				//long c = Q[qIndex];
 				long c = Q.front();
 				Q.pop_front();
 				qIndex++;
@@ -1756,7 +1748,6 @@ long findTagLargestComponent(vector<Q2ListNode> &people, unsigned int queryBirth
 					//if ( newGraphPersons.isSet(eId) && !visitedBFS.isSet(eId)) {
 					if ( newGraphPersons.isSet(eId) && visitedBFS.get(eId) == 0) {
 						visitedBFS.set(eId, 1);
-						//visitedBFS.set(eId);
 						Q.push_back(eId);
 						qSize++;
 					}
@@ -2039,12 +2030,13 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			// than the current minimum
 			Query3PersonStruct *currentPerson = &(currentClusterPersons->at(i));
 			if( GlobalPQ.size() >= (unsigned int)k && currentPerson->numOfTags < minimumCommonTags )
-				continue;
+				//continue;// TODO
+				break;
 			visited.clear();
 			// we have to do a BFS from this person until max-k hops to find our reachability
 			// in order to avoid calculating common tags with people that are further than necessary
 			// TODO - check if it is faster to be done for a pair each time after having a valid common tag number
-			//BFS_query3(currentPerson->personId, h, visited);
+			BFS_query3(currentPerson->personId, h, visited);
 			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
 				// TODO -  ADD A CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
 				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
@@ -2090,7 +2082,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 						leftId = secondPerson->personId;
 					}
 					if( Query3PQ_ComparatorStatic( GlobalPQ.top(), leftId, rightId, cTags ) ){
-						//GlobalPQ.pop();
+						GlobalPQ.pop();
 						GlobalPQ.push(Query3PQ(leftId, rightId, cTags));
 						minimumCommonTags = GlobalPQ.top().commonTags;
 					}
@@ -2102,7 +2094,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	// now we have to pop the K most common tag pairs
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
-	/*
+
 	vector<Query3PQ> answers;
 	std::stringstream ss;
 	if( GlobalPQ.top().idA == GlobalPQ.top().idB )
@@ -2116,7 +2108,8 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	for( int i=answers.size()-1; i>=0; i-- )
 		ss << answers[i].idA << "|" << answers[i].idB << " ";
 	Answers[qid] = ss.str();
-	*/
+
+	/*
 	// now we have to pop the K most common tag pairs
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
@@ -2145,6 +2138,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 		//ss << idA << "|" << idB << "[" << cTags << "] ";
 	}
 	Answers[qid] = ss.str();
+	*/
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -2576,7 +2570,7 @@ void readQueries(char *queriesFile) {
 	char *lineEnd;
 	while (startLine < EndOfFile) {
 		lineEnd = (char*) memchr(startLine, '\n', LONGEST_LINE_READING);
-		int queryType = getStrAsLong(startLine + 5);
+		int queryType = atol(startLine + 5);
 
 		// handle the new query
 		switch (queryType) {
@@ -2588,9 +2582,9 @@ void readQueries(char *queriesFile) {
 			//query1(getStrAsLong(startLine+7), getStrAsLong(second), getStrAsLong(third), qid);
 
 			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(sizeof(Query1WorkerStruct));
-			qwstruct->p1 = getStrAsLong(startLine + 7);
-			qwstruct->p2 = getStrAsLong(second);
-			qwstruct->x = getStrAsLong(third);
+			qwstruct->p1 = atol(startLine + 7);
+			qwstruct->p2 = atol(second);
+			qwstruct->x = atol(third);
 			qwstruct->qid = qid;
 			Query1Structs.push_back(qwstruct);
 			//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerFunction), (void*)qwstruct );
@@ -2605,7 +2599,7 @@ void readQueries(char *queriesFile) {
 			//query2(getStrAsLong(startLine + 7), date, lineEnd - 1 - date, qid);
 
 			Query2WorkerStruct *qwstruct = (Query2WorkerStruct*) malloc(sizeof(Query2WorkerStruct));
-			qwstruct->k = getStrAsLong(startLine + 7);
+			qwstruct->k = atol(startLine + 7);
 			qwstruct->date_sz = lineEnd-1-date;
 			qwstruct->date = strndup(date, qwstruct->date_sz);
 			qwstruct->qid = qid;
@@ -2627,8 +2621,8 @@ void readQueries(char *queriesFile) {
 			char *placeName = (char*) malloc(name_sz + 1);
 			strncpy(placeName, name, name_sz + 1);
 			Query3WorkerStruct *qwstruct = (Query3WorkerStruct*) malloc(sizeof(Query3WorkerStruct));
-			qwstruct->k = getStrAsLong(startLine + 7);
-			qwstruct->h = getStrAsLong(second);
+			qwstruct->k = atol(startLine + 7);
+			qwstruct->h = atol(second);
 			qwstruct->name = placeName;
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
@@ -2647,7 +2641,7 @@ void readQueries(char *queriesFile) {
 			char *tagName = (char*) malloc(tag_sz + 1);
 			strncpy(tagName, name, tag_sz + 1);
 			Query4WorkerStruct *qwstruct = (Query4WorkerStruct*) malloc(sizeof(Query4WorkerStruct));
-			qwstruct->k = getStrAsLong(startLine + 7);
+			qwstruct->k = atol(startLine + 7);
 			qwstruct->tag = tagName;
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
@@ -2704,7 +2698,6 @@ int main(int argc, char** argv) {
 	//pthread_t *commentsThread = readCommentsAsync();
 	readCommentsAsyncWorker(NULL);
 
-	exit(1);
 
 	// Q4 - we read this first in order to read the queries file now
 	readTags(inputDir);
@@ -2779,7 +2772,6 @@ int main(int argc, char** argv) {
 	synchronize_complete(threadpool4);
 	//fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
 
 
 #ifdef DEBUGGING
