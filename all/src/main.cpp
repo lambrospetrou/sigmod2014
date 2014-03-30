@@ -48,10 +48,10 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
-#define Q4_JOB_WORKERS 2
-#define Q4_THREADPOOOL_THREADS 4
-#define Q3_THREADPOOOL_THREADS 4
+#define NUM_CORES 8
+#define Q4_JOB_WORKERS 4
+#define Q4_THREADPOOOL_THREADS 2
+#define Q3_THREADPOOOL_THREADS NUM_CORES
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES
 
@@ -2010,7 +2010,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	delete visitedPlace;
 	delete visitedPersons;
 
-	fprintf(stderr, "3[%d-%lu]",k, totalPersons);
+	//fprintf(stderr, "3[%d-%lu]",k, totalPersons);
 	/*
 	if( isLarge ){
 		fprintf(stderr, "3[%d-%lu]",k, totalPersons);
@@ -2020,6 +2020,9 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 
 	//printf("found for place [%*s] persons[%ld] index[%ld]\n", name_sz, name, persons.size(), index);
 
+	//int GlobalResultsLimit = (1000 < k) ? k : 1000;
+	int GlobalResultsLimit = k;
+
 
 	// the global queue that will hold the Top-K pairs
 	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_ComparatorMin> GlobalPQ;
@@ -2028,20 +2031,18 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	// for each cluster calculate the common tags and check if we have a new Top-K pair
 	unordered_map<int, vector<Query3PersonStruct> >::iterator clBegin = ComponentsMap.begin();
 	unordered_map<int, vector<Query3PersonStruct> >::iterator clEnd = ComponentsMap.end();
-	//unordered_set<long> visited;
 	for( ; clBegin != clEnd; clBegin++ ){
 		vector<Query3PersonStruct> *currentClusterPersons = &((*clBegin).second);
 		// we cannot find pairs in 1-person clusters
 		if( currentClusterPersons->size() < 2 )
 			continue;
 		std::stable_sort(currentClusterPersons->begin(), currentClusterPersons->end(), Query3PersonStructPredicate);
-		int minimumCommonTags = GlobalPQ.top().commonTags;
 		// since the maximum tags of this cluster are less than the global minimum
 		// there is no chance to find a valid pair
-		if( (GlobalPQ.size()-1) >= k ){
-			if( currentClusterPersons->at(0).numOfTags < minimumCommonTags )
+		if( GlobalPQ.size() == (unsigned int)GlobalResultsLimit ){
+			if( currentClusterPersons->at(0).numOfTags < GlobalPQ.top().commonTags )
 				continue;
-			if( currentClusterPersons->at(1).numOfTags < minimumCommonTags )
+			if( currentClusterPersons->at(1).numOfTags < GlobalPQ.top().commonTags )
 				continue;
 		}
 		// for each person in the cluster
@@ -2049,25 +2050,15 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			// we cannot find suitable common tags by this person since his tags are less
 			// than the current minimum
 			Query3PersonStruct *currentPerson = &(currentClusterPersons->at(i));
-			if( GlobalPQ.size() >= (unsigned int)k && currentPerson->numOfTags < minimumCommonTags )
-				//continue;// TODO
+			if( GlobalPQ.size() == (unsigned int)GlobalResultsLimit && currentPerson->numOfTags < GlobalPQ.top().commonTags )
 				break;
 
-			// we have to do a BFS from this person until max-k hops to find our reachability
-			// in order to avoid calculating common tags with people that are further than necessary
-			// TODO - check if it is faster to be done for a pair each time after having a valid common tag number
-			//visited.clear();
-			//BFS_query3(currentPerson->personId, h, visited);
 			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
 				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
 
-				// TODO -  ADD A CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
-				if( secondPerson->numOfTags < GlobalPQ.top().commonTags )
+				// CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
+				if(  (GlobalPQ.size() == GlobalResultsLimit) && (secondPerson->numOfTags < GlobalPQ.top().commonTags) )
 					break;
-
-				// skip him if we know for sure that we are more than h-hops away
-				//if( visited.count(secondPerson->personId) == 0 )
-					//continue;
 
 				// check hops with our index
 				if( ShortestPathIndex.QueryDistance(currentPerson->personId,secondPerson->personId) > h ){
@@ -2095,13 +2086,14 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 				}// end of common tags calculation
 
 				// just insert the new pair in the answers - we have to take into account the sentinel element
-				if( GlobalPQ.size() < (unsigned int)k ){
+				if( GlobalPQ.size() < (unsigned int)GlobalResultsLimit ){
+					if( GlobalPQ.top().idA == GlobalPQ.top().idB )
+						GlobalPQ.pop();
 					if (currentPerson->personId <= secondPerson->personId) {
 						GlobalPQ.push(Query3PQ(currentPerson->personId, secondPerson->personId, cTags));
 					} else {
 						GlobalPQ.push(Query3PQ(secondPerson->personId, currentPerson->personId, cTags));
 					}
-					minimumCommonTags = GlobalPQ.top().commonTags;
 				}else{
 					// we have to check if the new pair has more common tags than the answers so far
 					long leftId, rightId;
@@ -2115,7 +2107,6 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 					if( Query3PQ_ComparatorStatic( GlobalPQ.top(), leftId, rightId, cTags ) ){
 						GlobalPQ.pop();
 						GlobalPQ.push(Query3PQ(leftId, rightId, cTags));
-						minimumCommonTags = GlobalPQ.top().commonTags;
 					}
 				}
 			}// end of checking pairs for current person
@@ -2263,12 +2254,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			persons.push_back(Query4PersonStruct(personId, 0, 0, 0.0));
 		}
 	}
-
+/*
 	if(isLarge){
 		fprintf(stderr, "4[%lu]", persons.size());
 		return;
 	}
-
+*/
 	// now I want to create a new graph containing only the required edges
 	// to speed up the shortest paths between all of them
 	//LPSparseArrayGeneric<vector<long> > newGraph;
@@ -2413,20 +2404,20 @@ void executeQuery1Jobs(int q1threads){
 void *readCommentsAsyncWorker(void *args){
 	long time_ = getTime();
 	readComments(inputDir);
-	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_)/1000000.0);
+	//fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_)/1000000.0);
 	time_ = getTime();
 	postProcessComments();
-	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_)/1000000.0);
-	fprintf(stderr, "finished processing comments\n");
+	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_)/1000000.0);
+	//fprintf(stderr, "finished processing comments\n");
 	return 0;
 }
 
 pthread_t* readCommentsAsync(){
 	pthread_t* cThread = (pthread_t*)malloc(sizeof(pthread_t));
 	pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
-	cpu_set_t mask;
-	CPU_ZERO(&mask);
-	CPU_SET( 1 , &mask);
+	//cpu_set_t mask;
+	//CPU_ZERO(&mask);
+	//CPU_SET( 1 , &mask);
 	return cThread;
 }
 
@@ -2726,8 +2717,8 @@ int main(int argc, char** argv) {
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	//pthread_t *commentsThread = readCommentsAsync();
-	readCommentsAsyncWorker(NULL);
+	pthread_t *commentsThread = readCommentsAsync();
+	//readCommentsAsyncWorker(NULL);
 
 
 	// Q4 - we read this first in order to read the queries file now
@@ -2739,12 +2730,12 @@ int main(int argc, char** argv) {
 	Query4Tags = new unordered_set<long>();
 	readQueries(queryFile);
 	///////////////////////////////////
-
+/*
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
-	//pthread_join(*commentsThread, NULL);
+	pthread_join(*commentsThread, NULL);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
+*/
 
 #ifdef DEBUGGING
 	long time_persons_end = getTime();
@@ -2789,20 +2780,24 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
 	// start workers for Q3
 	lp_threadpool_startjobs(threadpool3);
-	synchronize_complete(threadpool3);
-	//fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_q3_start)/1000000.0);
-	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
 
 	// start workers for Q4
 	lp_threadpool_startjobs(threadpool4);
 	synchronize_complete(threadpool4);
-	//fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_q4_start)/1000000.0);
-	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+	synchronize_complete(threadpool3);
+	//fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+	// now we can start executing QUERY 1 - we use WORKER_THREADS
+	pthread_join(*commentsThread, NULL);
+	free(commentsThread);
+	executeQuery1Jobs(Q1_WORKER_THREADS);
+	//fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 
 #ifdef DEBUGGING
