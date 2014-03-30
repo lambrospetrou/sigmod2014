@@ -49,9 +49,9 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 8
-#define Q4_JOB_WORKERS 4
-#define Q4_THREADPOOOL_THREADS 2
-#define Q3_THREADPOOOL_THREADS NUM_CORES
+#define Q4_JOB_WORKERS 3
+#define Q4_THREADPOOOL_THREADS 4
+#define Q3_THREADPOOOL_THREADS 8
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES
 
@@ -223,6 +223,11 @@ struct QueryBFS {
 // Aligned for cache lines;
 
 struct Query3PQ {
+	Query3PQ(){
+		idA = INT_MAX;
+		idB = INT_MAX;
+		commonTags = 0;
+	}
 	Query3PQ(long a, long b, int ct) {
 		idA = a;
 		idB = b;
@@ -250,6 +255,20 @@ public:
 	}
 };
 
+bool Query3PQ_ComparatorStaticObjects(const Query3PQ &left, const Query3PQ &right) {
+	if (left.commonTags > right.commonTags)
+		return false;
+	if (left.commonTags < right.commonTags)
+		return true;
+	if (left.idA < right.idA)
+		return false;
+	if (left.idA > right.idA)
+		return true;
+	if (left.idB <= right.idB)
+		return false;
+	return true;
+}
+
 bool Query3PQ_ComparatorStatic(const Query3PQ &left, long rightIdA, long rightIdB, int rightCommonTags) {
 	if (left.commonTags > rightCommonTags)
 		return false;
@@ -265,6 +284,9 @@ bool Query3PQ_ComparatorStatic(const Query3PQ &left, long rightIdA, long rightId
 }
 bool Query3PQ_ComparatorMinStatic(const Query3PQ &left, long rightIdA, long rightIdB, int rightCommonTags) {
 	return !Query3PQ_ComparatorStatic(left, rightIdA, rightIdB, rightCommonTags);
+}
+bool Query3PQ_ComparatorMinStaticObjects(const Query3PQ &left, const Query3PQ &right) {
+	return Query3PQ_ComparatorMinStatic(left, right.idA, right.idB, right.commonTags);
 }
 class Query3PQ_ComparatorMin {
 public:
@@ -678,6 +700,7 @@ long calculateAndAssignSubgraphs() {
 				}
 			}
 		}
+		fprintf(stderr, "s[%d] ", qSize);
 		// increase the subgraphs
 		currentSubgraph++;
 	}
@@ -736,7 +759,7 @@ void readPersonKnowsPerson(char *inputDir) {
 		long idB = getStrAsLong(idDivisor + 1);
 		//printf("%d %d\n", idA, idB);
 
-		edgesVec.push_back(pair<int,int>(idA,idB));
+		//edgesVec.push_back(pair<int,int>(idA,idB));
 
 		if (idA != prevId) {
 			if (ids.size() > 0) {
@@ -777,8 +800,9 @@ void readPersonKnowsPerson(char *inputDir) {
 	printOut(msg);
 #endif
 
+	//long time_ = getTime();
 	// CONSTRUCT OUR INDEX FOR SHORTEST PATHS
-	ShortestPathIndex.ConstructIndex(edgesVec);
+	//ShortestPathIndex.ConstructIndex(edgesVec);
 
 	// now we want to find all the subgraphs into the graph and assign each person
 	// into one of them since we will use this info into the Query 4
@@ -1621,7 +1645,7 @@ void query1(int p1, int p2, int x, long qid) {
 		ss << -1;
 		Answers[qid] = ss.str();
 		return;
-	}else if( x == -1 ){
+	}/*else if( x == -1 ){
 		std::stringstream ss;
 		int dist = ShortestPathIndex.QueryDistance(p1,p2);
 		if( dist == INT_MAX){
@@ -1631,7 +1655,7 @@ void query1(int p1, int p2, int x, long qid) {
 		}
 		Answers[qid] = ss.str();
 		return;
-	}
+	}*/
 
 	int answer = -1;
 
@@ -2020,13 +2044,11 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 
 	//printf("found for place [%*s] persons[%ld] index[%ld]\n", name_sz, name, persons.size(), index);
 
-	//int GlobalResultsLimit = (1000 < k) ? k : 1000;
-	int GlobalResultsLimit = k;
-
+	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
 
 	// the global queue that will hold the Top-K pairs
-	priority_queue<Query3PQ, vector<Query3PQ>, Query3PQ_ComparatorMin> GlobalPQ;
-	GlobalPQ.push(Query3PQ(INT_MAX,INT_MAX,0)); // insert the sentinel with common tags
+	vector<Query3PQ> GlobalPQ;
+	Query3PQ minimum(INT_MAX,INT_MAX, 0);
 
 	// for each cluster calculate the common tags and check if we have a new Top-K pair
 	unordered_map<int, vector<Query3PersonStruct> >::iterator clBegin = ComponentsMap.begin();
@@ -2039,10 +2061,10 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 		std::stable_sort(currentClusterPersons->begin(), currentClusterPersons->end(), Query3PersonStructPredicate);
 		// since the maximum tags of this cluster are less than the global minimum
 		// there is no chance to find a valid pair
-		if( GlobalPQ.size() == (unsigned int)GlobalResultsLimit ){
-			if( currentClusterPersons->at(0).numOfTags < GlobalPQ.top().commonTags )
+		if( GlobalPQ.size() >= k ){
+			if( currentClusterPersons->at(0).numOfTags < minimum.commonTags )
 				continue;
-			if( currentClusterPersons->at(1).numOfTags < GlobalPQ.top().commonTags )
+			if( currentClusterPersons->at(1).numOfTags < minimum.commonTags )
 				continue;
 		}
 		// for each person in the cluster
@@ -2050,20 +2072,15 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			// we cannot find suitable common tags by this person since his tags are less
 			// than the current minimum
 			Query3PersonStruct *currentPerson = &(currentClusterPersons->at(i));
-			if( GlobalPQ.size() == (unsigned int)GlobalResultsLimit && currentPerson->numOfTags < GlobalPQ.top().commonTags )
+			if( GlobalPQ.size() >= k && currentPerson->numOfTags < minimum.commonTags )
 				break;
 
 			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
 				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
 
 				// CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
-				if(  (GlobalPQ.size() == GlobalResultsLimit) && (secondPerson->numOfTags < GlobalPQ.top().commonTags) )
+				if(  (GlobalPQ.size() >= k) && (secondPerson->numOfTags < minimum.commonTags) )
 					break;
-
-				// check hops with our index
-				if( ShortestPathIndex.QueryDistance(currentPerson->personId,secondPerson->personId) > h ){
-					continue;
-				}
 
 				// we now have to calculate the common tags between these two people
 				int cTags = 0;
@@ -2085,28 +2102,40 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 					}
 				}// end of common tags calculation
 
-				// just insert the new pair in the answers - we have to take into account the sentinel element
-				if( GlobalPQ.size() < (unsigned int)GlobalResultsLimit ){
-					if( GlobalPQ.top().idA == GlobalPQ.top().idB )
-						GlobalPQ.pop();
-					if (currentPerson->personId <= secondPerson->personId) {
-						GlobalPQ.push(Query3PQ(currentPerson->personId, secondPerson->personId, cTags));
-					} else {
-						GlobalPQ.push(Query3PQ(secondPerson->personId, currentPerson->personId, cTags));
-					}
-				}else{
-					// we have to check if the new pair has more common tags than the answers so far
-					long leftId, rightId;
-					if (currentPerson->personId <= secondPerson->personId) {
-						leftId = currentPerson->personId;
-						rightId = secondPerson->personId;
-					}else{
-						rightId = currentPerson->personId;
-						leftId = secondPerson->personId;
-					}
-					if( Query3PQ_ComparatorStatic( GlobalPQ.top(), leftId, rightId, cTags ) ){
-						GlobalPQ.pop();
-						GlobalPQ.push(Query3PQ(leftId, rightId, cTags));
+				// check the common tags
+				if( cTags < minimum.commonTags )
+					continue;
+
+				// check hops with our index
+				/*
+				if( ShortestPathIndex.QueryDistance(currentPerson->personId,secondPerson->personId) > h ){
+					continue;
+				}
+				*/
+
+				if( BFS_query3(currentPerson->personId,secondPerson->personId, h) > h ){
+					continue;
+				}
+
+				if (currentPerson->personId <= secondPerson->personId) {
+					GlobalPQ.push_back(Query3PQ(currentPerson->personId,secondPerson->personId, cTags));
+				} else {
+					GlobalPQ.push_back(Query3PQ(secondPerson->personId,currentPerson->personId, cTags));
+				}
+				if( GlobalPQ.size() >= k ){
+					// just insert the new pair in the answers - we have to take into account the sentinel element
+					if( GlobalPQ.size() == GlobalResultsLimit ){
+						// we need to clear the vector from the less-than-Top-K elements
+						//std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorStaticObjects);
+						std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorMinStaticObjects);
+						// we need to resize the vector at size K
+						GlobalPQ.resize(k);
+						minimum = GlobalPQ[k-1];
+					}else if( GlobalPQ.size() == k ){
+						if( !Query3PQ_ComparatorStaticObjects(minimum, GlobalPQ.back()) ){
+							std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorMinStaticObjects);
+							minimum = GlobalPQ[GlobalPQ.size()-1];
+						}
 					}
 				}
 			}// end of checking pairs for current person
@@ -2117,50 +2146,13 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
 
-	vector<Query3PQ> answers;
+	// we need to clear the vector from the less-than-Top-K elements
+	std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorMinStaticObjects);
 	std::stringstream ss;
-	if( GlobalPQ.top().idA == GlobalPQ.top().idB )
-			GlobalPQ.pop();
-	for (; k > 0; k--) {
-		if( GlobalPQ.empty() )
-			break;
-		answers.push_back(GlobalPQ.top());
-		GlobalPQ.pop();
-	}
-	for( int i=answers.size()-1; i>=0; i-- )
-		ss << answers[i].idA << "|" << answers[i].idB << " ";
-	Answers[qid] = ss.str();
-
-	/*
-	// now we have to pop the K most common tag pairs
-	// but we also have to check that the distance between them
-	// is below the H-hops needed by the query.
-	if( GlobalPQ.top().idA == GlobalPQ.top().idB )
-				GlobalPQ.pop();
-	std::stringstream ss;
-	for (; k > 0; k--) {
-		if (GlobalPQ.empty())
-			break;
-		long idA, idB;
-		//long cTags = -1;
-		while (!GlobalPQ.empty()) {
-			const Query3PQ cPair = GlobalPQ.top();
-			idA = cPair.idA;
-			idB = cPair.idB;
-
-			//int cTags = cPair.commonTags;
-			GlobalPQ.pop();
-			int distance = BFS_query3(idA, idB, h);
-			if (distance <= h) {
-				// we have an answer so exit the while
-				ss << idA << "|" << idB << " ";
-				break;
-			}
-		}
-		//ss << idA << "|" << idB << "[" << cTags << "] ";
+	for ( int i=0,sz=GlobalPQ.size(); i<k && i<sz; i++) {
+		ss << GlobalPQ[i].idA << "|" << GlobalPQ[i].idB << " ";
 	}
 	Answers[qid] = ss.str();
-	*/
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -2404,10 +2396,10 @@ void executeQuery1Jobs(int q1threads){
 void *readCommentsAsyncWorker(void *args){
 	long time_ = getTime();
 	readComments(inputDir);
-	//fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_)/1000000.0);
+	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_)/1000000.0);
 	time_ = getTime();
 	postProcessComments();
-	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_)/1000000.0);
+	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_)/1000000.0);
 	//fprintf(stderr, "finished processing comments\n");
 	return 0;
 }
@@ -2780,24 +2772,31 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-	//fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
 	// start workers for Q3
 	lp_threadpool_startjobs(threadpool3);
-
-	// start workers for Q4
-	lp_threadpool_startjobs(threadpool4);
-	synchronize_complete(threadpool4);
-	//fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
-	synchronize_complete(threadpool3);
-	//fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
 	pthread_join(*commentsThread, NULL);
 	free(commentsThread);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
-	//fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+	synchronize_complete(threadpool3);
+	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+	if(isLarge==1){
+		fprintf(stdout, "query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+		exit(1);
+	}
+
+	// start workers for Q4
+	lp_threadpool_startjobs(threadpool4);
+	synchronize_complete(threadpool4);
+	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+
 
 
 #ifdef DEBUGGING
