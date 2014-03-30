@@ -777,6 +777,7 @@ void readPersonKnowsPerson(char *inputDir) {
 	printOut(msg);
 #endif
 
+	// CONSTRUCT OUR INDEX FOR SHORTEST PATHS
 	ShortestPathIndex.ConstructIndex(edgesVec);
 
 	// now we want to find all the subgraphs into the graph and assign each person
@@ -2017,7 +2018,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	// for each cluster calculate the common tags and check if we have a new Top-K pair
 	unordered_map<int, vector<Query3PersonStruct> >::iterator clBegin = ComponentsMap.begin();
 	unordered_map<int, vector<Query3PersonStruct> >::iterator clEnd = ComponentsMap.end();
-	unordered_set<long> visited;
+	//unordered_set<long> visited;
 	for( ; clBegin != clEnd; clBegin++ ){
 		vector<Query3PersonStruct> *currentClusterPersons = &((*clBegin).second);
 		// we cannot find pairs in 1-person clusters
@@ -2041,10 +2042,11 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			if( GlobalPQ.size() >= (unsigned int)k && currentPerson->numOfTags < minimumCommonTags )
 				//continue;// TODO
 				break;
-			//visited.clear();
+
 			// we have to do a BFS from this person until max-k hops to find our reachability
 			// in order to avoid calculating common tags with people that are further than necessary
 			// TODO - check if it is faster to be done for a pair each time after having a valid common tag number
+			//visited.clear();
 			//BFS_query3(currentPerson->personId, h, visited);
 			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
 				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
@@ -2056,13 +2058,13 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 				// skip him if we know for sure that we are more than h-hops away
 				//if( visited.count(secondPerson->personId) == 0 )
 					//continue;
-				// we now have to calculate the common tags between these two people
 
-				// check hops
+				// check hops with our index
 				if( ShortestPathIndex.QueryDistance(currentPerson->personId,secondPerson->personId) > h ){
 					continue;
 				}
 
+				// we now have to calculate the common tags between these two people
 				int cTags = 0;
 				vector<long> *tagsA = &PersonToTags[currentPerson->personId].tags;
 				vector<long> *tagsB = &PersonToTags[secondPerson->personId].tags;
