@@ -32,6 +32,8 @@
 #include "lplibs/LPSparseArrayGeneric.h"
 #include "lplibs/atomic_ops_if.h"
 
+#include "lplibs/pruned_landmark_labeling.h"
+
 using namespace std;
 using std::tr1::unordered_map;
 using std::tr1::unordered_set;
@@ -371,6 +373,8 @@ long N_QUERIES = 0;
 
 lp_threadpool *threadpool3;
 lp_threadpool *threadpool4;
+
+PrunedLandmarkLabeling<> ShortestPathIndex;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
@@ -714,6 +718,8 @@ void readPersonKnowsPerson(char *inputDir) {
 
 	long edges = 0;
 
+	vector< pair<int,int> > edgesVec;
+
 	// the whole file is now loaded in the memory buffer.
 	vector<long> ids;
 	ids.reserve(128);
@@ -730,10 +736,11 @@ void readPersonKnowsPerson(char *inputDir) {
 		long idB = getStrAsLong(idDivisor + 1);
 		//printf("%d %d\n", idA, idB);
 
+		edgesVec.push_back(pair<int,int>(idA,idB));
+
 		if (idA != prevId) {
 			if (ids.size() > 0) {
 				// store the neighbors
-				//Persons[idA].adjacentPersons = ids;
 				PersonStruct *person = &Persons[prevId];
 				person->adjacentPersonsIds = (long*) malloc(
 						sizeof(long) * ids.size());
@@ -769,6 +776,8 @@ void readPersonKnowsPerson(char *inputDir) {
 	sprintf(msg, "Total edges: %d", edges);
 	printOut(msg);
 #endif
+
+	ShortestPathIndex.ConstructIndex(edgesVec);
 
 	// now we want to find all the subgraphs into the graph and assign each person
 	// into one of them since we will use this info into the Query 4
@@ -2032,18 +2041,28 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			if( GlobalPQ.size() >= (unsigned int)k && currentPerson->numOfTags < minimumCommonTags )
 				//continue;// TODO
 				break;
-			visited.clear();
+			//visited.clear();
 			// we have to do a BFS from this person until max-k hops to find our reachability
 			// in order to avoid calculating common tags with people that are further than necessary
 			// TODO - check if it is faster to be done for a pair each time after having a valid common tag number
-			BFS_query3(currentPerson->personId, h, visited);
+			//BFS_query3(currentPerson->personId, h, visited);
 			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
-				// TODO -  ADD A CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
 				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
+
+				// TODO -  ADD A CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
+				if( secondPerson->numOfTags < GlobalPQ.top().commonTags )
+					break;
+
 				// skip him if we know for sure that we are more than h-hops away
 				//if( visited.count(secondPerson->personId) == 0 )
 					//continue;
 				// we now have to calculate the common tags between these two people
+
+				// check hops
+				if( ShortestPathIndex.QueryDistance(currentPerson->personId,secondPerson->personId) > h ){
+					continue;
+				}
+
 				int cTags = 0;
 				vector<long> *tagsA = &PersonToTags[currentPerson->personId].tags;
 				vector<long> *tagsB = &PersonToTags[secondPerson->personId].tags;
