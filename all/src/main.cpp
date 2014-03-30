@@ -700,7 +700,7 @@ long calculateAndAssignSubgraphs() {
 				}
 			}
 		}
-		fprintf(stderr, "s[%d] ", qSize);
+		//fprintf(stderr, "s[%d] ", qSize);
 		// increase the subgraphs
 		currentSubgraph++;
 	}
@@ -2776,20 +2776,21 @@ int main(int argc, char** argv) {
 
 	// start workers for Q3
 	lp_threadpool_startjobs(threadpool3);
+	synchronize_complete(threadpool3);
+	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+	/*
+	if(isLarge==1){
+		fprintf(stdout, "query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+		exit(1);
+	}
+	*/
 
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
 	pthread_join(*commentsThread, NULL);
 	free(commentsThread);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
-	synchronize_complete(threadpool3);
-	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
-	if(isLarge==1){
-		fprintf(stdout, "query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-		exit(1);
-	}
 
 	// start workers for Q4
 	lp_threadpool_startjobs(threadpool4);
