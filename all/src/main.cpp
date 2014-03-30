@@ -1621,6 +1621,16 @@ void query1(int p1, int p2, int x, long qid) {
 		ss << -1;
 		Answers[qid] = ss.str();
 		return;
+	}else if( x == -1 ){
+		std::stringstream ss;
+		int dist = ShortestPathIndex.QueryDistance(p1,p2);
+		if( dist == INT_MAX){
+			ss << -1;
+		}else{
+			ss << dist;
+		}
+		Answers[qid] = ss.str();
+		return;
 	}
 
 	int answer = -1;
