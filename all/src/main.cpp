@@ -2289,35 +2289,38 @@ bool Query4SubNodePredicate(const Query4SubNode& d1,const Query4SubNode& d2) {
 	return d1.geodesic < d2.geodesic;
 }
 
-long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited){
+long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue){
 	if( localMaximumGeodesicDistance == -1 )
 		localMaximumGeodesicDistance = LONG_MAX;
 	long gd=0;
-	memset(visited, 0, N_PERSONS);
-	//LPBitset visited(N_PERSONS);
-	deque<QueryBFS> Q;
-	Q.push_back(QueryBFS(cPerson,0));
-	//visited.set(cPerson);
-	visited[cPerson] = 1;
-	while(!Q.empty()){
-		QueryBFS cP = Q.front();
-		Q.pop_front();
-		gd += cP.depth;
+	memset(visited, -1, N_PERSONS);
+	memset(GeodesicBFSQueue, 0, sizeof(long)*N_PERSONS);
+	long qIndex = 0;
+	long qSize = 1;
+	GeodesicBFSQueue[0] = cPerson;
+	visited[cPerson] = 0;
+	long depth;
+	while(qIndex<qSize){
+		//QueryBFS cP = Q.front();
+		//Q.pop_front();
+		cPerson = GeodesicBFSQueue[qIndex];
+		depth = visited[cPerson];
+		gd += depth;
 
 		// early exit
 		if( gd > localMaximumGeodesicDistance )
 			return gd;
 
-		vector<long> &edges = newGraph[cP.person];
+		vector<long> &edges = newGraph[cPerson];
 		for( long e=0,esz=edges.size(); e<esz; e++ ){
 			long cAdjacent = edges[e];
-			//if( visited.isSet(cAdjacent) )
-			if( visited[cAdjacent] == 1 )
+			if( visited[cAdjacent] >= 0 )
 				continue;
-			//visited.set(cAdjacent);
-			visited[cAdjacent] = 1;
-			Q.push_back(QueryBFS(cAdjacent, cP.depth + 1));
+			visited[cAdjacent] = depth+1;
+			GeodesicBFSQueue[qSize++] = cAdjacent;
 		}
+		// next vertex from queue
+		qIndex++;
 	}
 	return gd;
 }
@@ -2415,7 +2418,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	// safe to delete the visitedPersons since we got the people for this tag
 	free(visitedPersons);
-	free(visited);
+	//free(visited); - WE USE THIS BELOW IN THE GEODESIC CALCULATION
 
 	//fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
@@ -2438,7 +2441,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	long localMaximumGeodesicDistance=INT_MAX;
 	Query4PersonStruct lastGlobalMinimumCentrality;
 
-	char *GeodesicDistanceVisited = (char*)malloc(N_PERSONS);
+	//char *GeodesicDistanceVisited = (char*)malloc(N_PERSONS);
+	char *GeodesicDistanceVisited = visited;
+	long *GeodesicBFSQueue = (long*)malloc(N_PERSONS*sizeof(long));
 
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		// for each cluster
@@ -2477,9 +2482,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// TO EXIT EARLY WHILE CALCULATING THE DISTANCE FOR THIS NODE
 			long gd_real;
 			if( localResults.size() >= (unsigned int)k )
-				gd_real = calculateGeodesicDistance(newGraph, cPerson, localMaximumGeodesicDistance, GeodesicDistanceVisited);
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, localMaximumGeodesicDistance, GeodesicDistanceVisited, GeodesicBFSQueue);
 			else
-				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited);
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited, GeodesicBFSQueue);
 			if( gd_real > localMaximumGeodesicDistance ){
 				// the geodesic distance was higher than our limit
 				continue;
@@ -2513,6 +2518,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	}
 
 	free(GeodesicDistanceVisited);
+	free(GeodesicBFSQueue);
 
 	//fprintf(stderr, "all processing [%d] [%.6f]secs\n",  globalResults.size(), (getTime()-time_global_start)/1000000.0);
 
