@@ -2143,7 +2143,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 				} else {
 					GlobalPQ->push_back(Query3PQ(secondPerson->personId,currentPerson->personId, cTags));
 				}
-				if( GlobalPQ->size() >= k ){
+				if( GlobalPQ->size() >= (unsigned int)k ){
 					// just insert the new pair in the answers - we have to take into account the sentinel element
 					if( GlobalPQ->size() == GlobalResultsLimit ){
 						// we need to clear the vector from the less-than-Top-K elements
@@ -2294,7 +2294,6 @@ long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long loca
 		localMaximumGeodesicDistance = LONG_MAX;
 	long gd=0;
 	memset(visited, -1, N_PERSONS);
-	memset(GeodesicBFSQueue, 0, sizeof(long)*N_PERSONS);
 	long qIndex = 0;
 	long qSize = 1;
 	GeodesicBFSQueue[0] = cPerson;
@@ -2370,10 +2369,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
 	vector<vector<Q4PersonStructNode> > SubgraphsPersons;
-	//SubgraphsPersons.reserve(128);
-	deque<long> Q;
-	//LPBitset *visited = new LPBitset(N_PERSONS);
-	//LPSparseBitset *visited = new LPSparseBitset(N_PERSONS);
+	//deque<long> Q;
+	long *Q = (long*)malloc(N_PERSONS*sizeof(long));
+	long qIndex=0,qSize=1;
 	char *visited = (char*)malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
 	int currentComponent = -1;
@@ -2387,12 +2385,13 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			continue;
 		// we have a new cluster now
 		currentComponent++;
-		Q.clear();
-		Q.push_back(cPerson);
+		qIndex=0;
+		qSize=1;
+		Q[0] = cPerson;
 		SubgraphsPersons.push_back(vector<Q4PersonStructNode>());
-		while(!Q.empty()){
-			cPerson = Q.front();
-			Q.pop_front();
+		while(qIndex<qSize){
+			cPerson = Q[qIndex];
+			qIndex++;
 			long *edges = Persons[cPerson].adjacentPersonsIds;
 			vector<long> &newEdges = newGraph[cPerson];
 			for( long ee=0,szz=Persons[cPerson].adjacents; ee<szz; ee++ ){
@@ -2406,7 +2405,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				// if not visited during BFS in this subgraph
 				//if( !visited->isSet(cAdjacent) ){
 				if( visited[cAdjacent] != 1 ){
-					Q.push_back(cAdjacent);
+					Q[qSize++] = cAdjacent;
 					//visited->set(cAdjacent);
 					visited[cAdjacent] = 1;
 				}
@@ -2425,9 +2424,11 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	// we have the new subgraph structure and each sub-component with its persons
 	// now we have to sort the people in each component in descending order according to the
 	// number of reachable people at level 1 - direct connections
+	/*
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end(), DescendingQ4PersonStructPredicate);
 	}
+	*/
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
 	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
@@ -2443,7 +2444,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	//char *GeodesicDistanceVisited = (char*)malloc(N_PERSONS);
 	char *GeodesicDistanceVisited = visited;
-	long *GeodesicBFSQueue = (long*)malloc(N_PERSONS*sizeof(long));
+	//long *GeodesicBFSQueue = (long*)malloc(N_PERSONS*sizeof(long));
+	long *GeodesicBFSQueue = Q;
 
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		// for each cluster
@@ -2474,7 +2476,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// and exit if the estimated prediction is higher than our results so far
 			// since our prediction is the lower bound of the geodesic distance for this node
 			if( gd_prediction > localMaximumGeodesicDistance && localResults.size() >= (unsigned int)k ){
-				break;
+				//break;
+				continue;
 			}
 
 			// calculate the geodesic distance for the current person since he passed our prediction checks
