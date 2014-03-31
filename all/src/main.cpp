@@ -48,10 +48,10 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define Q4_JOB_WORKERS 3
-#define Q4_THREADPOOOL_THREADS NUM_CORES>>1
-#define Q3_THREADPOOOL_THREADS NUM_CORES>>1
+#define Q4_THREADPOOOL_THREADS NUM_CORES
+#define Q3_THREADPOOOL_THREADS NUM_CORES
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES
 
@@ -71,6 +71,7 @@ typedef std::tr1::unordered_map<long, char, hash<long> > MAP_LONG_CHAR;
 typedef std::tr1::unordered_map<long, int, hash<long> > MAP_LONG_INT;
 typedef std::tr1::unordered_map<long, long, hash<long> > MAP_LONG_LONG;
 typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
+typedef std::tr1::unordered_map<long, vector<long>, hash<long> > MAP_LONG_VecL;
 typedef std::tr1::unordered_map<long, char*, hash<long> > MAP_LONG_STRING;
 
 #include "sparsehash/dense_hash_map.h"
@@ -298,6 +299,12 @@ public:
 
 
 struct Query4PersonStruct {
+	Query4PersonStruct() {
+		person = -1;
+		s_p = -1;
+		r_p = -1;
+		centrality = 0.0;
+	}
 	Query4PersonStruct(long id, int sp, int rp, double central) {
 		person = id;
 		s_p = sp;
@@ -324,6 +331,10 @@ bool Query4PersonStructPredicateId(const Query4PersonStruct& d1,
 }
 
 bool DescendingIntPredicate(int a, int b) {
+	return a >= b;
+}
+
+bool DescendingLongPredicate(long a, long b) {
 	return a >= b;
 }
 
@@ -2251,15 +2262,82 @@ void *Query4InnerWorker(void *args){
 	return 0;
 }
 
+struct Query4SubNode{
+	Query4SubNode(){
+		geodesic = INT_MAX;
+		personId = -1;
+		subId = -1;
+	}
+	Query4SubNode(long gd,long pId,long sId){
+		geodesic = gd;
+		personId = pId;
+		subId = sId;
+	}
+	long geodesic;
+	long personId;
+	long subId;
+};
+bool Query4SubNodePredicate(const Query4SubNode& d1,const Query4SubNode& d2) {
+	// sort in ascending order
+	if( d1.geodesic == d2.geodesic )
+		return d1.personId <= d2.personId;
+	return d1.geodesic < d2.geodesic;
+}
+
+long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long localMaximumGeodesicDistance){
+	if( localMaximumGeodesicDistance == -1 )
+		localMaximumGeodesicDistance = LONG_MAX;
+	long gd=0;
+	LPBitset visited(N_PERSONS);
+	deque<QueryBFS> Q;
+	Q.push_back(QueryBFS(cPerson,0));
+	visited.set(cPerson);
+	while(!Q.empty()){
+		QueryBFS cP = Q.front();
+		Q.pop_front();
+		gd += cP.depth;
+
+		// early exit
+		if( gd > localMaximumGeodesicDistance )
+			return gd;
+
+		vector<long> &edges = newGraph[cP.person];
+		for( long e=0,esz=edges.size(); e<esz; e++ ){
+			long cAdjacent = edges[e];
+			if( visited.isSet(cAdjacent) )
+				continue;
+			visited.set(cAdjacent);
+			Q.push_back(QueryBFS(cAdjacent, cP.depth + 1));
+		}
+	}
+	return gd;
+}
+
+struct Q4PersonStructNode{
+	Q4PersonStructNode(long i, long e){
+		id=i;
+		edges=e;
+	}
+	long id;
+	long edges;
+};
+bool DescendingQ4PersonStructPredicate(const Q4PersonStructNode& d1,
+		const Q4PersonStructNode& d2) {
+	// sort in descending order by edges
+	if( d1.edges == d2.edges )
+		return d1.id <= d2.id;
+	return d1.edges > d2.edges;
+}
+
 void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
 
 	long tagIndex = TrieFind(TagToIndex, tag, tag_sz)->vIndex;
-	vector<Query4PersonStruct> persons;
+	vector<long> persons;
 	vector<long> &forums = Tags[tagIndex]->forums;
 	// TODO - consider having SET here for space issues - and also in query 3
-	//LPBitset *visitedPersons = new LPBitset(N_PERSONS);
-	LPSparseBitset *visitedPersons = new LPSparseBitset();
+	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
+	//LPSparseBitset *visitedPersons = new LPSparseBitset();
 	for (int cForum = 0, fsz = forums.size(); cForum < fsz; cForum++) {
 		vector<long> &cPersons = Forums[forums[cForum]];
 		for (int cPerson = 0, psz = cPersons.size(); cPerson < psz; cPerson++) {
@@ -2268,80 +2346,153 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			if (visitedPersons->isSet(personId))
 				continue;
 			visitedPersons->set(personId);
-			persons.push_back(Query4PersonStruct(personId, 0, 0, 0.0));
+			persons.push_back(personId);
 		}
 	}
 
-	// now I want to create a new graph containing only the required edges
-	// to speed up the shortest paths between all of them
-	//LPSparseArrayGeneric<vector<long> > newGraph;
-	MAP_INT_VecL newGraph;
-	for (int i = 0, sz = persons.size(); i < sz; i++) {
-		long pId = persons[i].person;
-		long *edges = Persons[pId].adjacentPersonsIds;
-		vector<long> &newEdges = newGraph[pId];
-		//vector<long> *newEdges = newGraph.getRef(pId);
-		for (int j = 0, szz = Persons[pId].adjacents; j < szz; j++) {
-			if (visitedPersons->isSet(edges[j])) {
-				//newEdges->push_back(edges[j]);
-				newEdges.push_back(edges[j]);
+	//fprintf(stderr, "all persons [%d]\n", persons.size());
+
+	// Now we are clustering the persons in order to make the k-centrality calculation faster
+	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
+	vector<vector<Q4PersonStructNode> > SubgraphsPersons;
+	//SubgraphsPersons.reserve(128);
+	deque<long> Q;
+	LPBitset *visited = new LPBitset(N_PERSONS);
+	int currentComponent = -1;
+	for( long i=0,sz=persons.size(); i<sz; i++ ){
+		// TODO - HERE IN THIS CLUSTERING BFS WE CAN CALCULATE A VALUE FOR EACH CLUSTER THAT
+		// WILL PROBABLY SPEED UP THE PROCESS LATER - i.e. a sample of centrality for the starting node of each cluster
+		// do the BFS to find all the persons in the current component
+		long cPerson = persons[i];
+		if( visited->isSet(cPerson) )
+			continue;
+		// we have a new cluster now
+		currentComponent++;
+		Q.clear();
+		Q.push_back(cPerson);
+		SubgraphsPersons.push_back(vector<Q4PersonStructNode>());
+		while(!Q.empty()){
+			cPerson = Q.front();
+			Q.pop_front();
+			long *edges = Persons[cPerson].adjacentPersonsIds;
+			vector<long> &newEdges = newGraph[cPerson];
+			for( long ee=0,szz=Persons[cPerson].adjacents; ee<szz; ee++ ){
+				long cAdjacent = edges[ee];
+				// check if this person belongs to the new subgraph
+				if( !visitedPersons->isSet(cAdjacent) )
+					continue;
+				// add the edge to the new graph
+				newEdges.push_back(edges[ee]);
+				// if not visited during BFS in this subgraph
+				if( !visited->isSet(cAdjacent) ){
+					Q.push_back(cAdjacent);
+					visited->set(cAdjacent);
+				}
 			}
-		}
+			// we can now add the current person into the components map
+			SubgraphsPersons[currentComponent].push_back(Q4PersonStructNode(cPerson, newGraph[cPerson].size()));
+		}// end of BFS for current subgraph
 	}
+
 	// safe to delete the visitedPersons since we got the people for this tag
 	delete visitedPersons;
+	delete visited;
+
+	// we have the new subgraph structure and each sub-component with its persons
+	// now we have to sort the people in each component in descending order according to the
+	// number of reachable people at level 1 - direct connections
+	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
+		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end(), DescendingQ4PersonStructPredicate);
+	}
+	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
 	// calculate the closeness centrality for all people in the person vector
+	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
+	unsigned int LocalResultsLimit = (20 < k) ? k+20 : 20;
+	vector<Query4PersonStruct> globalResults;
+	vector<Query4SubNode> localResults;
 
-	const static int Q4_threads = Q4_JOB_WORKERS;
+	long localMaximumGeodesicDistance=INT_MAX;
+	Query4PersonStruct lastGlobalMinimumCentrality;
 
-	int totalJobs = persons.size();
-	int perThreadJobs = totalJobs / Q4_threads;
-	int untilThreadJobsPlus = totalJobs % Q4_threads;
-	int lastEnd = 0;
-	pthread_t *worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * Q4_threads);
-	cpu_set_t mask;
-	int i=0;
-	for ( ; i < Q4_threads-1; i++) {
-		Q4InnerJob *qws = (Q4InnerJob*) malloc(sizeof(Q4InnerJob));
-		qws->start = lastEnd;
-		if (i < untilThreadJobsPlus) {
-			lastEnd += perThreadJobs + 1;
-		} else {
-			lastEnd += perThreadJobs;
+	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
+		// for each cluster
+		vector<Q4PersonStructNode> &currentSubgraph = SubgraphsPersons[i];
+		long r_p = currentSubgraph.size()-1;
+
+		// when only one person is in the graph skip it
+		if( r_p == 0 ){
+			continue;
 		}
-		qws->end = lastEnd;
-		qws->newGraph = &newGraph;
-		qws->persons = &persons;
 
-		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query4InnerWorker), qws );
-		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		// TODO - carefully set the localMaximumGeodesicDistance - in order to take into account the global centrality too
+		// TODO - this way we will filter out the whole cluster
+		localMaximumGeodesicDistance=INT_MAX;
+
+		localResults.clear();
+		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
+			// calculate the geodesic prediction for the current person
+			long cPerson = currentSubgraph.at(j).id;
+			long cEdgesSz = currentSubgraph.at(j).edges;
+			long gd_prediction = cEdgesSz + ((r_p-cEdgesSz)<<1);
+			// check with the cluster minimum Geodesic Distance if we should proceed
+			// and exit if the estimated prediction is higher than our results so far
+			// since our prediction is the lower bound of the geodesic distance for this node
+			if( localResults.size() >= (unsigned int)k && gd_prediction > localMaximumGeodesicDistance ){
+				break;
+			}
+
+			// calculate the geodesic distance for the current person since he passed our prediction checks
+			// REMEMBER TO PASS THE LOCAL MAXIMUM INTO THE CALCULATION FUNCTION IN ORDER
+			// TO EXIT EARLY WHILE CALCULATING THE DISTANCE FOR THIS NODE
+			long gd_real;
+			if( localResults.size() >= (unsigned int)k )
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, localMaximumGeodesicDistance);
+			else
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1);
+			if( gd_real > localMaximumGeodesicDistance ){
+				// the geodesic distance was higher than our limit
+				continue;
+			}
+			localResults.push_back(Query4SubNode(gd_real,cPerson, i));
+			if( localMaximumGeodesicDistance < gd_real ){
+				localMaximumGeodesicDistance = gd_real;
+			}
+			if( localResults.size() == LocalResultsLimit ){
+				// we should sort the results and keep only the K values
+				std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
+				localResults.resize(k);
+			}
+		}// end of this subgraph
+		// process the local results in order to push them into the global results
+		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
+		// add all the local results or K results - whichever is less into the global results
+		for( long lr=0,lsz=localResults.size(), res=k; lr<lsz && res>0 ; lr++, res-- ){
+			//double cCentrality = (r_p * r_p) / ( n_1 * localResults[lr].geodesic );
+			double cCentrality = ((r_p * r_p)*1.0) / localResults[lr].geodesic;
+			if( cCentrality < lastGlobalMinimumCentrality.centrality )
+				break;
+			globalResults.push_back(
+					Query4PersonStruct(localResults[lr].personId, currentSubgraph.size()-1, r_p, cCentrality)
+			);
+		}
+		// check if we have to sort and filter out global results
+		if( globalResults.size() >= GlobalResultsLimit ){
+			std::stable_sort(globalResults.begin(), globalResults.end(),Query4PersonStructPredicate);
+			globalResults.resize(k);
+			lastGlobalMinimumCentrality = globalResults.back();
+		}
 	}
 
-	// execute some calculations yourself
-	Q4InnerJob *qws = (Q4InnerJob*) malloc(sizeof(Q4InnerJob));
-	qws->start = lastEnd;
-	if (i < untilThreadJobsPlus) {
-		lastEnd += perThreadJobs + 1;
-	} else {
-		lastEnd += perThreadJobs;
-	}
-	qws->end = lastEnd;
-	qws->newGraph = &newGraph;
-	qws->persons = &persons;
-	Query4InnerWorker(qws);
-
-	// wait for them to finish
-	for (int i = 0; i < Q4_threads-1; i++) {
-		pthread_join(worker_threads[i], NULL);
-	}
+	//fprintf(stderr, "finished all clusters\n");
 
 	// we now just have to return the K persons with the highest centrality
-	std::stable_sort(persons.begin(), persons.end(),Query4PersonStructPredicate);
+	std::stable_sort(globalResults.begin(), globalResults.end(), Query4PersonStructPredicate);
 	std::stringstream ss;
-	for (int i = 0; i < k; i++) {
+	for (int i = 0, sz=globalResults.size(); i<k && i<sz; i++) {
 		//ss << persons[i].person << ":" << persons[i].centrality << " ";
-		ss << persons[i].person << " ";
+		ss << globalResults[i].person << " ";
+		//fprintf(stderr, "res: %d\n", globalResults[i].person);
 	}
 	//Answers4.push_back(ss.str());
 	//printf("%s\n", ss.str().c_str());
@@ -2414,12 +2565,12 @@ void executeQuery1Jobs(int q1threads){
 }
 
 void *readCommentsAsyncWorker(void *args){
-	long time_ = getTime();
+	//long time_ = getTime();
 	readComments(inputDir);
-	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_)/1000000.0);
-	time_ = getTime();
+	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//time_ = getTime();
 	postProcessComments();
-	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_)/1000000.0);
+	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//fprintf(stderr, "finished processing comments\n");
 	return 0;
 }
@@ -2794,9 +2945,17 @@ int main(int argc, char** argv) {
 
 	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
+	// now we can start executing QUERY 1 - we use WORKER_THREADS
+	pthread_join(*commentsThread, NULL);
+	free(commentsThread);
+	executeQuery1Jobs(Q1_WORKER_THREADS);
+	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
 	// start workers for Q3
 	lp_threadpool_startjobs(threadpool3);
-;
+	synchronize_complete(threadpool3);
+	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
 
 	/*
 	if(isLarge==1){
@@ -2807,16 +2966,6 @@ int main(int argc, char** argv) {
 
 	// start workers for Q4
 	lp_threadpool_startjobs(threadpool4);
-
-	// now we can start executing QUERY 1 - we use WORKER_THREADS
-	pthread_join(*commentsThread, NULL);
-	free(commentsThread);
-	executeQuery1Jobs(Q1_WORKER_THREADS);
-	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
-	synchronize_complete(threadpool3);
-	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
 	synchronize_complete(threadpool4);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
