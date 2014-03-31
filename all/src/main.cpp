@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <iterator>
 #include <sstream>
+#include <cmath>
 
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
@@ -48,7 +49,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define Q4_JOB_WORKERS 3
 #define Q4_THREADPOOOL_THREADS NUM_CORES
 #define Q3_THREADPOOOL_THREADS NUM_CORES
@@ -2284,14 +2285,16 @@ bool Query4SubNodePredicate(const Query4SubNode& d1,const Query4SubNode& d2) {
 	return d1.geodesic < d2.geodesic;
 }
 
-long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long localMaximumGeodesicDistance){
+long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited){
 	if( localMaximumGeodesicDistance == -1 )
 		localMaximumGeodesicDistance = LONG_MAX;
 	long gd=0;
-	LPBitset visited(N_PERSONS);
+	memset(visited, 0, N_PERSONS);
+	//LPBitset visited(N_PERSONS);
 	deque<QueryBFS> Q;
 	Q.push_back(QueryBFS(cPerson,0));
-	visited.set(cPerson);
+	//visited.set(cPerson);
+	visited[cPerson] = 1;
 	while(!Q.empty()){
 		QueryBFS cP = Q.front();
 		Q.pop_front();
@@ -2304,9 +2307,11 @@ long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long loca
 		vector<long> &edges = newGraph[cP.person];
 		for( long e=0,esz=edges.size(); e<esz; e++ ){
 			long cAdjacent = edges[e];
-			if( visited.isSet(cAdjacent) )
+			//if( visited.isSet(cAdjacent) )
+			if( visited[cAdjacent] == 1 )
 				continue;
-			visited.set(cAdjacent);
+			//visited.set(cAdjacent);
+			visited[cAdjacent] = 1;
 			Q.push_back(QueryBFS(cAdjacent, cP.depth + 1));
 		}
 	}
@@ -2336,35 +2341,42 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	vector<long> persons;
 	vector<long> &forums = Tags[tagIndex]->forums;
 	// TODO - consider having SET here for space issues - and also in query 3
-	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
+	//LPBitset *visitedPersons = new LPBitset(N_PERSONS);
 	//LPSparseBitset *visitedPersons = new LPSparseBitset();
+	char *visitedPersons = (char*)malloc(N_PERSONS);
+	memset(visitedPersons, 0, N_PERSONS);
 	for (int cForum = 0, fsz = forums.size(); cForum < fsz; cForum++) {
 		vector<long> &cPersons = Forums[forums[cForum]];
 		for (int cPerson = 0, psz = cPersons.size(); cPerson < psz; cPerson++) {
 			long personId = cPersons[cPerson];
-			//if( (*visitedPersons)[personId] )
-			if (visitedPersons->isSet(personId))
+			if( visitedPersons[personId] == 1)
+			//if (visitedPersons->isSet(personId))
 				continue;
-			visitedPersons->set(personId);
+			//visitedPersons->set(personId);
+			visitedPersons[personId] = 1;
 			persons.push_back(personId);
 		}
 	}
 
-	//fprintf(stderr, "all persons [%d]\n", persons.size());
+	fprintf(stderr, "all persons [%d] [%.6f]secs\n", persons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
 	vector<vector<Q4PersonStructNode> > SubgraphsPersons;
 	//SubgraphsPersons.reserve(128);
 	deque<long> Q;
-	LPBitset *visited = new LPBitset(N_PERSONS);
+	//LPBitset *visited = new LPBitset(N_PERSONS);
+	//LPSparseBitset *visited = new LPSparseBitset(N_PERSONS);
+	char *visited = (char*)malloc(N_PERSONS);
+	memset(visited, 0, N_PERSONS);
 	int currentComponent = -1;
 	for( long i=0,sz=persons.size(); i<sz; i++ ){
 		// TODO - HERE IN THIS CLUSTERING BFS WE CAN CALCULATE A VALUE FOR EACH CLUSTER THAT
 		// WILL PROBABLY SPEED UP THE PROCESS LATER - i.e. a sample of centrality for the starting node of each cluster
 		// do the BFS to find all the persons in the current component
 		long cPerson = persons[i];
-		if( visited->isSet(cPerson) )
+		//if( visited->isSet(cPerson) )
+		if( visited[cPerson] == 1 )
 			continue;
 		// we have a new cluster now
 		currentComponent++;
@@ -2379,14 +2391,17 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			for( long ee=0,szz=Persons[cPerson].adjacents; ee<szz; ee++ ){
 				long cAdjacent = edges[ee];
 				// check if this person belongs to the new subgraph
-				if( !visitedPersons->isSet(cAdjacent) )
+				//if( !visitedPersons->isSet(cAdjacent) )
+				if( visitedPersons[cAdjacent] != 1 )
 					continue;
 				// add the edge to the new graph
 				newEdges.push_back(edges[ee]);
 				// if not visited during BFS in this subgraph
-				if( !visited->isSet(cAdjacent) ){
+				//if( !visited->isSet(cAdjacent) ){
+				if( visited[cAdjacent] != 1 ){
 					Q.push_back(cAdjacent);
-					visited->set(cAdjacent);
+					//visited->set(cAdjacent);
+					visited[cAdjacent] = 1;
 				}
 			}
 			// we can now add the current person into the components map
@@ -2395,8 +2410,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	}
 
 	// safe to delete the visitedPersons since we got the people for this tag
-	delete visitedPersons;
-	delete visited;
+	free(visitedPersons);
+	free(visited);
+
+	fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// we have the new subgraph structure and each sub-component with its persons
 	// now we have to sort the people in each component in descending order according to the
@@ -2406,14 +2423,18 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	}
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
+	fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
+
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
-	unsigned int LocalResultsLimit = (20 < k) ? k+20 : 20;
+	unsigned int LocalResultsLimit = (100 < k) ? k+100 : 100;
 	vector<Query4PersonStruct> globalResults;
 	vector<Query4SubNode> localResults;
 
 	long localMaximumGeodesicDistance=INT_MAX;
 	Query4PersonStruct lastGlobalMinimumCentrality;
+
+	char *GeodesicDistanceVisited = (char*)malloc(N_PERSONS);
 
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		// for each cluster
@@ -2425,20 +2446,25 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			continue;
 		}
 
-		// TODO - carefully set the localMaximumGeodesicDistance - in order to take into account the global centrality too
-		// TODO - this way we will filter out the whole cluster
-		localMaximumGeodesicDistance=INT_MAX;
+		// carefully set the localMaximumGeodesicDistance - in order to take into account the global centrality too
+		// this way we will filter out whole clusters ( if hopefully we have many clusters )
+		if( globalResults.size() < (unsigned int)k )
+			localMaximumGeodesicDistance=INT_MAX;
+		else
+			localMaximumGeodesicDistance = (int)ceil( (lastGlobalMinimumCentrality.r_p *
+					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
 
 		localResults.clear();
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			// calculate the geodesic prediction for the current person
 			long cPerson = currentSubgraph.at(j).id;
 			long cEdgesSz = currentSubgraph.at(j).edges;
+			// predict the lower bound for the geodesic distance
 			long gd_prediction = cEdgesSz + ((r_p-cEdgesSz)<<1);
 			// check with the cluster minimum Geodesic Distance if we should proceed
 			// and exit if the estimated prediction is higher than our results so far
 			// since our prediction is the lower bound of the geodesic distance for this node
-			if( localResults.size() >= (unsigned int)k && gd_prediction > localMaximumGeodesicDistance ){
+			if( gd_prediction > localMaximumGeodesicDistance && localResults.size() >= (unsigned int)k ){
 				break;
 			}
 
@@ -2447,17 +2473,20 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// TO EXIT EARLY WHILE CALCULATING THE DISTANCE FOR THIS NODE
 			long gd_real;
 			if( localResults.size() >= (unsigned int)k )
-				gd_real = calculateGeodesicDistance(newGraph, cPerson, localMaximumGeodesicDistance);
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, localMaximumGeodesicDistance, GeodesicDistanceVisited);
 			else
-				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1);
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited);
 			if( gd_real > localMaximumGeodesicDistance ){
 				// the geodesic distance was higher than our limit
 				continue;
 			}
 			localResults.push_back(Query4SubNode(gd_real,cPerson, i));
-			if( localMaximumGeodesicDistance < gd_real ){
+			// update (lower) the local maximum distance
+			/*
+			if( localMaximumGeodesicDistance > gd_real ){
 				localMaximumGeodesicDistance = gd_real;
 			}
+			*/
 			if( localResults.size() == LocalResultsLimit ){
 				// we should sort the results and keep only the K values
 				std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
@@ -2484,7 +2513,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}
 	}
 
-	//fprintf(stderr, "finished all clusters\n");
+	free(GeodesicDistanceVisited);
+
+	fprintf(stderr, "all processing [%d] [%.6f]secs\n",  globalResults.size(), (getTime()-time_global_start)/1000000.0);
 
 	// we now just have to return the K persons with the highest centrality
 	std::stable_sort(globalResults.begin(), globalResults.end(), Query4PersonStructPredicate);
