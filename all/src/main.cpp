@@ -882,6 +882,8 @@ void readComments(char* inputDir) {
 	printOut(msg);
 #endif
 
+	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+
 	///////////////////////////////////////////////////////////////////
 	// READ THE COMMENT REPLIES TO HAVE THE COMMENTS FOR EACH PERSON
 	///////////////////////////////////////////////////////////////////
@@ -2595,7 +2597,7 @@ void executeQuery1Jobs(int q1threads){
 void *readCommentsAsyncWorker(void *args){
 	//long time_ = getTime();
 	readComments(inputDir);
-	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//time_ = getTime();
 	postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
