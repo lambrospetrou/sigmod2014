@@ -2169,7 +2169,10 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	// we need to clear the vector from the less-than-Top-K elements
 	std::stable_sort(GlobalPQ->begin(), GlobalPQ->end(), Query3PQ_ComparatorMinStaticObjects);
 	std::stringstream ss;
-	for ( int i=0,sz=GlobalPQ->size(); i<k && i<sz; i++) {
+	for ( int i=0,sz=GlobalPQ->size(); k>0 && i<sz; i++ ) {
+		if( BFS_query3(GlobalPQ->at(i).idA,GlobalPQ->at(i).idB, h) > h )
+			continue;
+		k--;
 		ss << GlobalPQ->at(i).idA << "|" << GlobalPQ->at(i).idB << " ";
 	}
 	Answers[qid] = ss.str();
