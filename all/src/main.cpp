@@ -49,15 +49,16 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
+#define Q1_WORKER_THREADS NUM_CORES
+#define Q2_WORKER_THREADS NUM_CORES-2
+#define Q_JOB_WORKERS NUM_CORES
+// not used now
 #define Q4_JOB_WORKERS 3
 #define Q4_THREADPOOOL_THREADS 1
 #define Q3_THREADPOOOL_THREADS NUM_CORES
-#define Q1_WORKER_THREADS NUM_CORES
-#define Q2_WORKER_THREADS NUM_CORES
-#define Q_JOB_WORKERS NUM_CORES
-
 #define COMMENTS_WORKERS NUM_CORES
+/////////
 
 #define NUM_THREADS WORKER_THREADS+1
 
@@ -2301,14 +2302,23 @@ long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long loca
 }
 
 struct Q4PersonStructNode{
-	Q4PersonStructNode(long i, long e){
+	Q4PersonStructNode(long i, long e, long ee){
 		id=i;
 		edges=e;
+		edgesLevel2 = ee;
 	}
 	long id;
 	long edges;
+	long edgesLevel2;
 };
 bool DescendingQ4PersonStructPredicate(const Q4PersonStructNode& d1,
+		const Q4PersonStructNode& d2) {
+	// sort in descending order by edges
+	if( d1.edgesLevel2 == d2.edgesLevel2 )
+		return d1.id <= d2.id;
+	return d1.edgesLevel2 > d2.edgesLevel2;
+}
+bool DescendingQ4PersonStructLevel1Predicate(const Q4PersonStructNode& d1,
 		const Q4PersonStructNode& d2) {
 	// sort in descending order by edges
 	if( d1.edges == d2.edges )
@@ -2346,6 +2356,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	char *visited = (char*)malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
 	int currentComponent = -1;
+	long edgesLevel2=0;
 	for( long i=0,sz=persons.size(); i<sz; i++ ){
 		// TODO - HERE IN THIS CLUSTERING BFS WE CAN CALCULATE A VALUE FOR EACH CLUSTER THAT
 		// WILL PROBABLY SPEED UP THE PROCESS LATER - i.e. a sample of centrality for the starting node of each cluster
@@ -2376,6 +2387,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					Q[qSize++] = cAdjacent;
 					visited[cAdjacent] = 1;
 				}
+				// add this new neighbor edges into the level 2 accumulator
 			}
 			// we can now add the current person into the components map
 			SubgraphsPersons[currentComponent].push_back(Q4PersonStructNode(cPerson, newGraph[cPerson].size()));
@@ -2386,19 +2398,19 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	free(visitedPersons);
 	//free(visited); - WE USE THIS BELOW IN THE GEODESIC CALCULATION
 
-	//fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// we have the new subgraph structure and each sub-component with its persons
 	// now we have to sort the people in each component in descending order according to the
 	// number of reachable people at level 1 - direct connections
-	/*
+
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end(), DescendingQ4PersonStructPredicate);
 	}
-	*/
+
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
-	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
@@ -2592,7 +2604,7 @@ pthread_t* readCommentsAsync(){
 	pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
-	CPU_SET( 0 , &mask);
+	CPU_SET( NUM_CORES-1 , &mask);
 	return cThread;
 }
 
@@ -2721,10 +2733,10 @@ void _initializations() {
 	TagSubFinals = new vector<TagSubStruct*>();
 
 	PlacesToId = TrieNode_Constructor();
-	Places.reserve(2048);
+	//Places.reserve(2048);
 
 	TagToIndex = TrieNode_Constructor();
-	Tags.reserve(2048);
+	//Tags.reserve(2048);
 	TagIdToIndex = new FINAL_MAP_INT_INT();
 
 }
@@ -2844,7 +2856,9 @@ void readQueries(char *queriesFile) {
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool4,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
-			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
+
+			if( !isLarge )
+				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
 			// TODO - add the asked Tag into the set
 			Query4Tags->insert(TrieFind(TagToIndex, tagName, tag_sz)->realId);
@@ -2963,11 +2977,15 @@ int main(int argc, char** argv) {
 	lp_threadpool_startjobs(threadpool);
 
 	synchronize_complete(threadpool);
-	fprintf(stderr,"query 3_4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr,"query 3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
 	pthread_join(*commentsThread, NULL);
 	free(commentsThread);
+
+	if( isLarge )
+		fprintf(stdout, "finished comments and queries 3,4 [%.6d]secs\n", (getTime()-time_global_start)/1000000.0);
+
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
