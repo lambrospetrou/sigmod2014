@@ -49,7 +49,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define Q4_JOB_WORKERS 3
 #define Q4_THREADPOOOL_THREADS 1
 #define Q3_THREADPOOOL_THREADS NUM_CORES
@@ -1650,7 +1650,7 @@ void* phase1_ReadPlacesFiles(int tid, void* args){
 ///////////////////////////////////////////////////////////////////////
 
 
-void query1(int p1, int p2, int x, long qid) {
+void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 	//printf("query1: %d %d %d\n", p1, p2, x);
 
 	if(p1 == p2){
@@ -1677,58 +1677,49 @@ void query1(int p1, int p2, int x, long qid) {
 
 	int answer = -1;
 
-	char *visited = (char*) malloc(N_PERSONS);
-	memset(visited, 0, N_PERSONS);
-	deque<QueryBFS> Q;
+	memset(visited, -1, N_PERSONS);
 
-	// insert the source node into the queue
-	Q.push_back(QueryBFS(p1, 0));
-	unsigned long index = 0;
-	unsigned long size = 1;
-	while (index < size) {
-		QueryBFS current = Q.front();
-		Q.pop_front();
-		index++;
+	long cPerson;
+	long qIndex = 0;
+	long qSize=1;
+	Q_BFS[0] = p1;
+	visited[p1] = 0;
+	long cAdjacent;
+	while (qIndex < qSize) {
+		cPerson = Q_BFS[qIndex++];
 
 		//printf("current: %ld %d\n", current.person, current.depth);
-		// mark node as visited - BLACK
-		visited[current.person] = 2;
-
 		// we must add the current neighbors into the queue if
 		// the comments are valid
-		PersonStruct *cPerson = &Persons[current.person];
-		long *adjacents = cPerson->adjacentPersonsIds;
-		int *weights = cPerson->adjacentPersonWeightsSorted;
+		long *adjacents = Persons[cPerson].adjacentPersonsIds;
+		int *weights = Persons[cPerson].adjacentPersonWeightsSorted;
 		// if there is comments limit
 		if (x != -1) {
-			for (long i = 0, sz = cPerson->adjacents;
+			for (long i = 0, sz = Persons[cPerson].adjacents;
 					(i < sz) && (weights[i] > x); i++) {
-				long cAdjacent = adjacents[i];
-				if (visited[cAdjacent] == 0) {
+				cAdjacent = adjacents[i];
+				if (visited[cAdjacent] < 0) {
 					if (cAdjacent == p2) {
-						answer = current.depth + 1;
+						answer = visited[cPerson] + 1;
 						break;
 					}
-					visited[cAdjacent]=1;
-					Q.push_back(QueryBFS(cAdjacent, current.depth + 1));
-					size++;
+					visited[cAdjacent] = visited[cPerson] + 1;
+					Q_BFS[qSize++] = cAdjacent;
 				}
 			}
 		} else {
 			// no comments limit
-			for (long i = 0, sz = cPerson->adjacents; i < sz; i++) {
-				long cAdjacent = adjacents[i];
+			for (long i = 0, sz = Persons[cPerson].adjacents; i < sz; i++) {
+				cAdjacent = adjacents[i];
 				// if node not visited and not added
-				if (visited[cAdjacent] == 0) {
-				//if (visited.get(cAdjacent) == 0) {
+				if (visited[cAdjacent] < 0) {
 					if (cAdjacent == p2) {
-						answer = current.depth + 1;
+						answer = visited[cPerson] + 1;
 						break;
 					}
 					// mark node as added - GREY
-					visited[cAdjacent]=1;
-					Q.push_back(QueryBFS(cAdjacent, current.depth + 1));
-					size++;
+					visited[cAdjacent] = visited[cPerson] + 1;
+					Q_BFS[qSize++] = cAdjacent;
 				}
 			}
 		} // end of neighbors processing
@@ -2068,7 +2059,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 		std::stable_sort(currentClusterPersons->begin(), currentClusterPersons->end(), Query3PersonStructPredicate);
 		// since the maximum tags of this cluster are less than the global minimum
 		// there is no chance to find a valid pair
-		if( GlobalPQ->size() >= k ){
+		if( GlobalPQ->size() >= (unsigned int)k ){
 			if( currentClusterPersons->at(0).numOfTags < minimum.commonTags )
 				continue;
 			if( currentClusterPersons->at(1).numOfTags < minimum.commonTags )
@@ -2079,14 +2070,14 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			// we cannot find suitable common tags by this person since his tags are less
 			// than the current minimum
 			Query3PersonStruct *currentPerson = &(currentClusterPersons->at(i));
-			if( GlobalPQ->size() >= k && currentPerson->numOfTags < minimum.commonTags )
+			if( GlobalPQ->size() >= (unsigned int)k && currentPerson->numOfTags < minimum.commonTags )
 				break;
 
 			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
 				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
 
 				// CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
-				if(  (GlobalPQ->size() >= k) && (secondPerson->numOfTags < minimum.commonTags) )
+				if(  (GlobalPQ->size() >= (unsigned int)k) && (secondPerson->numOfTags < minimum.commonTags) )
 					break;
 
 				// we now have to calculate the common tags between these two people
@@ -2287,8 +2278,6 @@ long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long loca
 	visited[cPerson] = 0;
 	long depth;
 	while(qIndex<qSize){
-		//QueryBFS cP = Q.front();
-		//Q.pop_front();
 		cPerson = GeodesicBFSQueue[qIndex];
 		depth = visited[cPerson];
 		gd += depth;
@@ -2334,8 +2323,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	vector<long> persons;
 	vector<long> &forums = Tags[tagIndex]->forums;
 	// TODO - consider having SET here for space issues - and also in query 3
-	//LPBitset *visitedPersons = new LPBitset(N_PERSONS);
-	//LPSparseBitset *visitedPersons = new LPSparseBitset();
 	char *visitedPersons = (char*)malloc(N_PERSONS);
 	memset(visitedPersons, 0, N_PERSONS);
 	for (int cForum = 0, fsz = forums.size(); cForum < fsz; cForum++) {
@@ -2343,9 +2330,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		for (int cPerson = 0, psz = cPersons.size(); cPerson < psz; cPerson++) {
 			long personId = cPersons[cPerson];
 			if( visitedPersons[personId] == 1)
-			//if (visitedPersons->isSet(personId))
 				continue;
-			//visitedPersons->set(personId);
 			visitedPersons[personId] = 1;
 			persons.push_back(personId);
 		}
@@ -2356,7 +2341,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
 	vector<vector<Q4PersonStructNode> > SubgraphsPersons;
-	//deque<long> Q;
 	long *Q = (long*)malloc(N_PERSONS*sizeof(long));
 	long qIndex=0,qSize=1;
 	char *visited = (char*)malloc(N_PERSONS);
@@ -2367,7 +2351,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		// WILL PROBABLY SPEED UP THE PROCESS LATER - i.e. a sample of centrality for the starting node of each cluster
 		// do the BFS to find all the persons in the current component
 		long cPerson = persons[i];
-		//if( visited->isSet(cPerson) )
 		if( visited[cPerson] == 1 )
 			continue;
 		// we have a new cluster now
@@ -2384,16 +2367,13 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			for( long ee=0,szz=Persons[cPerson].adjacents; ee<szz; ee++ ){
 				long cAdjacent = edges[ee];
 				// check if this person belongs to the new subgraph
-				//if( !visitedPersons->isSet(cAdjacent) )
 				if( visitedPersons[cAdjacent] != 1 )
 					continue;
 				// add the edge to the new graph
 				newEdges.push_back(edges[ee]);
 				// if not visited during BFS in this subgraph
-				//if( !visited->isSet(cAdjacent) ){
 				if( visited[cAdjacent] != 1 ){
 					Q[qSize++] = cAdjacent;
-					//visited->set(cAdjacent);
 					visited[cAdjacent] = 1;
 				}
 			}
@@ -2487,7 +2467,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				localMaximumGeodesicDistance = localResults.back().geodesic;
 			}
 		}// end of this subgraph
-		// process the local results in order to push them into the global results
+		// TODO - process the local results in order to push them into the global results
+		// TODO - maybe avoid sorting
 		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 		// add all the local results or K results - whichever is less into the global results
 		for( long lr=0,lsz=localResults.size(), res=k; lr<lsz && res>0 ; lr++, res-- ){
@@ -2546,13 +2527,18 @@ void* Query1WorkerFunction(void *args) {
 	QWorker *qws = (QWorker*)args;
 	Query1WorkerStruct *currentJob;
 
+	char *visited = (char*)malloc(N_PERSONS);
+	long *Q_BFS = (long*)malloc(sizeof(long)*N_PERSONS);
 	for( int i=qws->start, end=qws->end; i<end; i++ ){
 		currentJob = Query1Structs[i];
-		query1(currentJob->p1, currentJob->p2, currentJob->x, currentJob->qid);
+		query1(currentJob->p1, currentJob->p2, currentJob->x, currentJob->qid, visited, Q_BFS);
 		free(currentJob);
 		// the following can be omitted for speedups
 		//Query1Structs[i] = 0;
 	}
+
+	free(visited);
+	free(Q_BFS);
 
 	free(qws);
 	pthread_exit(NULL);
@@ -2976,14 +2962,14 @@ int main(int argc, char** argv) {
 
 	lp_threadpool_startjobs(threadpool);
 
+	synchronize_complete(threadpool);
+	fprintf(stderr,"query 3_4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
 	pthread_join(*commentsThread, NULL);
 	free(commentsThread);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
-	synchronize_complete(threadpool);
-	fprintf(stderr,"query 3_4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 /*
 	// start workers for Q3
