@@ -2047,7 +2047,9 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
 
 	// the global queue that will hold the Top-K pairs
-	vector<Query3PQ> GlobalPQ;
+	vector<Query3PQ> GlobalPQ1;
+	vector<Query3PQ> GlobalPQ2;
+	vector<Query3PQ> *GlobalPQ = &GlobalPQ1;
 	Query3PQ minimum(INT_MAX,INT_MAX, 0);
 
 	// for each cluster calculate the common tags and check if we have a new Top-K pair
@@ -2061,7 +2063,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 		std::stable_sort(currentClusterPersons->begin(), currentClusterPersons->end(), Query3PersonStructPredicate);
 		// since the maximum tags of this cluster are less than the global minimum
 		// there is no chance to find a valid pair
-		if( GlobalPQ.size() >= k ){
+		if( GlobalPQ->size() >= k ){
 			if( currentClusterPersons->at(0).numOfTags < minimum.commonTags )
 				continue;
 			if( currentClusterPersons->at(1).numOfTags < minimum.commonTags )
@@ -2072,14 +2074,14 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			// we cannot find suitable common tags by this person since his tags are less
 			// than the current minimum
 			Query3PersonStruct *currentPerson = &(currentClusterPersons->at(i));
-			if( GlobalPQ.size() >= k && currentPerson->numOfTags < minimum.commonTags )
+			if( GlobalPQ->size() >= k && currentPerson->numOfTags < minimum.commonTags )
 				break;
 
 			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
 				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
 
 				// CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
-				if(  (GlobalPQ.size() >= k) && (secondPerson->numOfTags < minimum.commonTags) )
+				if(  (GlobalPQ->size() >= k) && (secondPerson->numOfTags < minimum.commonTags) )
 					break;
 
 				// we now have to calculate the common tags between these two people
@@ -2113,30 +2115,48 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 				}
 				*/
 
+				/*
 				if( BFS_query3(currentPerson->personId,secondPerson->personId, h) > h ){
 					continue;
-				}
+				}*/
 
 				if (currentPerson->personId <= secondPerson->personId) {
-					GlobalPQ.push_back(Query3PQ(currentPerson->personId,secondPerson->personId, cTags));
+					GlobalPQ->push_back(Query3PQ(currentPerson->personId,secondPerson->personId, cTags));
 				} else {
-					GlobalPQ.push_back(Query3PQ(secondPerson->personId,currentPerson->personId, cTags));
+					GlobalPQ->push_back(Query3PQ(secondPerson->personId,currentPerson->personId, cTags));
 				}
-				if( GlobalPQ.size() >= k ){
+				if( GlobalPQ->size() >= k ){
 					// just insert the new pair in the answers - we have to take into account the sentinel element
-					if( GlobalPQ.size() == GlobalResultsLimit ){
+					if( GlobalPQ->size() == GlobalResultsLimit ){
 						// we need to clear the vector from the less-than-Top-K elements
 						//std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorStaticObjects);
-						std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorMinStaticObjects);
+						std::stable_sort(GlobalPQ->begin(), GlobalPQ->end(), Query3PQ_ComparatorMinStaticObjects);
 						// we need to resize the vector at size K
-						GlobalPQ.resize(k);
-						minimum = GlobalPQ[k-1];
-					}else if( GlobalPQ.size() == k ){
+						//GlobalPQ->resize(k);
+						vector<Query3PQ> *destVec;
+						// find out which vector is the currently used one
+						if( GlobalPQ1.size() == GlobalResultsLimit ){
+							destVec = &GlobalPQ2;
+						}else{
+							destVec = &GlobalPQ1;
+						}
+						// find the Top-K similar pairs from the current results
+						for( int cC=0, sz=GlobalResultsLimit, kk=k; cC<sz && kk>0; cC++){
+							if( BFS_query3(GlobalPQ->at(cC).idA,GlobalPQ->at(cC).idB, h) > h )
+								continue;
+							kk--;
+							destVec->push_back(GlobalPQ->at(cC));
+						}
+						// clear the current queue since we will add the new Top-K elements later
+						GlobalPQ->clear();
+						minimum = destVec->at(destVec->size()-1);
+						GlobalPQ = destVec;
+					}/*else if( GlobalPQ.size() == k ){
 						if( !Query3PQ_ComparatorStaticObjects(minimum, GlobalPQ.back()) ){
 							std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorMinStaticObjects);
 							minimum = GlobalPQ[GlobalPQ.size()-1];
 						}
-					}
+					}*/
 				}
 			}// end of checking pairs for current person
 		}// end of cluster's people
@@ -2147,10 +2167,10 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	// is below the H-hops needed by the query.
 
 	// we need to clear the vector from the less-than-Top-K elements
-	std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorMinStaticObjects);
+	std::stable_sort(GlobalPQ->begin(), GlobalPQ->end(), Query3PQ_ComparatorMinStaticObjects);
 	std::stringstream ss;
-	for ( int i=0,sz=GlobalPQ.size(); i<k && i<sz; i++) {
-		ss << GlobalPQ[i].idA << "|" << GlobalPQ[i].idB << " ";
+	for ( int i=0,sz=GlobalPQ->size(); i<k && i<sz; i++) {
+		ss << GlobalPQ->at(i).idA << "|" << GlobalPQ->at(i).idB << " ";
 	}
 	Answers[qid] = ss.str();
 }
@@ -2776,8 +2796,7 @@ int main(int argc, char** argv) {
 
 	// start workers for Q3
 	lp_threadpool_startjobs(threadpool3);
-	synchronize_complete(threadpool3);
-	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+;
 
 	/*
 	if(isLarge==1){
@@ -2786,14 +2805,18 @@ int main(int argc, char** argv) {
 	}
 	*/
 
+	// start workers for Q4
+	lp_threadpool_startjobs(threadpool4);
+
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
 	pthread_join(*commentsThread, NULL);
 	free(commentsThread);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
-	// start workers for Q4
-	lp_threadpool_startjobs(threadpool4);
+	synchronize_complete(threadpool3);
+	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
 	synchronize_complete(threadpool4);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
