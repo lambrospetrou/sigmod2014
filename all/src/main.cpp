@@ -50,8 +50,8 @@ using std::tr1::hash;
 
 #define NUM_CORES 8
 #define Q4_JOB_WORKERS 3
-#define Q4_THREADPOOOL_THREADS 4
-#define Q3_THREADPOOOL_THREADS 8
+#define Q4_THREADPOOOL_THREADS NUM_CORES>>1
+#define Q3_THREADPOOOL_THREADS NUM_CORES>>1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES
 
@@ -392,6 +392,8 @@ long N_PERSONS = 0;
 long N_TAGS = 0;
 long N_SUBGRAPHS = 0;
 long N_QUERIES = 0;
+
+long long time_global_start;
 
 lp_threadpool *threadpool3;
 lp_threadpool *threadpool4;
@@ -2269,12 +2271,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			persons.push_back(Query4PersonStruct(personId, 0, 0, 0.0));
 		}
 	}
-/*
-	if(isLarge){
-		fprintf(stderr, "4[%lu]", persons.size());
-		return;
-	}
-*/
+
 	// now I want to create a new graph containing only the required edges
 	// to speed up the shortest paths between all of them
 	//LPSparseArrayGeneric<vector<long> > newGraph;
@@ -2430,9 +2427,9 @@ void *readCommentsAsyncWorker(void *args){
 pthread_t* readCommentsAsync(){
 	pthread_t* cThread = (pthread_t*)malloc(sizeof(pthread_t));
 	pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
-	//cpu_set_t mask;
-	//CPU_ZERO(&mask);
-	//CPU_SET( 1 , &mask);
+	cpu_set_t mask;
+	CPU_ZERO(&mask);
+	CPU_SET( 0 , &mask);
 	return cThread;
 }
 
@@ -2716,7 +2713,7 @@ int main(int argc, char** argv) {
 	char msg[100];
 	_initializations();
 
-	long long time_global_start = getTime();
+	time_global_start = getTime();
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
@@ -2822,8 +2819,6 @@ int main(int argc, char** argv) {
 
 	synchronize_complete(threadpool4);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
-
 
 
 #ifdef DEBUGGING
