@@ -51,10 +51,11 @@ using std::tr1::hash;
 
 #define NUM_CORES 8
 #define Q4_JOB_WORKERS 3
-#define Q4_THREADPOOOL_THREADS NUM_CORES
+#define Q4_THREADPOOOL_THREADS 1
 #define Q3_THREADPOOOL_THREADS NUM_CORES
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES
+#define Q_JOB_WORKERS NUM_CORES
 
 #define COMMENTS_WORKERS NUM_CORES
 
@@ -407,6 +408,7 @@ long N_QUERIES = 0;
 
 long long time_global_start;
 
+lp_threadpool *threadpool;
 lp_threadpool *threadpool3;
 lp_threadpool *threadpool4;
 
@@ -2358,7 +2360,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}
 	}
 
-	fprintf(stderr, "all persons [%d] [%.6f]secs\n", persons.size(), (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "all persons [%d] [%.6f]secs\n", persons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
@@ -2413,7 +2415,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	free(visitedPersons);
 	free(visited);
 
-	fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// we have the new subgraph structure and each sub-component with its persons
 	// now we have to sort the people in each component in descending order according to the
@@ -2423,7 +2425,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	}
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
-	fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
@@ -2481,16 +2483,11 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				continue;
 			}
 			localResults.push_back(Query4SubNode(gd_real,cPerson, i));
-			// update (lower) the local maximum distance
-			/*
-			if( localMaximumGeodesicDistance > gd_real ){
-				localMaximumGeodesicDistance = gd_real;
-			}
-			*/
 			if( localResults.size() == LocalResultsLimit ){
 				// we should sort the results and keep only the K values
 				std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 				localResults.resize(k);
+				localMaximumGeodesicDistance = localResults.back().geodesic;
 			}
 		}// end of this subgraph
 		// process the local results in order to push them into the global results
@@ -2515,7 +2512,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	free(GeodesicDistanceVisited);
 
-	fprintf(stderr, "all processing [%d] [%.6f]secs\n",  globalResults.size(), (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "all processing [%d] [%.6f]secs\n",  globalResults.size(), (getTime()-time_global_start)/1000000.0);
 
 	// we now just have to return the K persons with the highest centrality
 	std::stable_sort(globalResults.begin(), globalResults.end(), Query4PersonStructPredicate);
@@ -2842,7 +2839,8 @@ void readQueries(char *queriesFile) {
 			qwstruct->name = placeName;
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
-			lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+			//lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
 		}
@@ -2861,7 +2859,8 @@ void readQueries(char *queriesFile) {
 			qwstruct->tag = tagName;
 			qwstruct->tag_sz = tag_sz;
 			qwstruct->qid = qid;
-			lp_threadpool_addjob_nolock(threadpool4,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
+			//lp_threadpool_addjob_nolock(threadpool4,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
 			// TODO - add the asked Tag into the set
 			Query4Tags->insert(TrieFind(TagToIndex, tagName, tag_sz)->realId);
@@ -2919,8 +2918,9 @@ int main(int argc, char** argv) {
 	readTags(inputDir);
 
 	// HERE WE READ THE QUERIES IN ORDER TO DETERMINE WHICH TAGS ARE REQUIRED BY THE QUERIES
-	threadpool3 = lp_threadpool_init( Q3_THREADPOOOL_THREADS, NUM_CORES);
-	threadpool4 = lp_threadpool_init( Q4_THREADPOOOL_THREADS, NUM_CORES);
+	//threadpool3 = lp_threadpool_init( Q3_THREADPOOOL_THREADS, NUM_CORES);
+	//threadpool4 = lp_threadpool_init( Q4_THREADPOOOL_THREADS, NUM_CORES);
+	threadpool = lp_threadpool_init( Q_JOB_WORKERS, NUM_CORES);
 	Query4Tags = new unordered_set<long>();
 	readQueries(queryFile);
 	///////////////////////////////////
@@ -2976,17 +2976,23 @@ int main(int argc, char** argv) {
 
 	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
+	lp_threadpool_startjobs(threadpool);
+
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
 	pthread_join(*commentsThread, NULL);
 	free(commentsThread);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
+	synchronize_complete(threadpool);
+	fprintf(stderr,"query 3_4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+/*
 	// start workers for Q3
 	lp_threadpool_startjobs(threadpool3);
 	synchronize_complete(threadpool3);
 	fprintf(stderr,"query 3 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
+*/
 
 	/*
 	if(isLarge==1){
@@ -2995,11 +3001,12 @@ int main(int argc, char** argv) {
 	}
 	*/
 
+	/*
 	// start workers for Q4
 	lp_threadpool_startjobs(threadpool4);
 	synchronize_complete(threadpool4);
 	fprintf(stderr,"query 4 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
+	*/
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
