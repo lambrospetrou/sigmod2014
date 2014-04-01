@@ -50,14 +50,16 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 8
+#define Q_JOB_WORKERS NUM_CORES-1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
-#define Q_JOB_WORKERS NUM_CORES
 // not used now
+/*
 #define Q4_JOB_WORKERS 3
 #define Q4_THREADPOOOL_THREADS 1
 #define Q3_THREADPOOOL_THREADS NUM_CORES
 #define COMMENTS_WORKERS NUM_CORES
+*/
 /////////
 
 #define NUM_THREADS WORKER_THREADS+1
@@ -2269,6 +2271,8 @@ bool Query4SubNodePredicate(const Query4SubNode& d1,const Query4SubNode& d2) {
 }
 
 long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue){
+	//fprintf(stderr, "c[%d-%d] ", cPerson, localMaximumGeodesicDistance);
+
 	if( localMaximumGeodesicDistance == -1 )
 		localMaximumGeodesicDistance = LONG_MAX;
 	long gd=0;
@@ -2302,23 +2306,14 @@ long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long loca
 }
 
 struct Q4PersonStructNode{
-	Q4PersonStructNode(long i, long e, long ee){
+	Q4PersonStructNode(long i, long e){
 		id=i;
 		edges=e;
-		edgesLevel2 = ee;
 	}
 	long id;
 	long edges;
-	long edgesLevel2;
 };
 bool DescendingQ4PersonStructPredicate(const Q4PersonStructNode& d1,
-		const Q4PersonStructNode& d2) {
-	// sort in descending order by edges
-	if( d1.edgesLevel2 == d2.edgesLevel2 )
-		return d1.id <= d2.id;
-	return d1.edgesLevel2 > d2.edgesLevel2;
-}
-bool DescendingQ4PersonStructLevel1Predicate(const Q4PersonStructNode& d1,
 		const Q4PersonStructNode& d2) {
 	// sort in descending order by edges
 	if( d1.edges == d2.edges )
@@ -2356,7 +2351,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	char *visited = (char*)malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
 	int currentComponent = -1;
-	long edgesLevel2=0;
 	for( long i=0,sz=persons.size(); i<sz; i++ ){
 		// TODO - HERE IN THIS CLUSTERING BFS WE CAN CALCULATE A VALUE FOR EACH CLUSTER THAT
 		// WILL PROBABLY SPEED UP THE PROCESS LATER - i.e. a sample of centrality for the starting node of each cluster
@@ -2387,7 +2381,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					Q[qSize++] = cAdjacent;
 					visited[cAdjacent] = 1;
 				}
-				// add this new neighbor edges into the level 2 accumulator
 			}
 			// we can now add the current person into the components map
 			SubgraphsPersons[currentComponent].push_back(Q4PersonStructNode(cPerson, newGraph[cPerson].size()));
@@ -2403,18 +2396,18 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	// we have the new subgraph structure and each sub-component with its persons
 	// now we have to sort the people in each component in descending order according to the
 	// number of reachable people at level 1 - direct connections
-
+/*
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end(), DescendingQ4PersonStructPredicate);
 	}
-
+*/
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
 	fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
-	unsigned int LocalResultsLimit = (100 < k) ? k+100 : 100;
+	unsigned int LocalResultsLimit = (10 < k) ? k+10 : 10;
 	vector<Query4PersonStruct> globalResults;
 	vector<Query4SubNode> localResults;
 
@@ -2449,15 +2442,18 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// calculate the geodesic prediction for the current person
 			long cPerson = currentSubgraph.at(j).id;
 			long cEdgesSz = currentSubgraph.at(j).edges;
+			// TODO - CHECK LEVEL2
 			// predict the lower bound for the geodesic distance
 			long gd_prediction = cEdgesSz + ((r_p-cEdgesSz)<<1);
 			// check with the cluster minimum Geodesic Distance if we should proceed
 			// and exit if the estimated prediction is higher than our results so far
 			// since our prediction is the lower bound of the geodesic distance for this node
+			/*
 			if( gd_prediction > localMaximumGeodesicDistance && localResults.size() >= (unsigned int)k ){
 				//break;
 				continue;
 			}
+			*/
 
 			// calculate the geodesic distance for the current person since he passed our prediction checks
 			// REMEMBER TO PASS THE LOCAL MAXIMUM INTO THE CALCULATION FUNCTION IN ORDER
@@ -2467,7 +2463,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				gd_real = calculateGeodesicDistance(newGraph, cPerson, localMaximumGeodesicDistance, GeodesicDistanceVisited, GeodesicBFSQueue);
 			else
 				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited, GeodesicBFSQueue);
-			if( gd_real > localMaximumGeodesicDistance ){
+			if( gd_real > localMaximumGeodesicDistance && localResults.size() >= (unsigned int)k ){
 				// the geodesic distance was higher than our limit
 				continue;
 			}
@@ -2596,6 +2592,10 @@ void *readCommentsAsyncWorker(void *args){
 	postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//fprintf(stderr, "finished processing comments\n");
+
+	lp_threadpool_addWorker(threadpool);
+
+	//pthread_exit(0);
 	return 0;
 }
 
@@ -2655,6 +2655,8 @@ void* Query2MasterWorkerFunction(void *args) {
 		pthread_join(worker2_threads[i], NULL);
 	}
 	_destroyQ2Index(NULL);
+
+	fprintf(stderr, "query 2 finished [%.8f]s\n", (getTime()-time_global_start)/1000000.0);
 
 	pthread_exit(NULL);
 	return 0;
@@ -2857,7 +2859,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool4,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
-			if( !isLarge )
+			//if( !isLarge )
 				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
 			// TODO - add the asked Tag into the set
@@ -2882,11 +2884,11 @@ int main(int argc, char** argv) {
 	queryFile = argv[2];
 
 	// make the master thread to run only on the 1st core
-	/*
+
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
 	CPU_SET( 0 , &mask);
-	*/
+
 
 	// MAKE GLOBAL INITIALIZATIONS
 	char msg[100];
@@ -2982,10 +2984,10 @@ int main(int argc, char** argv) {
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
 	pthread_join(*commentsThread, NULL);
 	free(commentsThread);
-
+/*
 	if( isLarge )
 		fprintf(stdout, "finished comments and queries 3,4 [%.6d]secs\n", (getTime()-time_global_start)/1000000.0);
-
+*/
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 

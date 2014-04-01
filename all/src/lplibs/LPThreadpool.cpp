@@ -47,23 +47,36 @@ void lp_threadpool_startjobs(lp_threadpool* pool){
 		pool->initialSleepThreads[i] = 0;
 	}
 	*/
-	//cpu_set_t mask;
+	cpu_set_t mask;
 	int threads = pool->nthreads;
-	pthread_t *worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * threads);
+	pthread_t *worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * pool->ncores);
 	for (int i = 0; i < threads; i++) {
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
-		/*
 		CPU_ZERO(&mask);
 		CPU_SET( (i % pool->ncores) , &mask);
 		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
 			fprintf(stderr, "lp_threadpool_startjobs::Error setting thread affinity tid[%d]\n", i);
+		}else{
+			//fprintf(stderr, "lp_threadpool_startjobs::success setting thread affinity tid[%d]\n", i);
 		}
-		*/
 	}
 	pool->worker_threads = worker_threads;
 }
 
+void lp_threadpool_addWorker(lp_threadpool *pool){
+	int nextThread = pool->nthreads++;
+	pthread_create(&pool->worker_threads[nextThread], NULL,reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
+	//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+	cpu_set_t mask;
+	CPU_ZERO(&mask);
+	CPU_SET((nextThread % pool->ncores), &mask);
+	if (pthread_setaffinity_np(pool->worker_threads[nextThread], sizeof(cpu_set_t), &mask)!= 0) {
+		fprintf(stderr,"lp_threadpool_startjobs::Error setting thread affinity tid[%d]\n", nextThread);
+	}else{
+		fprintf(stderr,"lp_threadpool_startjobs::success setting thread affinity tid[%d]\n", nextThread);
+	}
+}
 
 void inline lp_threadpool_addjob( lp_threadpool* pool, void *(*func)(int, void *), void* args ){
 
