@@ -685,32 +685,33 @@ long calculateAndAssignSubgraphs() {
 	char *visited = (char*) malloc(N_PERSONS);
 	memset(visited, 0, N_PERSONS);
 	long currentSubgraph = 0;
+	long *Q = (long*)malloc(sizeof(long)*N_PERSONS);
 	for (long cPerson = 0, sz = N_PERSONS; cPerson < sz; cPerson++) {
 		if (visited[cPerson] != 0)
 			continue;
 		// start BFS from the current person
-		deque<long> Q;
-		Q.push_back(cPerson);
+		//deque<long> Q;
+		//Q.push_back(cPerson);
 		long qIndex = 0;
 		long qSize = 1;
+		long neighbor;
+		Q[0] = cPerson;
 		while (qIndex < qSize) {
-			long cP = Q.front();
-			Q.pop_front();
+			long cP = Q[qIndex];
 			qIndex++;
 			// set as visited
-			visited[cP] = 2;
+			//visited[cP] = 2;
 			// this person belongs to the current subgraph being traversed
 			Persons[cP].subgraphNumber = currentSubgraph;
 			long *adjacents = Persons[cP].adjacentPersonsIds;
 			for (long cAdjacent = 0, szz = Persons[cP].adjacents;
 					cAdjacent < szz; cAdjacent++) {
-				long neighbor = adjacents[cAdjacent];
+				neighbor = adjacents[cAdjacent];
 				// check if not visited nor added
 				if (visited[neighbor] == 0) {
 					// set as added
 					visited[neighbor] = 1;
-					Q.push_back(neighbor);
-					qSize++;
+					Q[qSize++] = neighbor;
 				}
 			}
 		}
