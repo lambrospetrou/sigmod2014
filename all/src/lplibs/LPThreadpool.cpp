@@ -74,7 +74,7 @@ void lp_threadpool_addWorker(lp_threadpool *pool){
 	if (pthread_setaffinity_np(pool->worker_threads[nextThread], sizeof(cpu_set_t), &mask)!= 0) {
 		fprintf(stderr,"lp_threadpool_startjobs::Error setting thread affinity tid[%d]\n", nextThread);
 	}else{
-		fprintf(stderr,"lp_threadpool_startjobs::success setting thread affinity tid[%d]\n", nextThread);
+		//fprintf(stderr,"lp_threadpool_startjobs::success setting thread affinity tid[%d]\n", nextThread);
 	}
 }
 

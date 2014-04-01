@@ -2354,8 +2354,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	//fprintf(stderr, "all persons [%d] [%.6f]secs\n", persons.size(), (getTime()-time_global_start)/1000000.0);
 
-	//vector<MSTEdge> *mstEdges = new vector<MSTEdge>();
-
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
 	vector<vector<Q4PersonStructNode> > SubgraphsPersons;
@@ -2394,14 +2392,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					Q[qSize++] = cAdjacent;
 					visited[cAdjacent] = 1;
 				}
-
-				// add this edge into the set of edges that will be used in the MST algorithm
-				/*
-				if( cPerson < cAdjacent ){
-					mstEdges->push_back(MSTEdge(cPerson, cAdjacent,
-							MIN(szz, Persons[cAdjacent].adjacents)));
-				}
-				*/
 			}
 			// we can now add the current person into the components map
 			SubgraphsPersons[currentComponent].push_back(Q4PersonStructNode(cPerson, newGraph[cPerson].size()));
@@ -2413,6 +2403,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	//free(visited); - WE USE THIS BELOW IN THE GEODESIC CALCULATION
 
 	fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
+	if( isLarge ){
+		fprintf(stdout, "clustered new graph [%d] [%d] [%.6f]secs\n", SubgraphsPersons.size(), persons.size(), (getTime()-time_global_start)/1000000.0);
+	}
 
 	// we have the new subgraph structure and each sub-component with its persons
 	// now we have to sort the people in each component in descending order according to the
@@ -2435,9 +2428,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	long localMaximumGeodesicDistance=INT_MAX;
 	Query4PersonStruct lastGlobalMinimumCentrality;
 
-	//char *GeodesicDistanceVisited = (char*)malloc(N_PERSONS);
 	char *GeodesicDistanceVisited = visited;
-	//long *GeodesicBFSQueue = (long*)malloc(N_PERSONS*sizeof(long));
 	long *GeodesicBFSQueue = Q;
 
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
@@ -2449,33 +2440,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		if( r_p == 0 ){
 			continue;
 		}
-
-		////////////////////////////////////////////////////////////////////////////////
-
-		// create a spanning tree for this cluster - in reversed order
-		// every node makes his adjacents to direct him - VERY BAD OPTIMIZATION
-		long spanned = 1;
-		long *parents = (long*)malloc(sizeof(long)*N_PERSONS);
-		memset(visited, -1, N_PERSONS);
-		Q[0] = currentSubgraph.at(0).id;
-		parents[currentSubgraph.at(0).id] = -1; // root
-		visited[Q[0]] = 1;
-		long qIndex=0,qSize=1, cPerson, *edges, cAdjacent;
-		while(qIndex<qSize && spanned < currentSubgraph.size()){
-			cPerson = Q[qIndex++];
-			edges = Persons[cPerson].adjacentPersonsIds;
-			for( long e=0,esz=Persons[cPerson].adjacents; e<esz; e++ ){
-				cAdjacent = edges[e];
-				if( visited[cAdjacent] == 0 ){
-					Q[qSize++] = cAdjacent;
-					spanned++;
-					parents[cAdjacent] = cPerson;
-				}
-			}
-		}
-
-
-		////////////////////////////////////////////////////////////////////////////////
 
 		// carefully set the localMaximumGeodesicDistance - in order to take into account the global centrality too
 		// this way we will filter out whole clusters ( if hopefully we have many clusters )
@@ -2556,7 +2520,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		ss << globalResults[i].person << " ";
 		//fprintf(stderr, "res: %d\n", globalResults[i].person);
 	}
-	//Answers4.push_back(ss.str());
 	//printf("%s\n", ss.str().c_str());
 	Answers[qid] = ss.str();
 }
@@ -2971,12 +2934,7 @@ int main(int argc, char** argv) {
 	Query4Tags = new unordered_set<long>();
 	readQueries(queryFile);
 	///////////////////////////////////
-/*
-	// now we can start executing QUERY 1 - we use WORKER_THREADS
-	pthread_join(*commentsThread, NULL);
-	executeQuery1Jobs(Q1_WORKER_THREADS);
-	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-*/
+
 
 #ifdef DEBUGGING
 	long time_persons_end = getTime();
