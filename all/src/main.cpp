@@ -2354,7 +2354,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	//fprintf(stderr, "all persons [%d] [%.6f]secs\n", persons.size(), (getTime()-time_global_start)/1000000.0);
 
-	vector<MSTEdge> *mstEdges = new vector<MSTEdge>();
+	//vector<MSTEdge> *mstEdges = new vector<MSTEdge>();
 
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
@@ -2396,11 +2396,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 
 				// add this edge into the set of edges that will be used in the MST algorithm
+				/*
 				if( cPerson < cAdjacent ){
 					mstEdges->push_back(MSTEdge(cPerson, cAdjacent,
 							MIN(szz, Persons[cAdjacent].adjacents)));
 				}
-
+				*/
 			}
 			// we can now add the current person into the components map
 			SubgraphsPersons[currentComponent].push_back(Q4PersonStructNode(cPerson, newGraph[cPerson].size()));
@@ -2424,73 +2425,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
 	fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
-
-
-	/**
-	 * KRUSKAL ALGORITHM
-	 */
-
-	// sort the edges of the kruskal algorithm in descending order according to the minimum neighbors of each
-	std::stable_sort(mstEdges->begin(), mstEdges->end(), DescendingMSTEdgePredicate);
-	// create the union sets
-	LPDisjointSetForest<long> *forest = new LPDisjointSetForest<long>();
-	for( long i=0,sz=persons.size(); i<sz; i++ ){
-		forest->createSet(persons[i]);
-	}
-	MAP_LONG_VecL mstTree;
-	long remainingVertices = persons.size();
-	MSTEdge *cEdge;
-	long minimum=INT_MAX, minimumId=-1;
-	for( long i=0,sz=mstEdges->size(); i<sz; i++ ){
-		cEdge = mstEdges->at(i);
-		if( forest->findSet(cEdge->idA) != forest->findSet(cEdge->idB) ){
-			// TODO - we have a new edge to add to our spanning tree
-			// TODO - ADD THE EDGE
-			mstTree[cEdge->idA].push_back(cEdge->idB);
-			if( mstTree[cEdge->idA].size() < minimum ){
-				minimum = mstTree[cEdge->idA].size();
-				minimumId = cEdge->idA;
-			}
-
-			forest->uniteSets(cEdge->idA, cEdge->idB);
-			remainingVertices++;
-			// we found all vertices
-			if( remainingVertices == 0 )
-				break;
-		}
-	}
-	// we now have our spanning tree and we can start from the highest weight edge
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
@@ -2516,6 +2450,33 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			continue;
 		}
 
+		////////////////////////////////////////////////////////////////////////////////
+
+		// create a spanning tree for this cluster - in reversed order
+		// every node makes his adjacents to direct him - VERY BAD OPTIMIZATION
+		long spanned = 1;
+		long *parents = (long*)malloc(sizeof(long)*N_PERSONS);
+		memset(visited, -1, N_PERSONS);
+		Q[0] = currentSubgraph.at(0).id;
+		parents[currentSubgraph.at(0).id] = -1; // root
+		visited[Q[0]] = 1;
+		long qIndex=0,qSize=1, cPerson, *edges, cAdjacent;
+		while(qIndex<qSize && spanned < currentSubgraph.size()){
+			cPerson = Q[qIndex++];
+			edges = Persons[cPerson].adjacentPersonsIds;
+			for( long e=0,esz=Persons[cPerson].adjacents; e<esz; e++ ){
+				cAdjacent = edges[e];
+				if( visited[cAdjacent] == 0 ){
+					Q[qSize++] = cAdjacent;
+					spanned++;
+					parents[cAdjacent] = cPerson;
+				}
+			}
+		}
+
+
+		////////////////////////////////////////////////////////////////////////////////
+
 		// carefully set the localMaximumGeodesicDistance - in order to take into account the global centrality too
 		// this way we will filter out whole clusters ( if hopefully we have many clusters )
 		if( globalResults.size() < (unsigned int)k )
@@ -2529,7 +2490,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// calculate the geodesic prediction for the current person
 			long cPerson = currentSubgraph.at(j).id;
 			long cEdgesSz = currentSubgraph.at(j).edges;
-			// TODO - CHECK LEVEL2
 			// predict the lower bound for the geodesic distance
 			long gd_prediction = cEdgesSz + ((r_p-cEdgesSz)<<1);
 			// check with the cluster minimum Geodesic Distance if we should proceed
