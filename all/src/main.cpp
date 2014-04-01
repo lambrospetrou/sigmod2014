@@ -34,8 +34,6 @@
 #include "lplibs/LPSparseArrayGeneric.h"
 #include "lplibs/atomic_ops_if.h"
 
-#include "lplibs/pruned_landmark_labeling.h"
-
 using namespace std;
 using std::tr1::unordered_map;
 using std::tr1::unordered_set;
@@ -52,7 +50,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define Q_JOB_WORKERS NUM_CORES-1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
@@ -411,8 +409,6 @@ lp_threadpool *threadpool;
 lp_threadpool *threadpool3;
 lp_threadpool *threadpool4;
 
-PrunedLandmarkLabeling<> ShortestPathIndex;
-
 PersonStruct *Persons;
 TrieNode *PlacesToId;
 vector<PlaceNodeStruct*> Places;
@@ -428,7 +424,8 @@ vector<string> Answers;
 
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
-FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
+//FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
+FINAL_MAP_LONG_LONG *CommentsPersonToPerson[NUM_CORES];
 FINAL_MAP_INT_INT *CommentToPerson;
 
 FINAL_MAP_INT_INT *PlaceIdToIndex;
@@ -720,6 +717,7 @@ long calculateAndAssignSubgraphs() {
 		currentSubgraph++;
 	}
 	free(visited);
+	free(Q);
 #ifdef DEBUGGING
 	char msg[100];
 	sprintf(msg, "Total subgraphs: %ld", currentSubgraph);
@@ -882,29 +880,23 @@ void readComments(char* inputDir) {
 #endif
 
 	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+}
 
-	///////////////////////////////////////////////////////////////////
-	// READ THE COMMENT REPLIES TO HAVE THE COMMENTS FOR EACH PERSON
-	///////////////////////////////////////////////////////////////////
-	path[0] = '\0';
-	strcat(path, inputDir);
-	strcat(path, CSV_COMMENT_REPLY_OF_COMMENT);
-	input = fopen(path, "r");
-	if (input == NULL) {
-		printErr("could not open comment_replyOf_Comment.csv!");
-	}
-	buffer = getFileBytes(input, &lSize);
+struct FileWorker{
+	char *buffer;
+	char *start;
+	char *end;
+	int tid;
+};
 
-#ifdef DEBUGGING
-	comments=0;
-#endif
-
-	CommentsPersonToPerson = new FINAL_MAP_LONG_LONG();
-
+void *CommRepCommWorkerFunction(void* args){
+	FileWorker *qws = (FileWorker*)args;
+	int tid = qws->tid;
 	long idA,idB, personA, personB;
 	// process the whole file in memory
-	startLine = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
-	EndOfFile = buffer + lSize;
+	char *startLine = qws->start;
+	char *EndOfFile = qws->end;
+	char *idDivisor, *lineEnd;
 	while (startLine < EndOfFile) {
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
@@ -912,8 +904,6 @@ void readComments(char* inputDir) {
 		*lineEnd = '\0';
 		idA = getStrAsLong(startLine);
 		idB = getStrAsLong(idDivisor+1);
-		//idA = getStrAsLong(startLine, idDivisor-startLine);
-		//idB = getStrAsLong(idDivisor+1, lineEnd-idDivisor-1);
 		startLine = lineEnd + 1;
 
 		// get the person ids for each comment id
@@ -923,22 +913,71 @@ void readComments(char* inputDir) {
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
 			long key_a_b = CantorPairingFunction(personA, personB);
-			++(*CommentsPersonToPerson)[key_a_b];
+			++(*(CommentsPersonToPerson[tid]))[key_a_b];
 		}
 		//printf("%ld %ld\n", idA, idB);
 
-#ifdef DEBUGGING
-		comments++;
-#endif
 	}
+	free(qws);
+	return 0;
+}
+
+void readCommentReplyOfComment(char* inputDir) {
+	char path[1024];
+	///////////////////////////////////////////////////////////////////
+	// READ THE COMMENT REPLIES TO HAVE THE COMMENTS FOR EACH PERSON
+	///////////////////////////////////////////////////////////////////
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_COMMENT_REPLY_OF_COMMENT);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open comment_replyOf_Comment.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
 	fclose(input);
+
+	// allocate the hashmap for each thread and create a thread that will handle
+	// a portion of the file in parallel
+
+	int commThreads = 1;
+	//int commThreads = NUM_CORES;
+	for( int i=0; i<commThreads; i++ ){
+		CommentsPersonToPerson[i] = new FINAL_MAP_LONG_LONG();
+	}
+
+	long perThreadPortion = lSize / NUM_CORES;
+	// skip the first line
+	char* lastEnd = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
+	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*commThreads);
+	for (int i = 1; i < commThreads; i++) {
+		FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
+		qws->start = lastEnd;
+		lastEnd = lastEnd+perThreadPortion;
+		lastEnd = (char*) memchr(lastEnd, '\n', LONGEST_LINE_READING);
+		qws->end = lastEnd;
+		qws->tid = i;
+		qws->buffer = buffer;
+		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(CommRepCommWorkerFunction), qws );
+		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		// TODO - SET AFFINITY
+	}
+	// the main thread should also execute the last portion of the file
+	FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
+	qws->start = lastEnd;
+	qws->end = buffer + lSize;
+	qws->tid = 0;
+	qws->buffer = buffer;
+	CommRepCommWorkerFunction(qws);
+
+	// wait for them to finish for now since we are reading files at the same time
+	for (int i = 1; i < commThreads; i++) {
+		pthread_join(worker_threads[i], NULL);
+	}
 	free(buffer);
 
-#ifdef DEBUGGING
-	sprintf(msg, "Total replies: %ld", comments);
-	printOut(msg);
-#endif
-
+	fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 void postProcessComments() {
@@ -959,8 +998,8 @@ void postProcessComments() {
 				adjacentId = adjacentIds[cAdjacent];
 				key_a_b = CantorPairingFunction(i, adjacentId);
 				key_b_a = CantorPairingFunction(adjacentId, i);
-				weightAB = (*CommentsPersonToPerson)[key_a_b];
-				weightBA = (*CommentsPersonToPerson)[key_b_a];
+				weightAB = (*(CommentsPersonToPerson[0]))[key_a_b];
+				weightBA = (*(CommentsPersonToPerson[0]))[key_b_a];
 				weights[cAdjacent] = ( weightAB < weightBA ) ? weightAB : weightBA;
 			}
 			long *temp = (long*) malloc(sizeof(long) * (adjacents));
@@ -971,10 +1010,10 @@ void postProcessComments() {
 		}
 	}
 	// since we have all the data needed in arrays we can delete the hash maps
-	CommentToPerson->clear();
 	delete CommentToPerson;
-	CommentsPersonToPerson->clear();
-	delete CommentsPersonToPerson;
+	for( int i=0; i<NUM_CORES; i++ ){
+		delete CommentsPersonToPerson[i];
+	}
 }
 
 
@@ -2598,13 +2637,14 @@ void executeQuery1Jobs(int q1threads){
 void *readCommentsAsyncWorker(void *args){
 	//long time_ = getTime();
 	readComments(inputDir);
+	readCommentReplyOfComment(inputDir);
 	fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//time_ = getTime();
 	postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//fprintf(stderr, "finished processing comments\n");
 
-	lp_threadpool_addWorker(threadpool);
+	//lp_threadpool_addWorker(threadpool);
 
 	//pthread_exit(0);
 	return 0;
@@ -2907,6 +2947,10 @@ int main(int argc, char** argv) {
 
 	time_global_start = getTime();
 
+	threadpool = lp_threadpool_init( Q_JOB_WORKERS, NUM_CORES);
+	//threadpool3 = lp_threadpool_init( Q3_THREADPOOOL_THREADS, NUM_CORES);
+	//threadpool4 = lp_threadpool_init( Q4_THREADPOOOL_THREADS, NUM_CORES);
+
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
 	sprintf(msg, "queries file time: %ld", time_queries_end - time_global_start);
@@ -2921,17 +2965,14 @@ int main(int argc, char** argv) {
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	pthread_t *commentsThread = readCommentsAsync();
-	//readCommentsAsyncWorker(NULL);
+	//pthread_t *commentsThread = readCommentsAsync();
+	readCommentsAsyncWorker(NULL);
 
 
 	// Q4 - we read this first in order to read the queries file now
 	readTags(inputDir);
 
 	// HERE WE READ THE QUERIES IN ORDER TO DETERMINE WHICH TAGS ARE REQUIRED BY THE QUERIES
-	//threadpool3 = lp_threadpool_init( Q3_THREADPOOOL_THREADS, NUM_CORES);
-	//threadpool4 = lp_threadpool_init( Q4_THREADPOOOL_THREADS, NUM_CORES);
-	threadpool = lp_threadpool_init( Q_JOB_WORKERS, NUM_CORES);
 	Query4Tags = new unordered_set<long>();
 	readQueries(queryFile);
 	///////////////////////////////////
@@ -2988,8 +3029,8 @@ int main(int argc, char** argv) {
 	fprintf(stderr,"query 3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
 	// now we can start executing QUERY 1 - we use WORKER_THREADS
-	pthread_join(*commentsThread, NULL);
-	free(commentsThread);
+	//pthread_join(*commentsThread, NULL);
+	//free(commentsThread);
 /*
 	if( isLarge )
 		fprintf(stdout, "finished comments and queries 3,4 [%.6d]secs\n", (getTime()-time_global_start)/1000000.0);

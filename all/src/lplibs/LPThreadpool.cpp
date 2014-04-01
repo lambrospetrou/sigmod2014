@@ -49,7 +49,8 @@ void lp_threadpool_startjobs(lp_threadpool* pool){
 	*/
 	cpu_set_t mask;
 	int threads = pool->nthreads;
-	pthread_t *worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * pool->ncores);
+	//pthread_t *worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * pool->ncores);
+	pthread_t *worker_threads = pool->worker_threads;
 	for (int i = 0; i < threads; i++) {
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
@@ -61,7 +62,7 @@ void lp_threadpool_startjobs(lp_threadpool* pool){
 			//fprintf(stderr, "lp_threadpool_startjobs::success setting thread affinity tid[%d]\n", i);
 		}
 	}
-	pool->worker_threads = worker_threads;
+	//pool->worker_threads = worker_threads;
 }
 
 void lp_threadpool_addWorker(lp_threadpool *pool){
@@ -189,6 +190,8 @@ lp_threadpool* lp_threadpool_init( int threads, int cores ){
 	pool->pending_jobs = 0;
 	pool->jobs_head=0;
 	pool->jobs_tail=0;
+
+	pool->worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * pool->ncores);
 
 	pthread_cond_init( &pool->cond_jobs, NULL );
 	pthread_cond_init( &pool->sleep, NULL );
