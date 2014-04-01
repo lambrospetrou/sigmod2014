@@ -27,6 +27,7 @@
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
 
+#include "lplibs/LPDisjointSetForest.h"
 #include "lplibs/LPBitset.h"
 #include "lplibs/LPThreadpool.h"
 #include "lplibs/LPSparseBitset.h"
@@ -39,6 +40,8 @@ using namespace std;
 using std::tr1::unordered_map;
 using std::tr1::unordered_set;
 using std::tr1::hash;
+
+#define MIN(x,y) ( (x)<=(y) ? (x) : (y) )
 
 //#define DEBUGGING 1
 #define FILE_VBUF_SIZE 1<<20
@@ -2313,6 +2316,22 @@ bool DescendingQ4PersonStructPredicate(const Q4PersonStructNode& d1,
 	return d1.edges > d2.edges;
 }
 
+struct MSTEdge{
+	MSTEdge(long a, long b, int w){
+		idA = a;
+		idB = b;
+		weight = w;
+	}
+	long idA;
+	long idB;
+	int weight;
+};
+bool DescendingMSTEdgePredicate(const MSTEdge& d1,
+		const MSTEdge& d2) {
+	// sort in descending order by edges
+	return d1.weight >= d2.weight;
+}
+
 void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
 
@@ -2334,6 +2353,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	}
 
 	//fprintf(stderr, "all persons [%d] [%.6f]secs\n", persons.size(), (getTime()-time_global_start)/1000000.0);
+
+	vector<MSTEdge> *mstEdges = new vector<MSTEdge>();
 
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
@@ -2373,6 +2394,13 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					Q[qSize++] = cAdjacent;
 					visited[cAdjacent] = 1;
 				}
+
+				// add this edge into the set of edges that will be used in the MST algorithm
+				if( cPerson < cAdjacent ){
+					mstEdges->push_back(MSTEdge(cPerson, cAdjacent,
+							MIN(szz, Persons[cAdjacent].adjacents)));
+				}
+
 			}
 			// we can now add the current person into the components map
 			SubgraphsPersons[currentComponent].push_back(Q4PersonStructNode(cPerson, newGraph[cPerson].size()));
@@ -2396,6 +2424,73 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
 	fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
+
+
+	/**
+	 * KRUSKAL ALGORITHM
+	 */
+
+	// sort the edges of the kruskal algorithm in descending order according to the minimum neighbors of each
+	std::stable_sort(mstEdges->begin(), mstEdges->end(), DescendingMSTEdgePredicate);
+	// create the union sets
+	LPDisjointSetForest<long> *forest = new LPDisjointSetForest<long>();
+	for( long i=0,sz=persons.size(); i<sz; i++ ){
+		forest->createSet(persons[i]);
+	}
+	MAP_LONG_VecL mstTree;
+	long remainingVertices = persons.size();
+	MSTEdge *cEdge;
+	long minimum=INT_MAX, minimumId=-1;
+	for( long i=0,sz=mstEdges->size(); i<sz; i++ ){
+		cEdge = mstEdges->at(i);
+		if( forest->findSet(cEdge->idA) != forest->findSet(cEdge->idB) ){
+			// TODO - we have a new edge to add to our spanning tree
+			// TODO - ADD THE EDGE
+			mstTree[cEdge->idA].push_back(cEdge->idB);
+			if( mstTree[cEdge->idA].size() < minimum ){
+				minimum = mstTree[cEdge->idA].size();
+				minimumId = cEdge->idA;
+			}
+
+			forest->uniteSets(cEdge->idA, cEdge->idB);
+			remainingVertices++;
+			// we found all vertices
+			if( remainingVertices == 0 )
+				break;
+		}
+	}
+	// we now have our spanning tree and we can start from the highest weight edge
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;

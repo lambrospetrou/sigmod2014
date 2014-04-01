@@ -215,7 +215,8 @@ void LPDisjointSetForest<T>::createSet(const T& newValue){
 // make the set given in arguments a set on its own
 template<class T>
 void LPDisjointSetForest<T>::makeSet( const T& value ){
-	Set** found = forest.search(value);
+	//Set** found = forest.search(value);
+	Set** found = forest[value];
 	if( !found ){
 		cout << "\nThere is no set with the passed in value in Disjoint-Set-Forest!" << endl;
 		return 0;
