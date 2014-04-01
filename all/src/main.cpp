@@ -53,13 +53,6 @@ using std::tr1::hash;
 #define Q_JOB_WORKERS NUM_CORES-1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
-// not used now
-/*
-#define Q4_JOB_WORKERS 3
-#define Q4_THREADPOOOL_THREADS 1
-#define Q3_THREADPOOOL_THREADS NUM_CORES
-#define COMMENTS_WORKERS NUM_CORES
-*/
 /////////
 
 #define NUM_THREADS WORKER_THREADS+1
@@ -477,7 +470,6 @@ void mergeCommentsWeights(int *weights, long a[], long low, long mid,
 	long i = low, j = mid + 1, k = low;
 
 	while (i <= mid && j <= high) {
-		//if (weights[i] <= weights[j]){
 		if (weights[i] >= weights[j]) {
 			b[k] = a[i];
 			bWeights[k] = weights[i];
