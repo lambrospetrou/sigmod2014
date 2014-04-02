@@ -39,6 +39,7 @@ using std::tr1::unordered_map;
 using std::tr1::unordered_set;
 using std::tr1::hash;
 
+
 #define MIN(x,y) ( (x)<=(y) ? (x) : (y) )
 
 //#define DEBUGGING 1
