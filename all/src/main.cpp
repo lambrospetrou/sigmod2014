@@ -2554,7 +2554,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			continue;
 		}
 
-
+/*
 		// we will do this algorithm only on large components
 		if( r_p > 1000 ){
 
@@ -2572,7 +2572,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 			continue;
 		}
-
+*/
 
 
 

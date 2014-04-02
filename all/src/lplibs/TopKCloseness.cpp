@@ -207,7 +207,7 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 		D = std::min(D, 2 * minMax);
 
 		// STEP 11-12 - calculate p_
-		threshold = (result.at(k).distance / (1.0*samples)) + 2*f_l*D;
+		threshold = (result.at(k).distance / (1.0*samples)) + D/2;// + 2*f_l*D;
 		p_ = 0;
 		memset(currentE, 0, N_PERSONS);
 		/*
