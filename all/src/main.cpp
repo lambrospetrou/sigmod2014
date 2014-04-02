@@ -2966,7 +2966,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool4,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
-			if( !isLarge )
+			//if( !isLarge )
 				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
 			// TODO - add the asked Tag into the set
@@ -3095,8 +3095,9 @@ int main(int argc, char** argv) {
 	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 
-	if( isLarge )
-		fprintf(stdout, "everything finished 3,4 [%.6d]secs\n", (getTime()-time_global_start)/1000000.0);
+	//if( isLarge )
+		//fprintf(stdout, "everything finished 3,4 [%.6d]secs\n", (getTime()-time_global_start)/1000000.0);
+
 
 
 #ifdef DEBUGGING
