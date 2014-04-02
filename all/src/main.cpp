@@ -51,7 +51,7 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 4
-#define Q_JOB_WORKERS NUM_CORES-1
+#define Q_JOB_WORKERS NUM_CORES
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
 #define COMM_WORKERS NUM_CORES
@@ -437,7 +437,7 @@ vector<string> Answers;
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
 //FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
-FINAL_MAP_LONG_LONG *CommentsPersonToPerson[NUM_CORES];
+FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
 FINAL_MAP_INT_INT *CommentToPerson;
 
 FINAL_MAP_INT_INT *PlaceIdToIndex;
@@ -924,7 +924,7 @@ void *CommRepCommWorkerFunction(void* args){
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
 			long key_a_b = CantorPairingFunction(personA, personB);
-			++(*(CommentsPersonToPerson[tid]))[key_a_b];
+			++CommentsPersonToPerson[tid][key_a_b];
 		}
 		//printf("%ld %ld\n", idA, idB);
 
@@ -953,19 +953,18 @@ void readCommentReplyOfComment(char* inputDir) {
 	// a portion of the file in parallel
 
 	int commThreads = COMM_WORKERS;
-	for( int i=0; i<commThreads; i++ ){
-		CommentsPersonToPerson[i] = new FINAL_MAP_LONG_LONG();
-	}
+	CommentsPersonToPerson = new FINAL_MAP_LONG_LONG[COMM_WORKERS]();
 
 	long perThreadPortion = lSize / commThreads;
 	// skip the first line
 	char* lastEnd = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*commThreads);
+	FileWorker *qws;
 	for (int i = 1; i < commThreads; i++) {
-		FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
+		qws = (FileWorker*)malloc(sizeof(FileWorker));
 		qws->start = lastEnd;
 		lastEnd = lastEnd+perThreadPortion;
-		lastEnd = (char*) memchr(lastEnd, '\n', LONGEST_LINE_READING);
+		lastEnd = (char*) memchr(lastEnd, '\n', LONGEST_LINE_READING)+1;
 		qws->end = lastEnd;
 		qws->tid = i;
 		qws->buffer = buffer;
@@ -974,7 +973,7 @@ void readCommentReplyOfComment(char* inputDir) {
 		// TODO - SET AFFINITY
 	}
 	// the main thread should also execute the last portion of the file
-	FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
+	qws = (FileWorker*)malloc(sizeof(FileWorker));
 	qws->start = lastEnd;
 	qws->end = buffer + lSize;
 	qws->tid = 0;
@@ -985,14 +984,16 @@ void readCommentReplyOfComment(char* inputDir) {
 	for (int i = 1; i < commThreads; i++) {
 		pthread_join(worker_threads[i], NULL);
 	}
+	free(worker_threads);
 	free(buffer);
 
-	fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 
 void *PostProcessingCommentsJob(void *args){
 	QWorker *qws = (QWorker*)args;
+	//fprintf(stderr, "s[%d] e[%d] t[%d]\n", qws->start, qws->end, qws->tid);
 	long *temp = (long*) malloc(sizeof(long) * (N_PERSONS));
 	int *tempWeights = (int*) malloc(sizeof(int) * (N_PERSONS));
 	long adjacentId;
@@ -1001,31 +1002,35 @@ void *PostProcessingCommentsJob(void *args){
 	long weightAB;
 	long weightBA;
 	for (long i = qws->start, sz = qws->end; i < sz; i++) {
-		if (Persons[i].adjacents > 0) {
-			long adjacents = Persons[i].adjacents;
+		long adjacents = Persons[i].adjacents;
+		if (adjacents > 0) {
 			long *adjacentIds = Persons[i].adjacentPersonsIds;
 			int *weights = (int*) malloc(sizeof(int) * adjacents);
 			Persons[i].adjacentPersonWeightsSorted = weights;
-			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz;
-					cAdjacent++) {
+			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz; cAdjacent++) {
 				adjacentId = adjacentIds[cAdjacent];
 				key_a_b = CantorPairingFunction(i, adjacentId);
 				key_b_a = CantorPairingFunction(adjacentId, i);
 				weightAB = weightBA = 0;
-				for (int i = 0; i < COMM_WORKERS; i++) {
-					weightAB += (*(CommentsPersonToPerson[i]))[key_a_b];
-					weightBA += (*(CommentsPersonToPerson[i]))[key_b_a];
+				for (int j = 0; j < COMM_WORKERS; j++) {
+					if( CommentsPersonToPerson[j].find(key_a_b) != CommentsPersonToPerson[j].end() )
+						weightAB += CommentsPersonToPerson[j][key_a_b];
+					if( CommentsPersonToPerson[j].find(key_b_a) != CommentsPersonToPerson[j].end() )
+						weightBA += CommentsPersonToPerson[j][key_b_a];
 				}
-				weights[cAdjacent] =
-						(weightAB < weightBA) ? weightAB : weightBA;
+				weights[cAdjacent] = (weightAB < weightBA) ? weightAB : weightBA;
 			}
-			mergesortComments(weights, adjacentIds, 0, adjacents - 1, temp,
-					tempWeights);
+			if( adjacents > 1 )
+				mergesortComments(weights, adjacentIds, 0, adjacents - 1, temp,	tempWeights);
 		}
+
 	}
+	//fprintf(stderr, "finished s[%d] e[%d] t[%d]\n", qws->start, qws->end, qws->tid);
 	free(temp);
 	free(tempWeights);
-	free(args);
+	free(qws);
+	pthread_exit(0);
+	return 0;
 }
 
 void postProcessComments() {
@@ -1035,8 +1040,9 @@ void postProcessComments() {
 	int untilThreadJobsPlus = N_PERSONS % COMM_WORKERS;
 	int lastEnd = 0;
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*COMM_WORKERS);
-	for (int i = 1; i < COMM_WORKERS; i++) {
-		QWorker *qws = (QWorker*)malloc(sizeof(QWorker));
+	QWorker *qws;
+	for (int i = 0; i < COMM_WORKERS; i++) {
+		qws = (QWorker*)malloc(sizeof(QWorker));
 		qws->start = lastEnd;
 		if( i < untilThreadJobsPlus ){
 			lastEnd += perThreadJobs + 1;
@@ -1048,19 +1054,21 @@ void postProcessComments() {
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(PostProcessingCommentsJob), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
 	}
-	QWorker *qws = (QWorker*)malloc(sizeof(QWorker));
+	/*
+	qws = (QWorker*)malloc(sizeof(QWorker));
 	qws->start = lastEnd;
 	qws->end = N_PERSONS;
+	qws->tid = COMM_WORKERS-1;
 	PostProcessingCommentsJob(qws);
+	*/
 	// wait for them to finish for now since we are reading files at the same time
-	for (int i = 1; i < COMM_WORKERS; i++) {
+	for (int i = 0; i < COMM_WORKERS; i++) {
 		pthread_join(worker_threads[i], NULL);
 	}
+	free(worker_threads);
 	// since we have all the data needed in arrays we can delete the hash maps
 	delete CommentToPerson;
-	for( int i=0; i<NUM_CORES; i++ ){
-		delete CommentsPersonToPerson[i];
-	}
+	delete[] CommentsPersonToPerson;
 }
 
 
@@ -2652,8 +2660,9 @@ void executeQuery1Jobs(int q1threads){
 	int untilThreadJobsPlus = totalJobs % q1threads;
 	int lastEnd = 0;
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*q1threads);
+	QWorker *qws;
 	for (int i = 0; i < q1threads; i++) {
-		QWorker *qws = (QWorker*)malloc(sizeof(QWorker));
+		qws = (QWorker*)malloc(sizeof(QWorker));
 		qws->start = lastEnd;
 		if( i < untilThreadJobsPlus ){
 			lastEnd += perThreadJobs + 1;
@@ -2669,9 +2678,11 @@ void executeQuery1Jobs(int q1threads){
 	for (int i = 0; i < q1threads; i++) {
 		pthread_join(worker_threads[i], NULL);
 	}
+	free(worker_threads);
 	// free all the memory being held for the comments
 	for( long i=0; i<N_PERSONS; i++ ){
-		free(Persons[i].adjacentPersonWeightsSorted);
+		if( Persons[i].adjacents > 0 )
+			free(Persons[i].adjacentPersonWeightsSorted);
 		Persons[i].adjacentPersonWeightsSorted = 0;
 	}
 }
@@ -2679,25 +2690,26 @@ void executeQuery1Jobs(int q1threads){
 void *readCommentsAsyncWorker(void *args){
 	//long time_ = getTime();
 	readComments(inputDir);
-	readCommentReplyOfComment(inputDir);
-	fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//readCommentReplyOfComment(inputDir);
+	//fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//time_ = getTime();
-	postProcessComments();
-	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//postProcessComments();
+	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//fprintf(stderr, "finished processing comments\n");
 
 	//lp_threadpool_addWorker(threadpool);
 
-	//pthread_exit(0);
 	return 0;
 }
 
 pthread_t* readCommentsAsync(){
 	pthread_t* cThread = (pthread_t*)malloc(sizeof(pthread_t));
 	pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
+
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
 	CPU_SET( NUM_CORES-1 , &mask);
+
 	return cThread;
 }
 
@@ -3007,9 +3019,8 @@ int main(int argc, char** argv) {
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	//pthread_t *commentsThread = readCommentsAsync();
-	readCommentsAsyncWorker(NULL);
-
+	pthread_t *commentsThread = readCommentsAsync();
+	//readCommentsAsyncWorker(NULL);
 
 	// Q4 - we read this first in order to read the queries file now
 	readTags(inputDir);
@@ -3065,20 +3076,29 @@ int main(int argc, char** argv) {
 
 	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
-	lp_threadpool_startjobs(threadpool);
+	//fprintf(stdout, "before starting jobs in threadpool!!!");
 
+	lp_threadpool_startjobs(threadpool);
 	synchronize_complete(threadpool);
 	fprintf(stderr,"query 3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
-	// now we can start executing QUERY 1 - we use WORKER_THREADS
-	//pthread_join(*commentsThread, NULL);
-	//free(commentsThread);
+
+	// now we can start executing QUERY 1
+	pthread_join(*commentsThread, NULL);
+	free(commentsThread);
+	readCommentReplyOfComment(inputDir);
+	fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	postProcessComments();
+	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	executeQuery1Jobs(Q1_WORKER_THREADS);
+	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+
 /*
 	if( isLarge )
 		fprintf(stdout, "finished comments and queries 3,4 [%.6d]secs\n", (getTime()-time_global_start)/1000000.0);
 */
-	executeQuery1Jobs(Q1_WORKER_THREADS);
-	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
 
 /*
 	// start workers for Q3

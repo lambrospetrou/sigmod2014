@@ -42,11 +42,6 @@ void lp_threadpool_addjob_nolock( lp_threadpool* pool, void *(*func)(int, void *
 
 // signals sleeping workers to wake up
 void lp_threadpool_startjobs(lp_threadpool* pool){
-	/*
-	for( int i=0,sz=pool->nthreads; i<sz; i++ ){
-		pool->initialSleepThreads[i] = 0;
-	}
-	*/
 	cpu_set_t mask;
 	int threads = pool->nthreads;
 	//pthread_t *worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * pool->ncores);
@@ -169,7 +164,7 @@ void* lp_tpworker_thread( void* _pool ){
 
 	// _tid-1 because tids are from 1-NUM_THREADS
 	// the value will change when the startJobs function will be called
-	while( pool->initialSleepThreads[_tid-1]!=0 ){}
+	//while( pool->initialSleepThreads[_tid-1]!=0 ){}
 
     lp_tpjob njob;
 
@@ -200,8 +195,10 @@ lp_threadpool* lp_threadpool_init( int threads, int cores ){
 	pthread_mutex_init( &pool->mutex_pool, NULL );
 
 	// to block the thread from entering the work loop at first start
+	/*
 	pool->initialSleepThreads = (char*)malloc(threads);
 	memset(pool->initialSleepThreads, 0, threads);
+	*/
 
 	pthread_barrier_init( &pool->pool_barrier, NULL, 25 );
 
