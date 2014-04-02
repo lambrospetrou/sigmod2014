@@ -50,10 +50,10 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define Q_JOB_WORKERS NUM_CORES-2
 #define Q1_WORKER_THREADS NUM_CORES
-#define Q2_WORKER_THREADS NUM_CORES-3
+#define Q2_WORKER_THREADS NUM_CORES-2
 #define COMM_WORKERS 2
 /////////
 
@@ -960,6 +960,7 @@ void readCommentReplyOfComment(char* inputDir) {
 	char* lastEnd = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*commThreads);
 	FileWorker *qws;
+	cpu_set_t mask;
 	for (int i = 1; i < commThreads; i++) {
 		qws = (FileWorker*)malloc(sizeof(FileWorker));
 		qws->start = lastEnd;
@@ -971,6 +972,13 @@ void readCommentReplyOfComment(char* inputDir) {
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(CommRepCommWorkerFunction), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
 		// TODO - SET AFFINITY
+		/*
+		CPU_ZERO(&mask);
+		CPU_SET( (NUM_CORES - (i+1))-1 , &mask); // NUM_CORES - i = the thread that runs asynchronously
+		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
+			fprintf(stderr, "postProcessComments::Error setting thread affinity tid[%d]\n", i);
+		}
+		*/
 	}
 	// the main thread should also execute the last portion of the file
 	qws = (FileWorker*)malloc(sizeof(FileWorker));
@@ -1041,6 +1049,7 @@ void postProcessComments() {
 	int lastEnd = 0;
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*COMM_WORKERS);
 	QWorker *qws;
+	cpu_set_t mask;
 	for (int i = 0; i < COMM_WORKERS-1; i++) {
 		qws = (QWorker*)malloc(sizeof(QWorker));
 		qws->start = lastEnd;
@@ -1053,6 +1062,13 @@ void postProcessComments() {
 		qws->tid = i;
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(PostProcessingCommentsJob), qws );
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		/*
+		CPU_ZERO(&mask);
+		CPU_SET( (NUM_CORES - (i+1))-1 , &mask); // NUM_CORES - 1 = the thread that runs asynchronously
+		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
+			fprintf(stderr, "postProcessComments::Error setting thread affinity tid[%d]\n", i);
+		}
+		*/
 	}
 	qws = (QWorker*)malloc(sizeof(QWorker));
 	qws->start = lastEnd;
@@ -2435,7 +2451,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
-	vector<vector<Q4PersonStructNode> > SubgraphsPersons;
+	vector<vector<long> > SubgraphsPersons;
 	long *Q = (long*)malloc(N_PERSONS*sizeof(long));
 	long qIndex=0,qSize=1;
 	char *visited = (char*)malloc(N_PERSONS);
@@ -2454,7 +2470,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		qIndex=0;
 		qSize=1;
 		Q[0] = cPerson;
-		SubgraphsPersons.push_back(vector<Q4PersonStructNode>());
+		SubgraphsPersons.push_back(vector<long>());
 		while(qIndex<qSize){
 			cPerson = Q[qIndex];
 			qIndex++;
@@ -2474,7 +2490,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 			}
 			// we can now add the current person into the components map
-			SubgraphsPersons[currentComponent].push_back(Q4PersonStructNode(cPerson, newGraph[cPerson].size()));
+			SubgraphsPersons[currentComponent].push_back(cPerson);
 		}// end of BFS for current subgraph
 	}
 
@@ -2513,7 +2529,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		// for each cluster
-		vector<Q4PersonStructNode> &currentSubgraph = SubgraphsPersons[i];
+		vector<long> &currentSubgraph = SubgraphsPersons[i];
 		long r_p = currentSubgraph.size()-1;
 
 		// when only one person is in the graph skip it
@@ -2530,22 +2546,11 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
 
 		localResults.clear();
-		long cPerson, cEdgesSz, gd_prediction, gd_real;
+		long cPerson, gd_real;
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			// calculate the geodesic prediction for the current person
-			cPerson = currentSubgraph.at(j).id;
-			cEdgesSz = currentSubgraph.at(j).edges;
-			// predict the lower bound for the geodesic distance
-			//gd_prediction = cEdgesSz + ((r_p-cEdgesSz)<<1);
-			// check with the cluster minimum Geodesic Distance if we should proceed
-			// and exit if the estimated prediction is higher than our results so far
-			// since our prediction is the lower bound of the geodesic distance for this node
-/*
-			if( gd_prediction > localMaximumGeodesicDistance && localResults.size() >= (unsigned int)k ){
-				break;
-				//continue;
-			}
-*/
+			cPerson = currentSubgraph.at(j);
+
 			// calculate the geodesic distance for the current person since he passed our prediction checks
 			// REMEMBER TO PASS THE LOCAL MAXIMUM INTO THE CALCULATION FUNCTION IN ORDER
 			// TO EXIT EARLY WHILE CALCULATING THE DISTANCE FOR THIS NODE
@@ -2655,6 +2660,7 @@ void executeQuery1Jobs(int q1threads){
 	int lastEnd = 0;
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*q1threads);
 	QWorker *qws;
+	cpu_set_t mask;
 	for (int i = 0; i < q1threads; i++) {
 		qws = (QWorker*)malloc(sizeof(QWorker));
 		qws->start = lastEnd;
@@ -2665,6 +2671,8 @@ void executeQuery1Jobs(int q1threads){
 		}
 		qws->end = lastEnd;
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query1WorkerFunction), qws );
+		CPU_ZERO(&mask);
+		CPU_SET( i % q1threads , &mask);
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
 	}
 
@@ -2687,7 +2695,7 @@ void *readCommentsAsyncWorker(void *args){
 	fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
-	fprintf(stderr, "finished processing comments\n");
+	//fprintf(stderr, "finished processing comments\n");
 
 	lp_threadpool_addWorker(threadpool);
 	lp_threadpool_addWorker(threadpool);
