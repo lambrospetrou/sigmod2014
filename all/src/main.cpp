@@ -54,6 +54,7 @@ using std::tr1::hash;
 #define Q_JOB_WORKERS NUM_CORES-1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
+#define COMM_WORKERS NUM_CORES
 /////////
 
 #define NUM_THREADS WORKER_THREADS+1
@@ -354,7 +355,18 @@ bool Q2ListPredicate(TagSubStruct* a, TagSubStruct* b) {
 	return a->people.size() >= b->people.size();
 }
 
+struct QWorker{
+	int start;
+	int end;
+	int tid;
+};
 
+struct FileWorker{
+	char *buffer;
+	char *start;
+	char *end;
+	int tid;
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 // FUNCTION PROTOTYPES
@@ -852,13 +864,17 @@ void readComments(char* inputDir) {
 	char *EndOfFile = buffer + lSize;
 	char *lineEnd;
 	char *idDivisor;
+	long idA,idB;
 	while (startLine < EndOfFile) {
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
-		*idDivisor = '\0';
-		*lineEnd = '\0';
-		long idA = getStrAsLong(startLine);
-		long idB = getStrAsLong(idDivisor + 1);
+		//*idDivisor = '\0';
+		//*lineEnd = '\0';
+		//idA = getStrAsLong(startLine);
+		//idB = getStrAsLong(idDivisor + 1);
+
+		idA = atol(startLine);
+		idB = atol(idDivisor+1);
 
 		// set the person to each comment
 		(*CommentToPerson)[idA] = idB;
@@ -882,13 +898,6 @@ void readComments(char* inputDir) {
 	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
-struct FileWorker{
-	char *buffer;
-	char *start;
-	char *end;
-	int tid;
-};
-
 void *CommRepCommWorkerFunction(void* args){
 	FileWorker *qws = (FileWorker*)args;
 	int tid = qws->tid;
@@ -900,10 +909,12 @@ void *CommRepCommWorkerFunction(void* args){
 	while (startLine < EndOfFile) {
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
-		*idDivisor = '\0';
-		*lineEnd = '\0';
-		idA = getStrAsLong(startLine);
-		idB = getStrAsLong(idDivisor+1);
+		//*idDivisor = '\0';
+		//*lineEnd = '\0';
+		//idA = getStrAsLong(startLine);
+		//idB = getStrAsLong(idDivisor+1);
+		idA = atol(startLine);
+		idB = atol(idDivisor+1);
 		startLine = lineEnd + 1;
 
 		// get the person ids for each comment id
@@ -941,13 +952,12 @@ void readCommentReplyOfComment(char* inputDir) {
 	// allocate the hashmap for each thread and create a thread that will handle
 	// a portion of the file in parallel
 
-	int commThreads = 1;
-	//int commThreads = NUM_CORES;
+	int commThreads = COMM_WORKERS;
 	for( int i=0; i<commThreads; i++ ){
 		CommentsPersonToPerson[i] = new FINAL_MAP_LONG_LONG();
 	}
 
-	long perThreadPortion = lSize / NUM_CORES;
+	long perThreadPortion = lSize / commThreads;
 	// skip the first line
 	char* lastEnd = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
 	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*commThreads);
@@ -980,34 +990,71 @@ void readCommentReplyOfComment(char* inputDir) {
 	fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
-void postProcessComments() {
-	// for each person we will get each neighbor and put our edge weight in an array
-	// to speed up look up time and then sort them
+
+void *PostProcessingCommentsJob(void *args){
+	QWorker *qws = (QWorker*)args;
+	long *temp = (long*) malloc(sizeof(long) * (N_PERSONS));
+	int *tempWeights = (int*) malloc(sizeof(int) * (N_PERSONS));
 	long adjacentId;
 	long key_a_b;
 	long key_b_a;
 	long weightAB;
 	long weightBA;
-	for (long i = 0, sz = N_PERSONS; i < sz; i++) {
+	for (long i = qws->start, sz = qws->end; i < sz; i++) {
 		if (Persons[i].adjacents > 0) {
 			long adjacents = Persons[i].adjacents;
 			long *adjacentIds = Persons[i].adjacentPersonsIds;
 			int *weights = (int*) malloc(sizeof(int) * adjacents);
 			Persons[i].adjacentPersonWeightsSorted = weights;
-			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz; cAdjacent++) {
+			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz;
+					cAdjacent++) {
 				adjacentId = adjacentIds[cAdjacent];
 				key_a_b = CantorPairingFunction(i, adjacentId);
 				key_b_a = CantorPairingFunction(adjacentId, i);
-				weightAB = (*(CommentsPersonToPerson[0]))[key_a_b];
-				weightBA = (*(CommentsPersonToPerson[0]))[key_b_a];
-				weights[cAdjacent] = ( weightAB < weightBA ) ? weightAB : weightBA;
+				weightAB = weightBA = 0;
+				for (int i = 0; i < COMM_WORKERS; i++) {
+					weightAB += (*(CommentsPersonToPerson[i]))[key_a_b];
+					weightBA += (*(CommentsPersonToPerson[i]))[key_b_a];
+				}
+				weights[cAdjacent] =
+						(weightAB < weightBA) ? weightAB : weightBA;
 			}
-			long *temp = (long*) malloc(sizeof(long) * (adjacents));
-			int *tempWeights = (int*) malloc(sizeof(int) * (adjacents));
-			mergesortComments(weights, adjacentIds, 0, adjacents - 1, temp,	tempWeights);
-			free(temp);
-			free(tempWeights);
+			mergesortComments(weights, adjacentIds, 0, adjacents - 1, temp,
+					tempWeights);
 		}
+	}
+	free(temp);
+	free(tempWeights);
+	free(args);
+}
+
+void postProcessComments() {
+	// for each person we will get each neighbor and put our edge weight in an array
+	// to speed up look up time and then sort them
+	int perThreadJobs = N_PERSONS / COMM_WORKERS;
+	int untilThreadJobsPlus = N_PERSONS % COMM_WORKERS;
+	int lastEnd = 0;
+	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*COMM_WORKERS);
+	for (int i = 1; i < COMM_WORKERS; i++) {
+		QWorker *qws = (QWorker*)malloc(sizeof(QWorker));
+		qws->start = lastEnd;
+		if( i < untilThreadJobsPlus ){
+			lastEnd += perThreadJobs + 1;
+		}else{
+			lastEnd += perThreadJobs;
+		}
+		qws->end = lastEnd;
+		qws->tid = i;
+		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(PostProcessingCommentsJob), qws );
+		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+	}
+	QWorker *qws = (QWorker*)malloc(sizeof(QWorker));
+	qws->start = lastEnd;
+	qws->end = N_PERSONS;
+	PostProcessingCommentsJob(qws);
+	// wait for them to finish for now since we are reading files at the same time
+	for (int i = 1; i < COMM_WORKERS; i++) {
+		pthread_join(worker_threads[i], NULL);
 	}
 	// since we have all the data needed in arrays we can delete the hash maps
 	delete CommentToPerson;
@@ -2442,10 +2489,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	free(visitedPersons);
 	//free(visited); - WE USE THIS BELOW IN THE GEODESIC CALCULATION
 
-	fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
-	if( isLarge ){
-		fprintf(stdout, "clustered new graph [%d] [%d] [%.6f]secs\n", SubgraphsPersons.size(), persons.size(), (getTime()-time_global_start)/1000000.0);
-	}
+	//fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
+	//if( isLarge ){
+		//fprintf(stdout, "clustered new graph [%d] [%d] [%.6f]secs\n", SubgraphsPersons.size(), persons.size(), (getTime()-time_global_start)/1000000.0);
+	//}
 
 	// we have the new subgraph structure and each sub-component with its persons
 	// now we have to sort the people in each component in descending order according to the
@@ -2457,11 +2504,11 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 */
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
-	fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
-	unsigned int LocalResultsLimit = (10 < k) ? k+10 : 10;
+	unsigned int LocalResultsLimit = (100 < k) ? k+100 : 100;
 	vector<Query4PersonStruct> globalResults;
 	vector<Query4SubNode> localResults;
 
@@ -2572,11 +2619,6 @@ struct Query1WorkerStruct {
 	int p2;
 	int x;
 	long qid;
-};
-
-struct QWorker{
-	int start;
-	int end;
 };
 
 vector<Query1WorkerStruct*> Query1Structs;
