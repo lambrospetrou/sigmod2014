@@ -33,6 +33,7 @@
 #include "lplibs/LPSparseBitset.h"
 #include "lplibs/LPSparseArrayGeneric.h"
 #include "lplibs/atomic_ops_if.h"
+#include "lplibs/TopKCloseness.h"
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -51,7 +52,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define Q_JOB_WORKERS NUM_CORES-2
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
@@ -368,6 +369,21 @@ struct FileWorker{
 	char *end;
 	int tid;
 };
+
+/*
+struct EstimationNode{
+	EstimationNode(){
+		personId = -1;
+		distance = -1;
+	}
+	EstimationNode(long id, long d){
+		personId = id;
+		distance = d;
+	}
+	long personId;
+	long distance;
+};
+*/
 
 ///////////////////////////////////////////////////////////////////////////////
 // FUNCTION PROTOTYPES
@@ -2537,6 +2553,28 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		if( r_p == 0 ){
 			continue;
 		}
+
+
+		// we will do this algorithm only on large components
+		if( r_p > 1000 ){
+
+			vector<pair<long,long> > results = TopRank2(persons, newGraph, k, N_PERSONS);
+			//fprintf(stderr, "results [%d]\n", results.size());
+
+			// add all the local results or K results - whichever is less into the global results
+			for (long lr = 0, lsz = results.size(), res = k; lr < lsz && res > 0; lr++, res--) {
+				double cCentrality = ((r_p * r_p) * 1.0) / results[lr].second;
+				if (cCentrality < lastGlobalMinimumCentrality.centrality)
+					break;
+				globalResults.push_back(
+						Query4PersonStruct(results[lr].first,
+								currentSubgraph.size() - 1, r_p, cCentrality));
+			}
+			continue;
+		}
+
+
+
 
 		// carefully set the localMaximumGeodesicDistance - in order to take into account the global centrality too
 		// this way we will filter out whole clusters ( if hopefully we have many clusters )
