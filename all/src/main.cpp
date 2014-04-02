@@ -50,7 +50,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define Q_JOB_WORKERS NUM_CORES-2
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-3
@@ -2490,11 +2490,11 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	// we have the new subgraph structure and each sub-component with its persons
 	// now we have to sort the people in each component in descending order according to the
 	// number of reachable people at level 1 - direct connections
-
+/*
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end(), DescendingQ4PersonStructPredicate);
 	}
-
+*/
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
 	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
