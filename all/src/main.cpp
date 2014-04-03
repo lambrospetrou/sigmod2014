@@ -52,8 +52,8 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
-#define Q_JOB_WORKERS NUM_CORES-2
+#define NUM_CORES 8
+#define Q_JOB_WORKERS 1//NUM_CORES-2
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
 #define COMM_WORKERS 2
@@ -2554,11 +2554,11 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			continue;
 		}
 
-/*
+
 		// we will do this algorithm only on large components
 		if( r_p > 1000 ){
 
-			vector<pair<long,long> > results = TopRank2(persons, newGraph, k, N_PERSONS);
+			vector<pair<long,long> > results = TopRank2(currentSubgraph, newGraph, k, N_PERSONS);
 			//fprintf(stderr, "results [%d]\n", results.size());
 
 			// add all the local results or K results - whichever is less into the global results
@@ -2572,7 +2572,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 			continue;
 		}
-*/
+
 
 
 

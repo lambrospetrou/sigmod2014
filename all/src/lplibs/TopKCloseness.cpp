@@ -11,6 +11,7 @@
 #include <limits.h>
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 
 #include <vector>
 #include <tr1/unordered_map>
@@ -78,8 +79,8 @@ long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, char* vis
 
 double F_l( long N_PERSONS, int samples_l ){
 	int a_ = 3; // constant number > 1
-	//return a_ * sqrt(log2(N_PERSONS)/(samples_l*1.0));
-	return 1;
+	return a_ * sqrt(log2(N_PERSONS)/(samples_l*1.0));
+	//return 1;
 }
 
 /**
@@ -91,7 +92,7 @@ void Rand( std::vector<long> &persons, MAP_LONG_VecL &graph, int k, long N_PERSO
 
 	long qIndex, qSize, cAdjacent, depth;
 
-	long minMax=LONG_MAX, currentMax;
+	char minMax=100, currentMax;
 
 	// TODO - CHOOSE PEOPLE IN RANDOM - NOW I CHOOSE THEM AS THEY APPEARED IN THE
 	// FORUM HAS MEMBER FILE - persons order
@@ -114,6 +115,11 @@ void Rand( std::vector<long> &persons, MAP_LONG_VecL &graph, int k, long N_PERSO
 
 			depth = visited[cPerson] + 1;
 			std::vector<long> &edges = graph[cPerson];
+
+			if( edges.size() == 0 ){
+				fprintf(stderr, "no edges [%ld]\n", cPerson);
+			}
+
 			for( long e=0,esz=edges.size(); e<esz; e++ ){
 				cAdjacent = edges[e];
 				if( visited[cAdjacent] == -1 ){
@@ -122,6 +128,7 @@ void Rand( std::vector<long> &persons, MAP_LONG_VecL &graph, int k, long N_PERSO
 				}
 			}
 		}
+		//fprintf(stderr, "minMax[%d] currentMax[%d]\n", minMax, currentMax);
 		if( minMax > currentMax )
 			minMax = currentMax;
 	}// end of sampling
@@ -166,9 +173,8 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 	double threshold = (result.at(k).distance / (1.0*samples)) + 2*f_l*D;
 
 	// STEP 4
-	char *previousE = (char*)malloc(N_PERSONS);
 	char *currentE = (char*)malloc(N_PERSONS);
-	memset(previousE, 0, N_PERSONS);
+	memset(currentE, 0, N_PERSONS);
 	long p, p_, q=(long)log2(N_PERSONS);
 	char *temp;
 
@@ -184,7 +190,7 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 	*/
 	for( long i=0,sz=result.size();i<sz; i++ ){
 		if((result[i].distance / (1.0*samples)) <= threshold) {
-			previousE[result[i].personId] = 1;
+			currentE[result[i].personId] = 1;
 			p_++;
 		}
 	}
@@ -207,7 +213,7 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 		D = std::min(D, 2 * minMax);
 
 		// STEP 11-12 - calculate p_
-		threshold = (result.at(k).distance / (1.0*samples)) + D/2;// + 2*f_l*D;
+		threshold = (result.at(k).distance / (1.0*samples)) + 2*f_l*D;
 		p_ = 0;
 		memset(currentE, 0, N_PERSONS);
 		/*
@@ -227,26 +233,36 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 		}
 
 
-		temp = previousE;
-		previousE = currentE;
-		currentE = temp;
-	}while( p-p_ <= q );
+		//temp = previousE;
+		//previousE = currentE;
+		//currentE = temp;
+	}while( p-p_ > q );
 
 	// STEP 14
+	/*
 	for( long i=0,sz=result.size(); i<sz; i++ ){
 		long real_gd = calculateGeodesicDistance(graph, result[i].personId, visited, Q, N_PERSONS);
 		result[i].distance = real_gd;
+	}
+	*/
+
+	vector<EstimationNode> finalRes;
+	for( long i=0; i<N_PERSONS; i++ ){
+		if( currentE[i] == 1 ){
+			long real_gd = calculateGeodesicDistance(graph, i,visited, Q, N_PERSONS);
+			finalRes.push_back(EstimationNode(i, real_gd));
+		}
 	}
 
 	free(PersonCentralityEstimations);
 	free(Q);
 	free(visited);
 
-	std::stable_sort(result.begin(), result.end(), EstimationNodeInc);
-	result.resize( result.size()<(unsigned int)k?result.size():(unsigned int)k );
+	std::stable_sort(finalRes.begin(), finalRes.end(), EstimationNodeInc);
+	finalRes.resize( finalRes.size()<(unsigned int)k?finalRes.size():(unsigned int)k );
 	vector<std::pair<long,long> > final;
 	for( long i=0; i<k; i++ )
-		final.push_back(std::pair<long,long>(result[i].personId, result[i].distance));
+		final.push_back(std::pair<long,long>(finalRes[i].personId, finalRes[i].distance));
 	return final;
 }
 
