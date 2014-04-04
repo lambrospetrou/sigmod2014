@@ -11,12 +11,12 @@
 #include <vector>
 #include <tr1/unordered_map>
 
-
+struct Q4PersonStructNode;
 
 /**
  * http://research.microsoft.com/en-us/people/weic/faw08_centrality.pdf
  */
-std::vector<std::pair<long,long> > TopRank2( std::vector<long> &persons,
+std::vector<std::pair<long,long> > TopRank2( std::vector<Q4PersonStructNode> &persons,
 		std::tr1::unordered_map<long, std::vector<long>, std::tr1::hash<long> > &graph, int k, long N_PERSONS );
 
 #endif /* TOPKCLOSENESS_H_ */

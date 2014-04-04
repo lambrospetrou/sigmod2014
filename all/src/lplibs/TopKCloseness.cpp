@@ -36,6 +36,15 @@ struct EstimationNode{
 	long distance;
 };
 
+struct Q4PersonStructNode{
+	Q4PersonStructNode(long i, long e){
+		id=i;
+		edges=e;
+	}
+	long id;
+	long edges;
+};
+
 bool EstimationNodeInc(const EstimationNode &a, const EstimationNode &b){
 	if( a.distance == b.distance )
 		return a.personId <= b.personId;
@@ -47,7 +56,6 @@ bool EstimationNodeDesc(const EstimationNode &a, const EstimationNode &b){
 		return a.personId <= b.personId;
 	return a.distance >= b.distance;
 }
-
 
 long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, char* visited, long *GeodesicBFSQueue, long N_PERSONS){
 	//fprintf(stderr, "c[%d-%d] ", cPerson, localMaximumGeodesicDistance);
@@ -77,6 +85,8 @@ long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, char* vis
 	return gd;
 }
 
+
+
 double F_l( long N_PERSONS, int samples_l ){
 	int a_ = 2; // constant number > 1
 	return a_ * sqrt(log(N_PERSONS)/(samples_l*1.0));
@@ -86,7 +96,7 @@ double F_l( long N_PERSONS, int samples_l ){
 /**
  * http://jgaa.info/accepted/2004/EppsteinWang2004.8.1.pdf
  */
-void Rand( std::vector<long> &persons, MAP_LONG_VecL &graph, int k, long N_PERSONS,
+void Rand( std::vector<Q4PersonStructNode> &persons, MAP_LONG_VecL &graph, int k, long N_PERSONS,
 		int samples, long *PersonCentralityEstimations, char*visited, long*Q, long *minMaxG,
 		long startRandom, long endRandom, std::vector<EstimationNode>& result){
 
@@ -97,7 +107,7 @@ void Rand( std::vector<long> &persons, MAP_LONG_VecL &graph, int k, long N_PERSO
 	// TODO - CHOOSE PEOPLE IN RANDOM - NOW I CHOOSE THEM AS THEY APPEARED IN THE
 	// FORUM HAS MEMBER FILE - persons order
 	for( long i = startRandom, end=endRandom; i<end; i++ ){
-		long cPerson = persons[i];
+		long cPerson = persons[i].id;
 		memset(visited, -1, N_PERSONS);
 		// do BFS for this sample and update all the distances
 		currentMax=0;
@@ -146,7 +156,7 @@ void Rand( std::vector<long> &persons, MAP_LONG_VecL &graph, int k, long N_PERSO
 /**
  * http://research.microsoft.com/en-us/people/weic/faw08_centrality.pdf
  */
-vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &graph, int k, long N_PERSONS ){
+vector<std::pair<long,long> > TopRank2( vector<Q4PersonStructNode> &persons, MAP_LONG_VecL &graph, int k, long N_PERSONS ){
 
 	long *PersonCentralityEstimations = (long*)malloc(sizeof(long)*N_PERSONS);
 	memset(PersonCentralityEstimations, 0, sizeof(long)*N_PERSONS);
@@ -213,7 +223,7 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 
 		// STEP 11-12 - calculate p_
 		f_l = F_l(N_PERSONS,samples);
-		threshold = (result.at(k).distance / (1.0*samples)) + 0.35 * f_l * D;
+		threshold = (result.at(k).distance / (1.0*samples)) + 1;
 		p_ = 0;
 		memset(currentE, 0, N_PERSONS);
 		/*

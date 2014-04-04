@@ -40,7 +40,6 @@ using std::tr1::unordered_map;
 using std::tr1::unordered_set;
 using std::tr1::hash;
 
-
 #define MIN(x,y) ( (x)<=(y) ? (x) : (y) )
 
 //#define DEBUGGING 1
@@ -2330,7 +2329,6 @@ void *Query4InnerWorker(void *args){
 		long qSize = 1;
 		Q.push_back(QueryBFS(cPerson.person, 0));
 		while (qIndex < qSize) {
-			//QueryBFS &c = Q[qIndex];
 			QueryBFS c = Q.front();
 			Q.pop_front();
 			qIndex++;
@@ -2447,6 +2445,7 @@ bool DescendingQ4PersonStructPredicate(const Q4PersonStructNode& d1,
 void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
 
+	// find all the people we want for this query
 	long tagIndex = TrieFind(TagToIndex, tag, tag_sz)->vIndex;
 	vector<long> persons;
 	vector<long> &forums = Tags[tagIndex]->forums;
@@ -2468,7 +2467,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
-	vector<vector<long> > SubgraphsPersons;
+	vector<vector<Q4PersonStructNode> > SubgraphsPersons;
 	long *Q = (long*)malloc(N_PERSONS*sizeof(long));
 	long qIndex=0,qSize=1;
 	char *visited = (char*)malloc(N_PERSONS);
@@ -2487,7 +2486,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		qIndex=0;
 		qSize=1;
 		Q[0] = cPerson;
-		SubgraphsPersons.push_back(vector<long>());
+		SubgraphsPersons.push_back(vector<Q4PersonStructNode>());
 		while(qIndex<qSize){
 			cPerson = Q[qIndex];
 			qIndex++;
@@ -2507,7 +2506,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 			}
 			// we can now add the current person into the components map
-			SubgraphsPersons[currentComponent].push_back(cPerson);
+			SubgraphsPersons[currentComponent].push_back(Q4PersonStructNode(cPerson, Persons[cPerson].adjacents));
 		}// end of BFS for current subgraph
 	}
 
@@ -2520,21 +2519,19 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		//fprintf(stdout, "clustered new graph [%d] [%d] [%.6f]secs\n", SubgraphsPersons.size(), persons.size(), (getTime()-time_global_start)/1000000.0);
 	//}
 
-	// we have the new subgraph structure and each sub-component with its persons
-	// now we have to sort the people in each component in descending order according to the
-	// number of reachable people at level 1 - direct connections
-/*
+
+	// sort people of each sub-component by number of edges descending order
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end(), DescendingQ4PersonStructPredicate);
 	}
-*/
+
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
 	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
-	unsigned int LocalResultsLimit = (100 < k) ? k+100 : 100;
+	unsigned int LocalResultsLimit = (10 < k) ? k+10 : 10;
 	vector<Query4PersonStruct> globalResults;
 	vector<Query4SubNode> localResults;
 
@@ -2546,7 +2543,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		// for each cluster
-		vector<long> &currentSubgraph = SubgraphsPersons[i];
+		vector<Q4PersonStructNode> &currentSubgraph = SubgraphsPersons[i];
 		long r_p = currentSubgraph.size()-1;
 
 		// when only one person is in the graph skip it
@@ -2556,13 +2553,14 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 
 		// we will do this algorithm only on large components
-		if( currentSubgraph.size() > 2000 ){
+		if (currentSubgraph.size() > 2000) {
 
-			vector<pair<long,long> > results = TopRank2(currentSubgraph, newGraph, k, N_PERSONS);
+			vector<pair<long, long> > results = TopRank2(currentSubgraph, newGraph, k, N_PERSONS);
 			//fprintf(stderr, "results [%d]\n", results.size());
 
 			// add all the local results or K results - whichever is less into the global results
-			for (long lr = 0, lsz = results.size(), res = k; lr < lsz && res > 0; lr++, res--) {
+			for (long lr = 0, lsz = results.size(), res = k;
+					lr < lsz && res > 0; lr++, res--) {
 				double cCentrality = ((r_p * r_p) * 1.0) / results[lr].second;
 				if (cCentrality < lastGlobalMinimumCentrality.centrality)
 					break;
@@ -2588,7 +2586,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		long cPerson, gd_real;
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			// calculate the geodesic prediction for the current person
-			cPerson = currentSubgraph.at(j);
+			cPerson = currentSubgraph.at(j).id;
 
 			// calculate the geodesic distance for the current person since he passed our prediction checks
 			// REMEMBER TO PASS THE LOCAL MAXIMUM INTO THE CALCULATION FUNCTION IN ORDER
@@ -2601,23 +2599,21 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				// the geodesic distance was higher than our limit
 				continue;
 			}
-			// lower the bound we have if possible to reject more edges -
-			// we want the maximum of the top-k and not the minimum
-			/*
-			if( gd_real < localMaximumGeodesicDistance ){
-				localMaximumGeodesicDistance = gd_real;
-			}
-			*/
+
 			localResults.push_back(Query4SubNode(gd_real,cPerson, i));
-			if( localResults.size() == LocalResultsLimit ){
-				// we should sort the results and keep only the K values
+
+			if( localResults.size() > (unsigned int)k ){
+				if( gd_real > localMaximumGeodesicDistance )
+					continue;
+			}
+
+			if( localResults.size() == LocalResultsLimit || localResults.size() == (unsigned int)k ){
+				// find the kth local minimum distance
 				std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 				localResults.resize(k);
 				localMaximumGeodesicDistance = localResults.back().geodesic;
 			}
 		}// end of this subgraph
-		// TODO - process the local results in order to push them into the global results
-		// TODO - maybe avoid sorting
 		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 		localMaximumGeodesicDistance = localResults[ (localResults.size()<(unsigned int)k)?localResults.size()-1:k ].geodesic;
 		// add all the local results or K results - whichever is less into the global results
