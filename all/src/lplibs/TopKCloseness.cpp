@@ -78,8 +78,8 @@ long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, char* vis
 }
 
 double F_l( long N_PERSONS, int samples_l ){
-	int a_ = 3; // constant number > 1
-	return a_ * sqrt(log2(N_PERSONS)/(samples_l*1.0));
+	int a_ = 2; // constant number > 1
+	return a_ * sqrt(log(N_PERSONS)/(samples_l*1.0));
 	//return 1;
 }
 
@@ -156,7 +156,7 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 	// here we have to run the RAND algorithm
 	// choose a value for the initial samples
 	// I choose it to be 4*k since k is small in our cases
-	int samples = k<<6;
+	int samples = k<<5;
 
 	// STEP 1
 	long minMax;
@@ -166,7 +166,7 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 	std::stable_sort(result.begin(), result.end(), EstimationNodeInc);
 
 	// STEP 2
-	double f_l = F_l(N_PERSONS,samples);
+	double f_l = F_l(persons.size(),samples);
 	long D = 2 * minMax;
 
 	// STEP 3
@@ -175,8 +175,7 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 	// STEP 4
 	char *currentE = (char*)malloc(N_PERSONS);
 	memset(currentE, 0, N_PERSONS);
-	long p, p_, q=(long)log2(N_PERSONS);
-	char *temp;
+	long p, p_, q=(long)log2(persons.size());
 
 	// calculate p
 	p_ = 0;
@@ -203,9 +202,9 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 		Rand(persons, graph, k, N_PERSONS, samples,PersonCentralityEstimations,
 				visited, Q, &minMax, samples, samples+q, result);
 		std::stable_sort(result.begin(), result.end(), EstimationNodeInc);
-		if( samples + q > N_PERSONS )
+		if( samples + q > persons.size() )
 			// TODO - exit here
-			samples = N_PERSONS;
+			samples = persons.size();
 		else
 			samples += q;
 
@@ -213,7 +212,8 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 		D = std::min(D, 2 * minMax);
 
 		// STEP 11-12 - calculate p_
-		threshold = (result.at(k).distance / (1.0*samples)) + 2*f_l*D;
+		f_l = F_l(N_PERSONS,samples);
+		threshold = (result.at(k).distance / (1.0*samples)) + 0.35 * f_l * D;
 		p_ = 0;
 		memset(currentE, 0, N_PERSONS);
 		/*
@@ -258,10 +258,12 @@ vector<std::pair<long,long> > TopRank2( vector<long> &persons, MAP_LONG_VecL &gr
 	free(Q);
 	free(visited);
 
+	fprintf(stderr, "final calculations [%d]\n", finalRes.size());
+
 	std::stable_sort(finalRes.begin(), finalRes.end(), EstimationNodeInc);
-	finalRes.resize( finalRes.size()<(unsigned int)k?finalRes.size():(unsigned int)k );
+	finalRes.resize( finalRes.size()<(unsigned int)k?finalRes.size():k );
 	vector<std::pair<long,long> > final;
-	for( long i=0; i<k; i++ )
+	for( long i=0,sz=finalRes.size(); i<sz; i++ )
 		final.push_back(std::pair<long,long>(finalRes[i].personId, finalRes[i].distance));
 	return final;
 }

@@ -53,7 +53,7 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 8
-#define Q_JOB_WORKERS 1//NUM_CORES-2
+#define Q_JOB_WORKERS NUM_CORES-2
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
 #define COMM_WORKERS 2
@@ -1054,7 +1054,7 @@ void *PostProcessingCommentsJob(void *args){
 	free(temp);
 	free(tempWeights);
 	free(qws);
-	pthread_exit(0);
+	//pthread_exit(0);
 	return 0;
 }
 
@@ -2556,7 +2556,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 
 		// we will do this algorithm only on large components
-		if( r_p > 1000 ){
+		if( currentSubgraph.size() > 2000 ){
 
 			vector<pair<long,long> > results = TopRank2(currentSubgraph, newGraph, k, N_PERSONS);
 			//fprintf(stderr, "results [%d]\n", results.size());
@@ -2568,7 +2568,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					break;
 				globalResults.push_back(
 						Query4PersonStruct(results[lr].first,
-								currentSubgraph.size() - 1, r_p, cCentrality));
+								results[lr].second, r_p, cCentrality));
 			}
 			continue;
 		}
@@ -2653,8 +2653,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	}
 	//printf("%s\n", ss.str().c_str());
 	Answers[qid] = ss.str();
-	if( isLarge )
-		fprintf( stdout, "query 4 fin [%.4f]s: [%*s] qid[%d] tid[%d]", ((getTime()-time_global_start)/1000000.0) , tag_sz, tag, qid, tid );
+	/*if( isLarge )
+		fprintf( stdout, "query 4 fin [%.4f]s: [%*s] qid[%d] tid[%d]", ((getTime()-time_global_start)/1000000.0) , tag_sz, tag, qid, tid );*/
 }
 
 //////////////////////////////////////////////////////////////
@@ -2710,8 +2710,13 @@ void executeQuery1Jobs(int q1threads){
 		}
 		qws->end = lastEnd;
 		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query1WorkerFunction), qws );
+		/*
 		CPU_ZERO(&mask);
 		CPU_SET( i % q1threads , &mask);
+		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
+			fprintf(stderr,	"executeQuery1Jobs::Error setting thread affinity tid[%d]\n");
+		}
+		*/
 		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
 	}
 
@@ -2731,9 +2736,9 @@ void executeQuery1Jobs(int q1threads){
 void *readCommentsAsyncWorker(void *args){
 	readComments(inputDir);
 	readCommentReplyOfComment(inputDir);
-	fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	postProcessComments();
-	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//fprintf(stderr, "finished processing comments\n");
 
 	lp_threadpool_addWorker(threadpool);
@@ -2745,11 +2750,14 @@ void *readCommentsAsyncWorker(void *args){
 pthread_t* readCommentsAsync(){
 	pthread_t* cThread = (pthread_t*)malloc(sizeof(pthread_t));
 	pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
-
+/*
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
 	CPU_SET( NUM_CORES-1 , &mask);
-
+	if (pthread_setaffinity_np(*cThread, sizeof(cpu_set_t), &mask) != 0) {
+		fprintf(stderr,	"readCommentsAsync::Error setting thread affinity tid[%d]\n");
+	}
+*/
 	return cThread;
 }
 
@@ -2801,7 +2809,7 @@ void* Query2MasterWorkerFunction(void *args) {
 	}
 	_destroyQ2Index(NULL);
 
-	fprintf(stderr, "query 2 finished [%.8f]s\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "query 2 finished [%.8f]s\n", (getTime()-time_global_start)/1000000.0);
 
 	pthread_exit(NULL);
 	return 0;
@@ -3113,7 +3121,7 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
 	//fprintf(stdout, "before starting jobs in threadpool!!!");
 
@@ -3130,7 +3138,7 @@ int main(int argc, char** argv) {
 	//postProcessComments();
 	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
-	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 
 	//if( isLarge )
