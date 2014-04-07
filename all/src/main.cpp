@@ -2462,9 +2462,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
+	char *GeodesicDistanceVisited = visited;
+	long *GeodesicBFSQueue = Q;
+
+
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
-	unsigned int LocalResultsLimit = (10 < k) ? k+10 : 10;
 	vector<Query4PersonStruct> globalResults;
 	vector<Query4SubNode> localResults;
 
@@ -2472,9 +2475,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	Query4PersonStruct lastGlobalMinimumCentrality;
 
 	double cCentrality;
-
-	char *GeodesicDistanceVisited = visited;
-	long *GeodesicBFSQueue = Q;
 
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		// for each cluster
@@ -2486,29 +2486,92 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			continue;
 		}
 
-/*
-		// we will do this algorithm only on large components
-		if (currentSubgraph.size() > 2000) {
 
-			vector<pair<long, long> > results = TopRank2(currentSubgraph, newGraph, k, N_PERSONS);
-			//fprintf(stderr, "results [%d]\n", results.size());
-
-			// add all the local results or K results - whichever is less into the global results
-			for (long lr = 0, lsz = results.size(), res = k;
-					lr < lsz && res > 0; lr++, res--) {
-				double cCentrality = ((r_p * r_p) * 1.0) / results[lr].second;
-				if (cCentrality < lastGlobalMinimumCentrality.centrality)
-					break;
-				globalResults.push_back(
-						Query4PersonStruct(results[lr].first,
-								results[lr].second, r_p, cCentrality));
+		// find the central nodes in order to start BFS from there
+		unordered_map<long, vector<long> > Parents;
+		memset(visited, -1, N_PERSONS);
+		long n1,n2,cPerson;
+		Q[0] = currentSubgraph.at(0).id;
+		qIndex = 0;
+		qSize = 1;
+		visited[Q[0]] = 0;
+		while( qIndex<qSize ){
+			cPerson = Q[qIndex++];
+			vector<long> &edges = newGraph[cPerson];
+			for( long ee=0,szz=edges.size(); ee<szz; ee++ ){
+				cAdjacent = edges[ee];
+				if( visited[cAdjacent] == -1 ){
+					visited[cAdjacent] = visited[cPerson] + 1;
+					Q[qSize++] = cAdjacent;
+				}
 			}
-			continue;
 		}
-*/
+		// n1 will be the farthest node from our starting point
+		n1 = cPerson;
+		// now do a BFS to the farthest of n1 and hold the parents
+		memset(visited, -1, N_PERSONS);
+		Q[0] = n1;
+		qIndex = 0;
+		qSize = 1;
+		visited[n1] = 0;
+		while( qIndex<qSize ){
+			cPerson = Q[qIndex++];
+			vector<long> &edges = newGraph[cPerson];
+			for( long ee=0,szz=edges.size(); ee<szz; ee++ ){
+				cAdjacent = edges[ee];
+				if( visited[cAdjacent] == -1 ){
+					visited[cAdjacent] = visited[cPerson] + 1;
+					Q[qSize++] = cAdjacent;
+					Parents[cAdjacent].push_back(cPerson);
+				}else if( visited[cAdjacent] == visited[cPerson] + 1 ){
+					// we have to be added as parent too since we are at the same level
+					// as the father of the cAdjacent node
+					Parents[cAdjacent].push_back(cPerson);
+				}
+			}
+		}
+		// n2 is the farthest node at the other side of n1
+		n2 = cPerson;
+		vector<long> *parents1, *parents2, *t;
+		parents1 = new vector<long>();
+		parents2 = new vector<long>();
+		parents1->push_back(n2);
+		for( int middleLevel=visited[n2]>>1; middleLevel>0; middleLevel-- ){
+			parents2->clear();
+			for( int ii=0,szz=parents1->size(); ii<szz; ii++ ){
+				for( int j=0,jszz=Parents[parents1->at(ii)].size(); j<jszz; j++ ){
+					parents2->push_back(Parents[parents1->at(ii)][j]);
+				}
+			}
+			t = parents1;
+			parents1 = parents2;
+			parents2 = t;
+		}
+		if( visited[n2] % 2 == 1 ){
+			// we have to add another layer of parents
+			for( int ii=0,szz=parents1->size(); ii<szz; ii++ ){
+				for( int j=0,jszz=Parents[parents1->at(ii)].size(); j<jszz; j++ ){
+					parents1->push_back(Parents[parents1->at(ii)][j]);
+				}
+			}
+		}
+		// now parents1 will hold all the nodes that are exactly in the middle of the shortest path
+		// from the two farthest nodes in the graph n2 and n1 - which basicaly are center nodes of the graph
+		for( int ii=0,isz=parents1->size(); ii<isz; ii++ ){
+			fprintf(stderr, "found [%lu] center nodes [%ld]\n", parents1->size(), parents1->at(ii));
+		}
 
 
-/*
+
+		// DELETE THE TEMP VECTORS
+		delete parents1;
+		delete parents2;
+
+
+
+
+
+
 		// carefully set the localMaximumGeodesicDistance - in order to take into account the global centrality too
 		// this way we will filter out whole clusters ( if hopefully we have many clusters )
 		if( globalResults.size() < (unsigned int)k )
@@ -2516,66 +2579,30 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		else
 			localMaximumGeodesicDistance = (int)ceil( (lastGlobalMinimumCentrality.r_p *
 					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
-		//localResults.clear();
-		*/
-		long cPerson, gd_real;
+
+		long gd_real;
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			// calculate the geodesic prediction for the current person
-			/*
 			cPerson = currentSubgraph.at(j).id;
-
-			// calculate the geodesic distance for the current person since he passed our prediction checks
+			/*
+			// calculate the geodesic distance for the current person
 			// REMEMBER TO PASS THE LOCAL MAXIMUM INTO THE CALCULATION FUNCTION IN ORDER
 			// TO EXIT EARLY WHILE CALCULATING THE DISTANCE FOR THIS NODE
 			if( localResults.size() >= (unsigned int)k )
 				gd_real = calculateGeodesicDistance(newGraph, cPerson, localMaximumGeodesicDistance, GeodesicDistanceVisited, GeodesicBFSQueue);
 			else
 				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited, GeodesicBFSQueue);
-			if( gd_real > localMaximumGeodesicDistance && localResults.size() >= (unsigned int)k ){
+			if( gd_real > localMaximumGeodesicDistance ){
 				// the geodesic distance was higher than our limit
 				continue;
 			}
+			 */
 
-			localResults.push_back(Query4SubNode(gd_real,cPerson, i));
 
-			if( localResults.size() > (unsigned int)k ){
-				if( gd_real > localMaximumGeodesicDistance )
-					continue;
-			}
-
-			if( localResults.size() == LocalResultsLimit || localResults.size() == (unsigned int)k ){
-				// find the kth local minimum distance
-				std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
-				localResults.resize(k);
-				localMaximumGeodesicDistance = localResults.back().geodesic;
-			}
-			*/
 			gd_real = calculateGeodesicDistance(newGraph, currentSubgraph.at(j).id, -1, GeodesicDistanceVisited, GeodesicBFSQueue);
 			cCentrality = ((r_p * r_p)*1.0) / gd_real;
 			globalResults.push_back(Query4PersonStruct(currentSubgraph.at(j).id, gd_real, r_p, cCentrality));
 		}// end of this subgraph
-		/*
-		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
-		localMaximumGeodesicDistance = localResults[ (localResults.size()<(unsigned int)k)?localResults.size()-1:k ].geodesic;
-		// add all the local results or K results - whichever is less into the global results
-		for( long lr=0,lsz=localResults.size(), res=k; lr<lsz && res>0 ; lr++, res-- ){
-			//double cCentrality = (r_p * r_p) / ( n_1 * localResults[lr].geodesic );
-			double cCentrality = ((r_p * r_p)*1.0) / localResults[lr].geodesic;
-			if( cCentrality < lastGlobalMinimumCentrality.centrality )
-				break;
-			globalResults.push_back(
-					Query4PersonStruct(localResults[lr].personId, currentSubgraph.size()-1, r_p, cCentrality)
-			);
-		}
-		*/
-		/*
-		// check if we have to sort and filter out global results
-		if( globalResults.size() >= GlobalResultsLimit ){
-			std::stable_sort(globalResults.begin(), globalResults.end(),Query4PersonStructPredicate);
-			globalResults.resize(k);
-			lastGlobalMinimumCentrality = globalResults.back();
-		}
-		*/
 	}
 
 	free(GeodesicDistanceVisited);
