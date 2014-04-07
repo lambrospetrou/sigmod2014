@@ -75,73 +75,6 @@ typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
 typedef std::tr1::unordered_map<long, vector<long>, hash<long> > MAP_LONG_VecL;
 typedef std::tr1::unordered_map<long, char*, hash<long> > MAP_LONG_STRING;
 
-#include "sparsehash/dense_hash_map.h"
-#include "sparsehash/sparse_hash_map.h"
-using GOOGLE_NAMESPACE::dense_hash_map;
-using GOOGLE_NAMESPACE::sparse_hash_map;
-
-// A version of each of the hashtable classes we test, that has been
-// augumented to provide a common interface.  For instance, the
-// sparse_hash_map and dense_hash_map versions set empty-key and
-// deleted-key (we can do this because all our tests use int-like
-// keys), so the users don't have to.  The hash_map version adds
-// resize(), so users can just call resize() for all tests without
-// worrying about whether the map-type supports it or not.
-
-template<typename K, typename V, typename H>
-class EasyUseSparseHashMap : public sparse_hash_map<K,V,H> {
- public:
-  EasyUseSparseHashMap() {
-    this->set_deleted_key(-1);
-  }
-};
-
-template<typename K, typename V>
-class EasySparseHashMap : public sparse_hash_map<K,V> {
- public:
-  EasySparseHashMap() {
-    this->set_deleted_key(-1);
-  }
-};
-
-template<typename K, typename V, typename H>
-class EasyUseDenseHashMap : public dense_hash_map<K,V,H> {
- public:
-  EasyUseDenseHashMap() {
-    this->set_empty_key(-1);
-    this->set_deleted_key(-2);
-  }
-};
-
-template<typename K, typename V>
-class EasyDenseHashMap : public dense_hash_map<K,V> {
- public:
-  EasyDenseHashMap() {
-    this->set_empty_key(-1);
-    this->set_deleted_key(-2);
-  }
-};
-
-// For pointers, we only set the empty key.
-template<typename K, typename V, typename H>
-class EasyUseSparseHashMap<K*, V, H> : public sparse_hash_map<K*,V,H> {
- public:
-  EasyUseSparseHashMap() { }
-};
-
-template<typename K, typename V, typename H>
-class EasyUseDenseHashMap<K*, V, H> : public dense_hash_map<K*,V,H> {
- public:
-  EasyUseDenseHashMap() {
-    this->set_empty_key((K*)(~0));
-  }
-};
-
-// Google's HashMap
-typedef EasyDenseHashMap<long,long> DMAP_LONG_LONG;
-typedef EasyDenseHashMap<int,int> DMAP_INT_INT;
-typedef EasySparseHashMap<long,long> SMAP_LONG_LONG;
-
 // TODO - THE HASHMAP THAT WILL BE USED BELOW IN THE CODE
 typedef MAP_LONG_LONG FINAL_MAP_LONG_LONG;
 typedef MAP_INT_INT FINAL_MAP_INT_INT;
@@ -2519,12 +2452,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		//fprintf(stdout, "clustered new graph [%d] [%d] [%.6f]secs\n", SubgraphsPersons.size(), persons.size(), (getTime()-time_global_start)/1000000.0);
 	//}
 
-
+/*
 	// sort people of each sub-component by number of edges descending order
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end(), DescendingQ4PersonStructPredicate);
 	}
-
+*/
 	// TODO - now we should sort the vectors themselves according to something to prune even faster
 
 	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
@@ -2537,6 +2470,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	long localMaximumGeodesicDistance=INT_MAX;
 	Query4PersonStruct lastGlobalMinimumCentrality;
+
+	double cCentrality;
 
 	char *GeodesicDistanceVisited = visited;
 	long *GeodesicBFSQueue = Q;
@@ -2551,7 +2486,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			continue;
 		}
 
-
+/*
 		// we will do this algorithm only on large components
 		if (currentSubgraph.size() > 2000) {
 
@@ -2570,10 +2505,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 			continue;
 		}
+*/
 
 
-
-
+/*
 		// carefully set the localMaximumGeodesicDistance - in order to take into account the global centrality too
 		// this way we will filter out whole clusters ( if hopefully we have many clusters )
 		if( globalResults.size() < (unsigned int)k )
@@ -2581,11 +2516,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		else
 			localMaximumGeodesicDistance = (int)ceil( (lastGlobalMinimumCentrality.r_p *
 					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
-
-		localResults.clear();
+		//localResults.clear();
+		*/
 		long cPerson, gd_real;
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			// calculate the geodesic prediction for the current person
+			/*
 			cPerson = currentSubgraph.at(j).id;
 
 			// calculate the geodesic distance for the current person since he passed our prediction checks
@@ -2613,7 +2549,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				localResults.resize(k);
 				localMaximumGeodesicDistance = localResults.back().geodesic;
 			}
+			*/
+			gd_real = calculateGeodesicDistance(newGraph, currentSubgraph.at(j).id, -1, GeodesicDistanceVisited, GeodesicBFSQueue);
+			cCentrality = ((r_p * r_p)*1.0) / gd_real;
+			globalResults.push_back(Query4PersonStruct(currentSubgraph.at(j).id, gd_real, r_p, cCentrality));
 		}// end of this subgraph
+		/*
 		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 		localMaximumGeodesicDistance = localResults[ (localResults.size()<(unsigned int)k)?localResults.size()-1:k ].geodesic;
 		// add all the local results or K results - whichever is less into the global results
@@ -2626,12 +2567,15 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					Query4PersonStruct(localResults[lr].personId, currentSubgraph.size()-1, r_p, cCentrality)
 			);
 		}
+		*/
+		/*
 		// check if we have to sort and filter out global results
 		if( globalResults.size() >= GlobalResultsLimit ){
 			std::stable_sort(globalResults.begin(), globalResults.end(),Query4PersonStructPredicate);
 			globalResults.resize(k);
 			lastGlobalMinimumCentrality = globalResults.back();
 		}
+		*/
 	}
 
 	free(GeodesicDistanceVisited);
