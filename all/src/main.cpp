@@ -2455,14 +2455,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		//fprintf(stdout, "clustered new graph [%d] [%d] [%.6f]secs\n", SubgraphsPersons.size(), persons.size(), (getTime()-time_global_start)/1000000.0);
 	//}
 
-
 	// sort people of each sub-component by number of edges descending order
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end(), DescendingQ4PersonStructPredicate);
 	}
-
-	// TODO - now we should sort the vectors themselves according to something to prune even faster
-
 	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	char *GeodesicDistanceVisited = visited;
