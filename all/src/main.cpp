@@ -34,6 +34,7 @@
 #include "lplibs/LPSparseArrayGeneric.h"
 #include "lplibs/atomic_ops_if.h"
 #include "lplibs/TopKCloseness.h"
+#include "lplibs/EfficientTopK.h"
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -2922,6 +2923,19 @@ void readQueries(char *queriesFile) {
 }
 
 int main(int argc, char** argv) {
+/*
+	// TEST FM_SKETCH
+	FM fm[1000];
+	int approx_value[1000];
+	for (int i=0; i<=1000; i++){
+		fm[i].init();
+		for (int j=0; j<i; j++){
+			fm[i].insert(j);
+		}
+		printf("\t%.2lf\t%.0lf\t%.2lf\n", fm[i].count1(), fm[i].count2(), fm[i].count3());
+	}
+	exit(1);
+*/
 
 	inputDir = argv[1];
 	queryFile = argv[2];
