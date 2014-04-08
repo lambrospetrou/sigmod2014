@@ -2561,6 +2561,11 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			fprintf(stderr, "found [%lu] center nodes [%ld]\n", parents1->size(), parents1->at(ii));
 		}
 
+		for( int ii=0,isz=parents1->size(); ii<isz; ii++ ){
+			for( int jj=0,jjsz=newGraph[parents1->at(ii)].size(); jj<jjsz; jj++ ){
+				fprintf(stderr, "edges of[%ld] cAdjacent[%ld]\n", parents1->at(ii), newGraph[parents1->at(ii)].at(jj));
+			}
+		}
 
 
 		// DELETE THE TEMP VECTORS
