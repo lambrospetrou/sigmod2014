@@ -2552,7 +2552,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
-	unsigned int LocalResultsLimit = (10 < k) ? k+10 : 10;
+	unsigned int LocalResultsLimit = (20 < k) ? k+20 : 20;
 	vector<Query4PersonStruct> globalResults;
 	vector<Query4SubNode> localResults;
 
@@ -2672,14 +2672,14 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 				// valid distance so add this person into the top-k results
 				localResults.push_back(Query4SubNode(gd_real, cPerson, i));
-				std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
-				localResults.pop_back();
-/*
+				//std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
+				//localResults.pop_back();
+
 				if( localResults.size() >= LocalResultsLimit ){
 					std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 					localResults.resize(k);
 				}
-*/
+
 			}
 
 			////////////////////////////////////////////////////////////
