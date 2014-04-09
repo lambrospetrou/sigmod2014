@@ -52,9 +52,10 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define COMM_WORKERS 2
-#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
+//#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
+#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
 /////////
@@ -2336,6 +2337,7 @@ struct LevelDegreeNode{
 	long L2;
 	long L3;
 	long personId;
+	vector<long> Level3People;
 
 	LevelDegreeNode(){
 		personId = -1;
@@ -2394,17 +2396,20 @@ bool LevelDegreeNodePredicateDesc( const LevelDegreeNode& this_, const LevelDegr
 	return this_.personId <= other.personId;
 }
 
-long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue){
+long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue, LevelDegreeNode &cNode){
 	//fprintf(stderr, "c[%d-%d] ", cPerson, localMaximumGeodesicDistance);
 
 	if( localMaximumGeodesicDistance == -1 )
 		localMaximumGeodesicDistance = LONG_MAX;
 	long gd=0;
+	gd += (cNode.totalReachability - cNode.L3);
 	memset(visited, -1, N_PERSONS);
 	long qIndex = 0;
-	long qSize = 1;
-	GeodesicBFSQueue[0] = cPerson;
-	visited[cPerson] = 0;
+	long qSize = cNode.Level3People.size();
+	for( int i=0,sz=cNode.Level3People.size(); i<sz; i++ ){
+		GeodesicBFSQueue[i] = cNode.Level3People[i];
+		visited[cNode.Level3People[i]] = 3;
+	}
 	long depth;
 	long cAdjacent;
 	while(qIndex<qSize){
@@ -2493,10 +2498,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			qIndex++;
 			LevelDegreeNode cNode;
 			cNode.personId = cPerson;
-			long edgesL1 = 0;
+			//long edgesL1 = 0;
 			long *edges = Persons[cPerson].adjacentPersonsIds;
 			vector<long> &newEdges = newGraph[cPerson].edges;
-			FM &fmSketch = newGraph[cPerson].fmSketch_level1;
+			//FM &fmSketch = newGraph[cPerson].fmSketch_level1;
 			for( long ee=0,szz=Persons[cPerson].adjacents; ee<szz; ee++ ){
 				cAdjacent = edges[ee];
 				// check if this person belongs to the new subgraph
@@ -2504,16 +2509,16 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					continue;
 				// add the edge to the new graph
 				newEdges.push_back(cAdjacent);
-				edgesL1++;
-				fmSketch.insert(cAdjacent);
+				//edgesL1++;
+				//fmSketch.insert(cAdjacent);
 				// if not visited during BFS in this subgraph
 				if( visited[cAdjacent] != 1 ){
 					Q[qSize++] = cAdjacent;
 					visited[cAdjacent] = 1;
 				}
 			}
-			cNode.L1 = edgesL1;
-			cNode.totalReachability = edgesL1;
+			//cNode.L1 = edgesL1;
+			//cNode.totalReachability = edgesL1;
 			// we can now add the current person into the components map
 			SubgraphsPersons[currentComponent].push_back(cNode);
 		}// end of BFS for current subgraph
@@ -2568,44 +2573,51 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
 
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
-		fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		//fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 
 		// find the level 2 and 3 of each node
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			LevelDegreeNode &cNode = currentSubgraph[j];
 			GraphNode &gNode = newGraph[cNode.personId];
+			//gNode.fmSketch.insert(cNode.personId);
 			memset(visited, -1, N_PERSONS);
 			Q[0] = currentSubgraph[j].personId;
 			qIndex = 0; qSize = 1;
 			visited[Q[0]] = 0;
 			// we only need the 2nd level
-			int previousLevel = 1;
+			int previousLevel = -1;
+			long *currentCounterLevel;
 			while( qIndex < qSize ){
 				cPerson = Q[qIndex++];
-				if( visited[cPerson] == previousLevel + 1 ){
+				if( visited[cPerson] != previousLevel ){
 					// we have a new level so accumulate the previous level
-					if( previousLevel == 1 ){
-						cNode.L2 = gNode.fmSketch.count3() - cNode.L1;
-						cNode.totalReachability += cNode.L2;
-					}
-					else if( previousLevel == 2 ){
-						cNode.L3 = gNode.fmSketch.count3() - cNode.L1 - cNode.L2;
-						cNode.totalReachability += cNode.L3;
+					if( previousLevel == -1 ){
+						currentCounterLevel = &cNode.L1;
+					}else if( previousLevel == 0 ){
+						currentCounterLevel = &cNode.L2;
+					}else if( previousLevel == 1 ){
+						currentCounterLevel = &cNode.L3;
 					}
 				}
 				if( visited[cPerson] == 3 )
 					break;
 				previousLevel = visited[cPerson];
-				gNode.fmSketch.union_FM(newGraph[cPerson].fmSketch_level1);
+				//gNode.fmSketch.union_FM(newGraph[cPerson].fmSketch_level1);
 				vector<long> &edges = newGraph[cPerson].edges;
 				for( long ee=0,esz=edges.size(); ee<esz; ee++ ){
 					cAdjacent = edges[ee];
 					if( visited[cAdjacent] == -1 ){
 						Q[qSize++] = cAdjacent;
 						visited[cAdjacent] = visited[cPerson] + 1;
+						++*currentCounterLevel;
+						if( visited[cAdjacent] == 3 )
+							cNode.Level3People.push_back(cAdjacent);
 					}
 				}
 			}
+			// TODO - Update the level 3 people since we do not update the counter for those
+			cNode.L3 = cNode.Level3People.size();
+			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
 		}
 		std::stable_sort(currentSubgraph.begin(), currentSubgraph.end());
@@ -2615,7 +2627,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			fprintf(stderr, "%ld [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.totalReachability );
 		}
 */
-		fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		//fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 		////////////////////////////////////////////////////////////////
 
 		//exit(1);
@@ -2631,20 +2643,23 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			/////////// YOU ARE AT EACH PERSON OF A SUBGRAPH ///////////
 
 			if( localResults.size() < (unsigned int)k ){
-				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited, GeodesicBFSQueue);
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited, GeodesicBFSQueue, cNode);
 				localResults.push_back(Query4SubNode(gd_real, cPerson, i));
 				if( localResults.size() == (unsigned int)k ){
 					std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 				}
 			}else{
 				// we have already found K results so compare the values before doing BFS
-				long lower_bound = cNode.L1 + (cNode.L2 << 1) + ((cNode.L3)*3) + ((allPersons-cNode.totalReachability)<<2);
+				//long lower_bound = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3) + ((r_p-cNode.totalReachability)<<2);
+				// to accumulate for the probabilistic error
+				int probability_error = 5;
+				long lower_bound = cNode.L1 + ((cNode.L2-probability_error) << 1) + ((cNode.L3-probability_error)*3) + ((r_p-cNode.totalReachability-probability_error)<<2);
 				// skip this node if it is impossible to be top-k
 				if( lower_bound > localResults[k-1].geodesic ){
 					continue;
 				}
 				//fprintf(stderr, "passed prediction\n");
-				gd_real = calculateGeodesicDistance(newGraph, cPerson, localResults[k-1].geodesic, GeodesicDistanceVisited, GeodesicBFSQueue);
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, localResults[k-1].geodesic, GeodesicDistanceVisited, GeodesicBFSQueue, cNode);
 				//fprintf(stderr, "lb[%d] real[%d] lr[%d]\n", lower_bound, gd_real, localResults[k-1].geodesic);
 				if( gd_real > localResults[k-1].geodesic ){
 					continue;
@@ -2652,7 +2667,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				// valid distance so add this person into the top-k results
 				localResults.push_back(Query4SubNode(gd_real, cPerson, i));
 				std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
-				localResults.pop_back();
+				//localResults.pop_back();
 /*
 				if( localResults.size() >= LocalResultsLimit ){
 					std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
