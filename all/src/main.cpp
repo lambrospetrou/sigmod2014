@@ -53,7 +53,7 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 4
-#define Q_JOB_WORKERS NUM_CORES-2
+#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES-2
 #define COMM_WORKERS 2
@@ -2324,7 +2324,66 @@ bool Query4SubNodePredicate(const Query4SubNode& d1,const Query4SubNode& d2) {
 	return d1.geodesic < d2.geodesic;
 }
 
-long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue){
+struct GraphNode{
+	vector<long> edges;
+	long LevelDegreeNodeIndex;
+	FM fmSketch;
+};
+struct LevelDegreeNode{
+	long totalReachability;
+	long L1;
+	long L2;
+	long personId;
+	//long L3;
+
+	LevelDegreeNode(){
+		personId = -1;
+		L1 = 0;
+		L2 = 0;
+		totalReachability = 0;
+	}
+
+	LevelDegreeNode(long pid){
+		personId = pid;
+		L1 = 0;
+		L2 = 0;
+		totalReachability = 0;
+	}
+
+	bool operator<(const LevelDegreeNode& other) const{
+		if( this->totalReachability > other.totalReachability )
+			return true;
+		else if( this->totalReachability < other.totalReachability )
+			return false;
+		if( this->L1 > other.L1 )
+			return true;
+		else if( this->L1 < other.L1 )
+			return false;
+		if( this->L2 > other.L2 )
+			return true;
+		else if( this->L2 < other.L2 )
+			return false;
+		return this->personId <= other.personId;
+	}
+};
+
+bool LevelDegreeNodePredicateDesc( const LevelDegreeNode& this_, const LevelDegreeNode& other ){
+	if( this_.totalReachability > other.totalReachability )
+		return true;
+	else if( this_.totalReachability < other.totalReachability )
+		return false;
+	if( this_.L1 > other.L1 )
+		return true;
+	else if( this_.L1 < other.L1 )
+		return false;
+	if( this_.L2 > other.L2 )
+		return true;
+	else if( this_.L2 < other.L2 )
+		return false;
+	return this_.personId <= other.personId;
+}
+
+long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue){
 	//fprintf(stderr, "c[%d-%d] ", cPerson, localMaximumGeodesicDistance);
 
 	if( localMaximumGeodesicDistance == -1 )
@@ -2346,7 +2405,7 @@ long calculateGeodesicDistance( MAP_LONG_VecL &newGraph, long cPerson, long loca
 		if( gd > localMaximumGeodesicDistance )
 			return gd;
 
-		vector<long> &edges = newGraph[cPerson];
+		vector<long> &edges = newGraph[cPerson].edges;
 		for( long e=0,esz=edges.size(); e<esz; e++ ){
 			cAdjacent = edges[e];
 			if( visited[cAdjacent] >= 0 )
@@ -2400,8 +2459,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	//fprintf(stderr, "all persons [%d] [%.6f]secs\n", persons.size(), (getTime()-time_global_start)/1000000.0);
 
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
-	MAP_LONG_VecL newGraph; // holds the edges of the new Graph induced
-	vector<vector<Q4PersonStructNode> > SubgraphsPersons;
+	unordered_map<long, GraphNode> newGraph; // holds the edges of the new Graph induced
+	vector<vector<LevelDegreeNode> > SubgraphsPersons;
 	long *Q = (long*)malloc(N_PERSONS*sizeof(long));
 	long qIndex=0,qSize=1;
 	char *visited = (char*)malloc(N_PERSONS);
@@ -2409,9 +2468,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	int currentComponent = -1;
 	long cAdjacent;
 	for( long i=0,sz=persons.size(); i<sz; i++ ){
-		// TODO - HERE IN THIS CLUSTERING BFS WE CAN CALCULATE A VALUE FOR EACH CLUSTER THAT
-		// WILL PROBABLY SPEED UP THE PROCESS LATER - i.e. a sample of centrality for the starting node of each cluster
-		// do the BFS to find all the persons in the current component
 		long cPerson = persons[i];
 		if( visited[cPerson] == 1 )
 			continue;
@@ -2420,29 +2476,35 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		qIndex=0;
 		qSize=1;
 		Q[0] = cPerson;
-		SubgraphsPersons.push_back(vector<Q4PersonStructNode>());
+		SubgraphsPersons.push_back(vector<LevelDegreeNode>());
 		while(qIndex<qSize){
 			cPerson = Q[qIndex];
 			qIndex++;
-			long cEdges = 0;
+			LevelDegreeNode cNode;
+			cNode.personId = cPerson;
+			long edgesL1 = 0;
 			long *edges = Persons[cPerson].adjacentPersonsIds;
-			vector<long> &newEdges = newGraph[cPerson];
+			vector<long> &newEdges = newGraph[cPerson].edges;
+			FM &fmSketch = newGraph[cPerson].fmSketch;
 			for( long ee=0,szz=Persons[cPerson].adjacents; ee<szz; ee++ ){
 				cAdjacent = edges[ee];
 				// check if this person belongs to the new subgraph
 				if( visitedPersons[cAdjacent] != 1 )
 					continue;
 				// add the edge to the new graph
-				cEdges++;
-				newEdges.push_back(edges[ee]);
+				newEdges.push_back(cAdjacent);
+				edgesL1++;
+				fmSketch.insert(cAdjacent);
 				// if not visited during BFS in this subgraph
 				if( visited[cAdjacent] != 1 ){
 					Q[qSize++] = cAdjacent;
 					visited[cAdjacent] = 1;
 				}
 			}
+			cNode.L1 = edgesL1;
+			cNode.totalReachability = edgesL1;
 			// we can now add the current person into the components map
-			SubgraphsPersons[currentComponent].push_back(Q4PersonStructNode(cPerson, cEdges));
+			SubgraphsPersons[currentComponent].push_back(cNode);
 		}// end of BFS for current subgraph
 	}
 
@@ -2450,23 +2512,25 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	free(visitedPersons);
 	//free(visited); - WE USE THIS BELOW IN THE GEODESIC CALCULATION
 
-	//fprintf(stderr, "clustering new graph [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
-	//if( isLarge ){
-		//fprintf(stdout, "clustered new graph [%d] [%d] [%.6f]secs\n", SubgraphsPersons.size(), persons.size(), (getTime()-time_global_start)/1000000.0);
-	//}
-
 	// sort people of each sub-component by number of edges descending order
+	/*
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end(), DescendingQ4PersonStructPredicate);
 	}
+	*/
+	/*
+	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
+		std::stable_sort(SubgraphsPersons[i].begin(), SubgraphsPersons[i].end());
+	}
+	*/
 	//fprintf(stderr, "sorting clusters [%d] [%.6f]secs\n", SubgraphsPersons.size(), (getTime()-time_global_start)/1000000.0);
 
 	char *GeodesicDistanceVisited = visited;
 	long *GeodesicBFSQueue = Q;
 
-
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
+	unsigned int LocalResultsLimit = (10 < k) ? k+10 : 10;
 	vector<Query4PersonStruct> globalResults;
 	vector<Query4SubNode> localResults;
 
@@ -2477,14 +2541,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	long cPerson;
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
 		// for each cluster
-		vector<Q4PersonStructNode> &currentSubgraph = SubgraphsPersons[i];
+		vector<LevelDegreeNode> &currentSubgraph = SubgraphsPersons[i];
 		long r_p = currentSubgraph.size()-1;
-
 		// when only one person is in the graph skip it
 		if( r_p == 0 ){
 			continue;
 		}
-
 		// carefully set the localMaximumGeodesicDistance - in order to take into account the global centrality too
 		// this way we will filter out whole clusters ( if hopefully we have many clusters )
 		if( globalResults.size() < (unsigned int)k )
@@ -2494,35 +2556,112 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
 
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
+		//fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 
-
-
-
+		// find the level 2 and 3 of each node
+		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
+			LevelDegreeNode &cNode = currentSubgraph[j];
+			GraphNode &gNode = newGraph[cNode.personId];
+			memset(visited, -1, N_PERSONS);
+			Q[0] = currentSubgraph[j].personId;
+			qIndex = 0; qSize = 1;
+			visited[Q[0]] = 0;
+			// we only need the 2nd level
+			int previousLevel = 1;
+			while( qIndex < qSize ){
+				cPerson = Q[qIndex++];
+				if( visited[cPerson] == previousLevel + 1 ){
+					// we have a new level so accumulate the previous level
+					if( previousLevel == 1 ){
+						cNode.L2 = gNode.fmSketch.count3() - cNode.L1;
+						cNode.totalReachability += cNode.L2;
+					}
+				}
+				if( visited[cPerson] == 2 )
+					break;
+				previousLevel = visited[cPerson];
+				//if( visited[cPerson] == 1 ){
+					gNode.fmSketch.union_FM(newGraph[cPerson].fmSketch);
+				//}
+				vector<long> &edges = newGraph[cPerson].edges;
+				for( long ee=0,esz=edges.size(); ee<esz; ee++ ){
+					cAdjacent = edges[ee];
+					if( visited[cAdjacent] == -1 ){
+						Q[qSize++] = cAdjacent;
+						visited[cAdjacent] = visited[cPerson] + 1;
+					}
+				}
+			}
+			//fprintf(stderr, "%ld [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.totalReachability );
+		}
+		std::stable_sort(currentSubgraph.begin(), currentSubgraph.end());
+/*
+		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
+			LevelDegreeNode &cNode = currentSubgraph.at(j);
+			fprintf(stderr, "%ld [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.totalReachability );
+		}
+*/
+		//fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 		////////////////////////////////////////////////////////////////
 
-
-
 		long gd_real;
+
+		vector<Query4SubNode> localResults;
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			// calculate the geodesic prediction for the current person
-			cPerson = currentSubgraph.at(j).id;
-
-
+			cPerson = currentSubgraph.at(j).personId;
+			LevelDegreeNode &cNode = currentSubgraph.at(j);
+			//fprintf(stderr, "%ld [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.totalReachability );
 			/////////// YOU ARE AT EACH PERSON OF A SUBGRAPH ///////////
 
+			if( localResults.size() < (unsigned int)k ){
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited, GeodesicBFSQueue);
+				localResults.push_back(Query4SubNode(gd_real, cPerson, i));
+				if( localResults.size() == (unsigned int)k ){
+					std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
+				}
+			}else{
+				// we have already found K results so compare the values before doing BFS
+				long lower_bound = cNode.L1 + (cNode.L2 << 1) + ( (r_p-cNode.L1-cNode.L2)*3 );
+				// skip this node if it is impossible to be top-k
+				if( lower_bound > localResults[k-1].geodesic ){
+					continue;
+				}
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, localResults[k-1].geodesic, GeodesicDistanceVisited, GeodesicBFSQueue);
+				if( gd_real > localResults[k-1].geodesic ){
+					continue;
+				}
+				// valid distance so add this person into the top-k results
+				localResults.push_back(Query4SubNode(gd_real, cPerson, i));
+				//std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
+				//localResults.pop_back();
 
-
-
+				if( localResults.size() >= LocalResultsLimit ){
+					std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
+					localResults.resize(k);
+				}
+			}
 
 			////////////////////////////////////////////////////////////
-
-
-
-
-			gd_real = calculateGeodesicDistance(newGraph, currentSubgraph.at(j).id, -1, GeodesicDistanceVisited, GeodesicBFSQueue);
+/*
+			gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited, GeodesicBFSQueue);
 			cCentrality = ((r_p * r_p)*1.0) / gd_real;
-			globalResults.push_back(Query4PersonStruct(currentSubgraph.at(j).id, gd_real, r_p, cCentrality));
-		}// end of this subgraph
+			globalResults.push_back(Query4PersonStruct(cPerson, gd_real, r_p, cCentrality));
+*/
+		}// end of persons of this subgraph
+
+		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
+/*
+		for( int ii=0,szz=localResults.size(); ii<szz; ii++ ){
+			fprintf(stderr, "%ld [%d]\n", localResults[ii].personId, localResults[ii].geodesic);
+		}
+		fprintf(stderr, "finished\n");
+*/
+		localResults.resize( localResults.size()>=(unsigned int)k ? k : localResults.size());
+		for( int ii=0,szz=localResults.size(); ii<szz; ii++ ){
+			cCentrality = ((r_p * r_p)*1.0) / localResults[ii].geodesic;
+			globalResults.push_back(Query4PersonStruct(localResults[ii].personId, localResults[ii].geodesic, r_p, cCentrality));
+		}
 	}
 
 	free(GeodesicDistanceVisited);
