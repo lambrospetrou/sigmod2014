@@ -53,11 +53,11 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 8
-#define COMM_WORKERS 2
+#define COMM_WORKERS 3
 #define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
-#define Q2_WORKER_THREADS NUM_CORES-2
+#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
 /////////
 
 #define NUM_THREADS WORKER_THREADS+1
@@ -2332,6 +2332,7 @@ struct GraphNode{
 	//FM fmSketch_level1;
 };
 struct LevelDegreeNode{
+	long partialGeodesic;
 	long totalReachability;
 	long L1;
 	long L2;
@@ -2345,6 +2346,7 @@ struct LevelDegreeNode{
 		L2 = 0;
 		L3 = 0;
 		totalReachability = 0;
+		partialGeodesic = 0;
 	}
 
 	LevelDegreeNode(long pid){
@@ -2353,9 +2355,11 @@ struct LevelDegreeNode{
 		L2 = 0;
 		L3 = 0;
 		totalReachability = 0;
+		partialGeodesic = 0;
 	}
 
 	bool operator<(const LevelDegreeNode& other) const{
+		/*
 		if( this->totalReachability > other.totalReachability )
 			return true;
 		else if( this->totalReachability < other.totalReachability )
@@ -2373,9 +2377,31 @@ struct LevelDegreeNode{
 		else if( this->L3 < other.L3 )
 			return false;
 		return this->personId <= other.personId;
+		*/
+		if( this->totalReachability > other.totalReachability )
+			return true;
+		else if( this->totalReachability < other.totalReachability )
+			return false;
+		if( this->partialGeodesic < other.partialGeodesic )
+			return true;
+		else if( this->partialGeodesic > other.partialGeodesic )
+			return false;
+		if( this->L1 > other.L1 )
+			return true;
+		else if( this->L1 < other.L1 )
+			return false;
+		if( this->L2 > other.L2 )
+			return true;
+		else if( this->L2 < other.L2 )
+			return false;
+		if( this->L3 > other.L3 )
+			return true;
+		else if( this->L3 < other.L3 )
+			return false;
+		return this->personId <= other.personId;
 	}
 };
-
+/*
 bool LevelDegreeNodePredicateDesc( const LevelDegreeNode& this_, const LevelDegreeNode& other ){
 	if( this_.totalReachability > other.totalReachability )
 		return true;
@@ -2395,6 +2421,7 @@ bool LevelDegreeNodePredicateDesc( const LevelDegreeNode& this_, const LevelDegr
 		return false;
 	return this_.personId <= other.personId;
 }
+*/
 
 long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue, LevelDegreeNode &cNode){
 	//fprintf(stderr, "c[%d-%d] ", cPerson, localMaximumGeodesicDistance);
@@ -2407,14 +2434,6 @@ long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long c
 	long qSize = 1;
 	GeodesicBFSQueue[0] = cPerson;
 	visited[cPerson] = 0;
-	/*
-	gd += (cNode.totalReachability - cNode.L3);
-	long qSize = cNode.Level3People.size();
-	for( int i=0,sz=cNode.Level3People.size(); i<sz; i++ ){
-		GeodesicBFSQueue[i] = cNode.Level3People[i];
-		visited[cNode.Level3People[i]] = 3;
-	}
-	*/
 	long depth;
 	long cAdjacent;
 	while(qIndex<qSize){
@@ -2546,7 +2565,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	// calculate the closeness centrality for all people in the person vector
 	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
-	unsigned int LocalResultsLimit = (20 < k) ? k+20 : 20;
+	unsigned int LocalResultsLimit = (10 < k) ? k+10 : 10;
 	vector<Query4PersonStruct> globalResults;
 	vector<Query4SubNode> localResults;
 
@@ -2627,6 +2646,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			if( maxLevel3 < cNode.L3 )
 				maxLevel3 = cNode.L3;
 			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
+			cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
 		}
 		std::stable_sort(currentSubgraph.begin(), currentSubgraph.end());
@@ -2641,8 +2661,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 		//exit(1);
 
-		long gd_real;
+		long gd_real, nextHigherLevel;
 		// best case bounds
+		long breakBound;
 		long bestLevel1 = maxLevel1;
 		long bestLevel1_2 = maxLevel1 + (maxLevel2 << 1);
 		long bestLevel1_2_3 = bestLevel1_2 + maxLevel3 * 3;
@@ -2654,7 +2675,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// calculate the geodesic prediction for the current person
 			cPerson = currentSubgraph.at(j).personId;
 			LevelDegreeNode &cNode = currentSubgraph.at(j);
-			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d] r_p[%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability, r_p );
+			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d] gd[%d] r_p[%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability, cNode.partialGeodesic, r_p );
 			/////////// YOU ARE AT EACH PERSON OF A SUBGRAPH ///////////
 
 			if( localResults.size() < (unsigned int)k ){
@@ -2664,29 +2685,27 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 				}
 			}else{
-				// check if we can BREAK this loop iteration
-				long breakBound = 0;
-				if( cNode.totalReachability >= maxLevel1_2_3 ){
-					breakBound += bestLevel1_2_3;
-				}else if( cNode.totalReachability >= maxLevel1_2 ){
-					breakBound += bestLevel1_2;
-				}else if( cNode.totalReachability >= maxLevel1 ){
-					breakBound += bestLevel1;
-				}
-				breakBound += ((r_p - cNode.totalReachability)<<2);
-				if( breakBound > localResults[k-1].geodesic ){
-					//fprintf(stderr, "break the loop\n");
-					break;
-				}
-
 				// we have already found K results so compare the values before doing BFS
-				long lower_bound = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3) + ((r_p-cNode.totalReachability)<<2);
-				//long lower_bound = cNode.L1 + (cNode.L2 << 1) + ((r_p-cNode.totalReachability)*3);
+				//long lower_bound = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3) + ((r_p-cNode.totalReachability)<<2);
+				nextHigherLevel = ((r_p-cNode.totalReachability)<<2);
+				long lower_bound = cNode.partialGeodesic + nextHigherLevel;
 				// skip this node if it is impossible to be top-k
 				if( lower_bound > localResults[k-1].geodesic ){
+					// check if we can BREAK this loop iteration
+					if( cNode.totalReachability >= maxLevel1_2_3 ){
+						breakBound = bestLevel1_2_3;
+					}else if( cNode.totalReachability >= maxLevel1_2 ){
+						breakBound = bestLevel1_2;
+					}else if( cNode.totalReachability >= maxLevel1 ){
+						breakBound = bestLevel1;
+					}
+					breakBound += nextHigherLevel;
+					if (breakBound > localResults[k - 1].geodesic) {
+						fprintf(stderr, "break the loop at [%d] of [%d]\n", j, szz);
+						break;
+					}
 					continue;
 				}
-
 				gd_real = calculateGeodesicDistance(newGraph, cPerson, localResults[k-1].geodesic, GeodesicDistanceVisited, GeodesicBFSQueue, cNode);
 				//fprintf(stderr, "lb[%d] real[%d] lr[%d]\n", lower_bound, gd_real, localResults[k-1].geodesic);
 				if( gd_real > localResults[k-1].geodesic ){
@@ -2694,14 +2713,16 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 				// valid distance so add this person into the top-k results
 				localResults.push_back(Query4SubNode(gd_real, cPerson, i));
+
 				std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 				localResults.pop_back();
-/*
+				/*
 				if( localResults.size() >= LocalResultsLimit ){
 					std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 					localResults.resize(k);
 				}
-*/
+				*/
+
 			}
 
 			////////////////////////////////////////////////////////////
@@ -2737,11 +2758,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	std::stable_sort(globalResults.begin(), globalResults.end(), Query4PersonStructPredicate);
 	std::stringstream ss;
 	for (int i = 0, sz=globalResults.size(); i<k && i<sz; i++) {
-		//ss << persons[i].person << ":" << persons[i].centrality << " ";
 		ss << globalResults[i].person << " ";
-		//fprintf(stderr, "res: %d\n", globalResults[i].person);
 	}
-	//printf("%s\n", ss.str().c_str());
 	Answers[qid] = ss.str();
 	/*if( isLarge )
 		fprintf( stdout, "query 4 fin [%.4f]s: [%*s] qid[%d] tid[%d]", ((getTime()-time_global_start)/1000000.0) , tag_sz, tag, qid, tid );*/
@@ -2831,8 +2849,14 @@ void *readCommentsAsyncWorker(void *args){
 	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//fprintf(stderr, "finished processing comments\n");
 
-	lp_threadpool_addWorker(threadpool);
-	lp_threadpool_addWorker(threadpool);
+	if( COMM_WORKERS == 2 ){
+		lp_threadpool_addWorker(threadpool);
+		lp_threadpool_addWorker(threadpool);
+	}else if( COMM_WORKERS == 3 ){
+		lp_threadpool_addWorker(threadpool);
+		lp_threadpool_addWorker(threadpool);
+		lp_threadpool_addWorker(threadpool);
+	}
 
 	return 0;
 }
@@ -3224,7 +3248,7 @@ int main(int argc, char** argv) {
 	printOut(msg);
 #endif
 
-	//fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
 	//fprintf(stdout, "before starting jobs in threadpool!!!");
 
@@ -3241,7 +3265,7 @@ int main(int argc, char** argv) {
 	//postProcessComments();
 	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	executeQuery1Jobs(Q1_WORKER_THREADS);
-	//fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 
 	//if( isLarge )
