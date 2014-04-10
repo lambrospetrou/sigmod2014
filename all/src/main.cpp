@@ -53,7 +53,7 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 8
-#define COMM_WORKERS 3
+#define COMM_WORKERS 4
 #define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
@@ -2359,7 +2359,6 @@ struct LevelDegreeNode{
 	}
 
 	bool operator<(const LevelDegreeNode& other) const{
-		/*
 		if( this->totalReachability > other.totalReachability )
 			return true;
 		else if( this->totalReachability < other.totalReachability )
@@ -2377,7 +2376,7 @@ struct LevelDegreeNode{
 		else if( this->L3 < other.L3 )
 			return false;
 		return this->personId <= other.personId;
-		*/
+		/*
 		if( this->totalReachability > other.totalReachability )
 			return true;
 		else if( this->totalReachability < other.totalReachability )
@@ -2399,6 +2398,7 @@ struct LevelDegreeNode{
 		else if( this->L3 < other.L3 )
 			return false;
 		return this->personId <= other.personId;
+		*/
 	}
 };
 /*
@@ -2474,6 +2474,15 @@ bool DescendingQ4PersonStructPredicate(const Q4PersonStructNode& d1,
 		return d1.id <= d2.id;
 	return d1.edges > d2.edges;
 }
+
+struct MaxLevels{
+	MaxLevels(): max1(0), max2(0), max3(0){
+
+	}
+	int max1;
+	int max2;
+	int max3;
+};
 
 void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
@@ -2639,12 +2648,14 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// TODO - Update the level 3 people since we do not update the counter for those
 			//cNode.L3 = cNode.Level3People.size();
 			//cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
+			/*
 			if( maxLevel1 < cNode.L1 )
 				maxLevel1 = cNode.L1;
 			if( maxLevel2 < cNode.L2 )
 				maxLevel2 = cNode.L2;
 			if( maxLevel3 < cNode.L3 )
 				maxLevel3 = cNode.L3;
+			*/
 			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
 			cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
@@ -2661,6 +2672,28 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 		//exit(1);
 
+		// find the max for each level for each person
+
+		MaxLevels *maximumLevels = (MaxLevels*)malloc(sizeof(MaxLevels)*currentSubgraph.size());
+		maximumLevels[r_p].max1 = currentSubgraph[r_p].L1;
+		maximumLevels[r_p].max2 = currentSubgraph[r_p].L2;
+		maximumLevels[r_p].max3 = currentSubgraph[r_p].L3;
+		for( long j=currentSubgraph.size()-2; j>=0; j-- ){
+			if( currentSubgraph[j].L1 > maximumLevels[j+1].max1 )
+				maximumLevels[j].max1 = currentSubgraph[j].L1;
+			else
+				maximumLevels[j].max1 = maximumLevels[j+1].max1;
+			if( currentSubgraph[j].L2 > maximumLevels[j+1].max2 )
+				maximumLevels[j].max2 = currentSubgraph[j].L2;
+			else
+				maximumLevels[j].max2 = maximumLevels[j+1].max2;
+			if( currentSubgraph[j].L3 > maximumLevels[j+1].max3 )
+				maximumLevels[j].max3 = currentSubgraph[j].L3;
+			else
+				maximumLevels[j].max3 = maximumLevels[j+1].max3;
+		}
+
+
 		long gd_real, nextHigherLevel;
 		// best case bounds
 		long breakBound;
@@ -2671,6 +2704,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		long maxLevel1_2_3 = maxLevel1 + maxLevel2 + maxLevel3;
 
 		vector<Query4SubNode> localResults;
+		long skipped=0;
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			// calculate the geodesic prediction for the current person
 			cPerson = currentSubgraph.at(j).personId;
@@ -2692,6 +2726,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				// skip this node if it is impossible to be top-k
 				if( lower_bound > localResults[k-1].geodesic ){
 					// check if we can BREAK this loop iteration
+/*
 					if( cNode.totalReachability >= maxLevel1_2_3 ){
 						breakBound = bestLevel1_2_3;
 					}else if( cNode.totalReachability >= maxLevel1_2 ){
@@ -2699,11 +2734,25 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}else if( cNode.totalReachability >= maxLevel1 ){
 						breakBound = bestLevel1;
 					}
+*/
+
+					if( cNode.totalReachability >= ( maximumLevels[j].max1 + maximumLevels[j].max2 + maximumLevels[j].max3 ) ){
+						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) + (maximumLevels[j].max3 * 3);
+					} else if (cNode.totalReachability >= (maximumLevels[j].max1 + maximumLevels[j].max2) ) {
+						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) + ((cNode.totalReachability-maximumLevels[j].max1-maximumLevels[j].max2)*3);
+					} else if (cNode.totalReachability >= maximumLevels[j].max1) {
+						breakBound = maximumLevels[j].max1 + ((cNode.totalReachability-maximumLevels[j].max1)<<1);
+					} else {
+						// all can be placed at level 1
+						breakBound = cNode.totalReachability;
+					}
+
 					breakBound += nextHigherLevel;
 					if (breakBound > localResults[k - 1].geodesic) {
-						fprintf(stderr, "break the loop at [%d] of [%d]\n", j, szz);
+						fprintf(stderr, "break the loop at [%d] of [%d] and skipped[%d]\n", j, szz, skipped+1);
 						break;
 					}
+					skipped++;
 					continue;
 				}
 				gd_real = calculateGeodesicDistance(newGraph, cPerson, localResults[k-1].geodesic, GeodesicDistanceVisited, GeodesicBFSQueue, cNode);
@@ -2732,6 +2781,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			globalResults.push_back(Query4PersonStruct(cPerson, gd_real, r_p, cCentrality));
 */
 		}// end of persons of this subgraph
+
+		free(maximumLevels);
 
 		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 /*
