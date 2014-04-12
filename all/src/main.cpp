@@ -52,14 +52,13 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 8
-#define COMM_WORKERS 1
-//#define Q_JOB_WORKERS NUM_CORES
-#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
-//#define Q_JOB_WORKERS 1
+#define COMM_WORKERS 2
+#define Q_JOB_WORKERS NUM_CORES-1
+//#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 #define Q1_WORKER_THREADS NUM_CORES
-#define Q1_THREADPOOL_WORKER_THREADS NUM_CORES-COMM_WORKERS
-#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
-//#define Q2_WORKER_THREADS NUM_CORES-1
+//#define Q1_THREADPOOL_WORKER_THREADS NUM_CORES-COMM_WORKERS
+//#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
+#define Q2_WORKER_THREADS NUM_CORES
 /////////
 
 #define NUM_THREADS WORKER_THREADS+1
@@ -382,6 +381,9 @@ FINAL_MAP_INT_INT *TagIdToIndex;
 
 std::tr1::unordered_set<long> *Query4Tags;
 std::tr1::unordered_set<long> *Query4TagForums;
+
+char *ThreadsVisitedArrays[NUM_CORES];
+long *ThreadsBFSArrays[NUM_CORES];
 
 // TODO
 int *PersonBirthdays;
@@ -2883,13 +2885,13 @@ vector<Query1WorkerStruct*> Query1Structs;
 void* Query1WorkerPoolFunction(int tid, void *args) {
 	Query1WorkerStruct *qArgs = (Query1WorkerStruct*) args;
 	//printf("tid[%d] [%d]\n", tid, *(int*)args);
-	char *visited = (char*)malloc(N_PERSONS);
-	long *Q_BFS = (long*)malloc(sizeof(long)*N_PERSONS);
+	//char *visited = (char*)malloc(N_PERSONS);
+	//long *Q_BFS = (long*)malloc(sizeof(long)*N_PERSONS);
 
-	query1(qArgs->p1, qArgs->p2, qArgs->x, qArgs->qid, visited, Q_BFS);
+	query1(qArgs->p1, qArgs->p2, qArgs->x, qArgs->qid, ThreadsVisitedArrays[tid-1], ThreadsBFSArrays[tid-1]);
 
-	free(visited);
-	free(Q_BFS);
+	//free(visited);
+	//free(Q_BFS);
 	free(qArgs);
 	// end of job
 	return 0;
@@ -2979,9 +2981,20 @@ void *readCommentsAsyncWorker(void *args){
 	return 0;
 }
 
-pthread_t* readCommentsAsync(){
+void *readCommentsOnlyAsyncWorker(void *args){
+	readComments(inputDir);
+	// add the workers that are free now into the threadpool for queries 3,4
+	lp_threadpool_addWorker(threadpool);
+	return 0;
+}
+
+pthread_t* readCommentsAsync(int OnlyCommentsFile){
 	pthread_t* cThread = (pthread_t*)malloc(sizeof(pthread_t));
-	pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
+	if( OnlyCommentsFile == 1 ){
+		pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsOnlyAsyncWorker), NULL );
+	}else{
+		pthread_create(cThread, NULL,reinterpret_cast<void* (*)(void*)>(readCommentsAsyncWorker), NULL );
+	}
 /*
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
@@ -3295,7 +3308,7 @@ int main(int argc, char** argv) {
 
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
-	CPU_SET( 0 , &mask);
+	CPU_SET( NUM_CORES-1 , &mask);
 
 
 	// MAKE GLOBAL INITIALIZATIONS
@@ -3322,8 +3335,9 @@ int main(int argc, char** argv) {
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	pthread_t *commentsThread = readCommentsAsync();
-	//readCommentsAsyncWorker(NULL);
+	// pass 1 to read only the comments file
+	//pthread_t *commentsThread = readCommentsAsync(1);
+
 
 	// Q4 - we read this first in order to read the queries file now
 	readTags(inputDir);
@@ -3389,22 +3403,34 @@ int main(int argc, char** argv) {
 	fprintf(stderr,"query 1 no-comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 */
 
-	// start q3, q4
+	// allocate the visited arrays for the threads
+	for( int i=0; i<NUM_CORES; i++ ){
+		ThreadsVisitedArrays[i] = (char*)malloc(N_PERSONS);
+		ThreadsBFSArrays[i] = (long*)malloc(sizeof(long)*N_PERSONS);
+	}
+
+	// start q3, q4 and query 1 no comments
 	lp_threadpool_startjobs(threadpool);
+
+	readComments(inputDir);
+	// add the workers that are free now into the thread pool for queries 3,4
+	lp_threadpool_addWorker(threadpool);
+
 	synchronize_complete(threadpool);
 	lp_threadpool_destroy_threads(threadpool);
-	fprintf(stderr,"query 3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr,"query 1_3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
+
 
 	// now we can start executing QUERY 1
-	pthread_join(*commentsThread, NULL);
-	free(commentsThread);
-/*
-	readComments(inputDir);
+	//pthread_join(*commentsThread, NULL);
+	//free(commentsThread);
+
+	//readComments(inputDir);
 	readCommentReplyOfComment(inputDir);
 	//fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
-*/
+
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 	fprintf(stderr,"query 1 with comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
