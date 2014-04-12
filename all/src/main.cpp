@@ -51,6 +51,8 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
+#define QUERY1_BATCH 50
+
 #define NUM_CORES 8
 #define COMM_WORKERS 3
 #define Q_JOB_WORKERS NUM_CORES-1
@@ -2881,6 +2883,7 @@ struct Query1WorkerStruct {
 };
 
 vector<Query1WorkerStruct*> Query1Structs;
+vector<Query1WorkerStruct*> Query1StructsWithComments;
 
 void* Query1WorkerPoolFunction(int tid, void *args) {
 	Query1WorkerStruct *qArgs = (Query1WorkerStruct*) args;
@@ -2897,23 +2900,24 @@ void* Query1WorkerPoolFunction(int tid, void *args) {
 	return 0;
 }
 
-void* Query1WorkerFunction(void *args) {
-	QWorker *qws = (QWorker*)args;
+struct Q1Worker{
+	int start;
+	int end;
+	int tid;
+	vector<Query1WorkerStruct*> *queries;
+};
+
+void* Query1WorkerFunction(int tid, void *args) {
+	Q1Worker *qws = (Q1Worker*)args;
 	Query1WorkerStruct *currentJob;
 
-	char *visited = (char*)malloc(N_PERSONS);
-	long *Q_BFS = (long*)malloc(sizeof(long)*N_PERSONS);
 	for( int i=qws->start, end=qws->end; i<end; i++ ){
-		currentJob = Query1Structs[i];
-		query1(currentJob->p1, currentJob->p2, currentJob->x, currentJob->qid, visited, Q_BFS);
+		currentJob = qws->queries->at(i);
+		query1(currentJob->p1, currentJob->p2, currentJob->x, currentJob->qid, ThreadsVisitedArrays[tid-1], ThreadsBFSArrays[tid-1]);
 		free(currentJob);
 		// the following can be omitted for speedups
 		//Query1Structs[i] = 0;
 	}
-
-	free(visited);
-	free(Q_BFS);
-
 	free(qws);
 	//pthread_exit(NULL);
 	// end of job
@@ -2964,6 +2968,24 @@ void executeQuery1Jobs(int q1threads){
 		Persons[i].adjacentPersonWeightsSorted = 0;
 	}
 }
+
+void createQuery1Jobs(lp_threadpool *pool, vector<Query1WorkerStruct*> *queries){
+	int totalJobs = queries->size();
+	Q1Worker *qws;
+	int lastEnd = 0;
+	for (int i = 0; i < totalJobs; i++) {
+		qws = (Q1Worker*)malloc(sizeof(Q1Worker));
+		qws->start = lastEnd;
+		lastEnd += QUERY1_BATCH;
+		if( lastEnd <= totalJobs )
+			qws->end = lastEnd;
+		else
+			qws->end = totalJobs;
+		qws->queries = queries;
+		lp_threadpool_addjob_nolock(pool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerFunction), qws );
+	}
+}
+
 
 void *readCommentsAsyncWorker(void *args){
 	readComments(inputDir);
@@ -3201,11 +3223,12 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 
 			if( qwstruct->x > -1 )
-				//Query1Structs.push_back(qwstruct);
-				lp_threadpool_addjob_nolock(threadpool_query1_withcomments,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
+				Query1StructsWithComments.push_back(qwstruct);
+				//lp_threadpool_addjob_nolock(threadpool_query1_withcomments,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
 			else
 				//lp_threadpool_addjob_nolock(threadpool_query1_nocomments,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
-				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
+				//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
+				Query1Structs.push_back(qwstruct);
 
 			break;
 		}
@@ -3404,6 +3427,9 @@ int main(int argc, char** argv) {
 	fprintf(stderr,"query 1 no-comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 */
 
+	// create the jobs for query 1
+	createQuery1Jobs(threadpool, &Query1Structs);
+
 	// allocate the visited arrays for the threads
 	for( int i=0; i<NUM_CORES; i++ ){
 		ThreadsVisitedArrays[i] = (char*)malloc(N_PERSONS);
@@ -3433,7 +3459,7 @@ int main(int argc, char** argv) {
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 
 	//executeQuery1Jobs(Q1_WORKER_THREADS);
-	// start q3, q4 and query 1 no comments
+	createQuery1Jobs(threadpool_query1_withcomments, &Query1StructsWithComments);
 	lp_threadpool_startjobs(threadpool_query1_withcomments);
 	synchronize_complete(threadpool_query1_withcomments);
 	fprintf(stderr,"query 1 with comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
