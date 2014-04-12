@@ -49,7 +49,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define COMM_WORKERS 2
 #define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
@@ -2366,20 +2366,20 @@ struct LevelDegreeNode{
 			return true;
 		else if( this->L2 < other.L2 )
 			return false;
-		if( this->partialGeodesic < other.partialGeodesic )
-			return true;
-		else if( this->partialGeodesic > other.partialGeodesic )
-			return false;
 		if( this->L3 > other.L3 )
 			return true;
 		else if( this->L3 < other.L3 )
+			return false;
+		if( this->partialGeodesic < other.partialGeodesic )
+			return true;
+		else if( this->partialGeodesic > other.partialGeodesic )
 			return false;
 		return this->personId <= other.personId;
 	}
 };
 
 long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long cPerson,
-		long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue, LevelDegreeNode &cNode){
+		long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue, LevelDegreeNode &cNode, long allComponentPeople){
 	//fprintf(stderr, "c[%d-%d] ", cPerson, localMaximumGeodesicDistance);
 
 	long gd=0;
@@ -2409,14 +2409,40 @@ long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long c
 		}
 	}else{
 		// WE HAVE A THRESHOLD TO AVOID WHILE DOING BFS
+		int previousLevel = -1;
+		long gd_prediction = 0;
 		while(qIndex<qSize){
 			cPerson = GeodesicBFSQueue[qIndex];
 			depth = visited[cPerson];
-			gd += depth;
-
+			if( previousLevel != visited[cPerson] ){
+				//if( previousLevel == 2 ){
+					// make the prediction for this level and return if we are going to be
+					// above the threshold anyway
+					//gd_prediction = gd + ((qSize-qIndex)*(previousLevel+1));
+					gd_prediction += ((qSize-qIndex)*(previousLevel+1));
+					if( gd_prediction > localMaximumGeodesicDistance ){
+						return gd_prediction;
+					}else if( gd_prediction == localMaximumGeodesicDistance ){
+						// check if we have more people to check - therefore meaning that we are
+						// going to pass the threshold anyway again
+						if( qSize < (allComponentPeople-1) ){
+							return INT_MAX;
+						}else{
+							// we have all the people so just return the distance
+							return gd_prediction;
+						}
+					}else if( qSize == allComponentPeople ){
+						return gd_prediction;
+					}
+				//}
+			}
+			previousLevel = visited[cPerson];
+			//gd += depth;
 			// early exit
+			/*
 			if( gd > localMaximumGeodesicDistance )
 				return gd;
+			*/
 
 			vector<long> &edges = newGraph[cPerson].edges;
 			for( long e=0,esz=edges.size(); e<esz; e++ ){
@@ -2603,7 +2629,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}
 				// here we should break at the level at which we are finished storing info
-				if( visited[cPerson] == 2 )
+				if( visited[cPerson] == 3 )
 					break;
 				previousLevel = visited[cPerson];
 				vector<long> &edges = newGraph[cPerson].edges;
@@ -2662,12 +2688,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				maximumLevels[j].max2 = currentSubgraph[j].L2;
 			else
 				maximumLevels[j].max2 = maximumLevels[j+1].max2;
-			/*
 			if( currentSubgraph[j].L3 > maximumLevels[j+1].max3 )
 				maximumLevels[j].max3 = currentSubgraph[j].L3;
 			else
 				maximumLevels[j].max3 = maximumLevels[j+1].max3;
-			*/
 		}
 
 
@@ -2692,15 +2716,15 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			/////////// YOU ARE AT EACH PERSON OF A SUBGRAPH ///////////
 
 			if( localResults.size() < (unsigned int)k ){
-				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited, GeodesicBFSQueue, cNode);
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, -1, GeodesicDistanceVisited, GeodesicBFSQueue, cNode, allPersons);
 				localResults.push_back(Query4SubNode(gd_real, cPerson, i));
 				if( localResults.size() == (unsigned int)k ){
 					std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 				}
 			}else{
 				// we have already found K results so compare the values before doing BFS
-				//nextHigherLevel = ((r_p-cNode.totalReachability)<<2);
-				nextHigherLevel = ((r_p-cNode.totalReachability)*3);
+				nextHigherLevel = ((r_p-cNode.totalReachability)<<2);
+				//nextHigherLevel = ((r_p-cNode.totalReachability)*3);
 				long lower_bound = cNode.partialGeodesic + nextHigherLevel;
 				// skip this node if it is impossible to be top-k
 				if( lower_bound > localResults[k-1].geodesic ){
@@ -2715,9 +2739,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 */
 
-					/*if( cNode.totalReachability >= ( maximumLevels[j].max1 + maximumLevels[j].max2 + maximumLevels[j].max3 ) ){
+					if( cNode.totalReachability >= ( maximumLevels[j].max1 + maximumLevels[j].max2 + maximumLevels[j].max3 ) ){
 						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) + (maximumLevels[j].max3 * 3);
-					} else */if (cNode.totalReachability >= (maximumLevels[j].max1 + maximumLevels[j].max2) ) {
+					} else if (cNode.totalReachability >= (maximumLevels[j].max1 + maximumLevels[j].max2) ) {
 						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) +
 								((cNode.totalReachability-maximumLevels[j].max1-maximumLevels[j].max2)*3);
 					} else if (cNode.totalReachability >= maximumLevels[j].max1) {
@@ -2735,7 +2759,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					skipped++;
 					continue;
 				}
-				gd_real = calculateGeodesicDistance(newGraph, cPerson, localResults[k-1].geodesic, GeodesicDistanceVisited, GeodesicBFSQueue, cNode);
+				gd_real = calculateGeodesicDistance(newGraph, cPerson, localResults[k-1].geodesic, GeodesicDistanceVisited, GeodesicBFSQueue, cNode, allPersons);
 				//fprintf(stderr, "lb[%d] real[%d] lr[%d]\n", lower_bound, gd_real, localResults[k-1].geodesic);
 				if( gd_real > localResults[k-1].geodesic ){
 					continue;
