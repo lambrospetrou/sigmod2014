@@ -52,11 +52,11 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 8
-#define COMM_WORKERS 2
+#define COMM_WORKERS 3
 #define Q_JOB_WORKERS NUM_CORES-1
 //#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 #define Q1_WORKER_THREADS NUM_CORES
-//#define Q1_THREADPOOL_WORKER_THREADS NUM_CORES-COMM_WORKERS
+#define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
 //#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
 #define Q2_WORKER_THREADS NUM_CORES
 /////////
@@ -354,7 +354,7 @@ long N_QUERIES = 0;
 long long time_global_start;
 
 lp_threadpool *threadpool;
-lp_threadpool *threadpool_query1_nocomments;
+lp_threadpool *threadpool_query1_withcomments;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
@@ -3201,7 +3201,8 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 
 			if( qwstruct->x > -1 )
-				Query1Structs.push_back(qwstruct);
+				//Query1Structs.push_back(qwstruct);
+				lp_threadpool_addjob_nolock(threadpool_query1_withcomments,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
 			else
 				//lp_threadpool_addjob_nolock(threadpool_query1_nocomments,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
 				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
@@ -3318,7 +3319,7 @@ int main(int argc, char** argv) {
 	time_global_start = getTime();
 
 	threadpool = lp_threadpool_init( Q_JOB_WORKERS, NUM_CORES);
-	//threadpool_query1_nocomments = lp_threadpool_init( Q1_THREADPOOL_WORKER_THREADS, NUM_CORES);
+	threadpool_query1_withcomments = lp_threadpool_init( Q1_THREADPOOL_WORKER_THREADS, NUM_CORES);
 
 
 #ifdef DEBUGGING
@@ -3431,7 +3432,10 @@ int main(int argc, char** argv) {
 	postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 
-	executeQuery1Jobs(Q1_WORKER_THREADS);
+	//executeQuery1Jobs(Q1_WORKER_THREADS);
+	// start q3, q4 and query 1 no comments
+	lp_threadpool_startjobs(threadpool_query1_withcomments);
+	synchronize_complete(threadpool_query1_withcomments);
 	fprintf(stderr,"query 1 with comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 
