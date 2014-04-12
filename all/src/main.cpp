@@ -49,7 +49,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define COMM_WORKERS 2
 #define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
@@ -2425,7 +2425,7 @@ long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long c
 					}else if( gd_prediction == localMaximumGeodesicDistance ){
 						// check if we have more people to check - therefore meaning that we are
 						// going to pass the threshold anyway again
-						if( qSize < (allComponentPeople-1) ){
+						if( qSize < allComponentPeople ){
 							return INT_MAX;
 						}else{
 							// we have all the people so just return the distance
