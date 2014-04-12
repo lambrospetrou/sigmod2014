@@ -122,8 +122,19 @@ void inline lp_threadpool_fetchjob( lp_threadpool* pool, lp_tpjob *njob ){
 			// signal anyone waiting for complete synchronization
 			pthread_cond_broadcast(&pool->sleep);
 		}
-		pthread_cond_wait( &pool->cond_jobs, &pool->mutex_pool );
-		pool->synced_threads--;
+		// check if threadpool is destroyed and exit
+		if( pool->threadpool_destroyed == 0 ){
+			pthread_cond_wait( &pool->cond_jobs, &pool->mutex_pool );
+			pool->synced_threads--;
+		}else{
+			pthread_mutex_unlock( &pool->mutex_pool );
+			pthread_exit(0);
+		}
+
+		if( pool->threadpool_destroyed == 1 ){
+			pthread_mutex_unlock( &pool->mutex_pool );
+			pthread_exit(0);
+		}
 	}
 
 	// available job pending
@@ -185,6 +196,7 @@ lp_threadpool* lp_threadpool_init( int threads, int cores ){
 	pool->pending_jobs = 0;
 	pool->jobs_head=0;
 	pool->jobs_tail=0;
+	pool->threadpool_destroyed = 0;
 
 	pool->worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * pool->ncores);
 
@@ -235,4 +247,16 @@ void synchronize_complete(lp_threadpool* pool){
 		//fprintf( stderr, "sunchronize_complete: synced_threads[%d]\n", pool->synced_threads );
 	}
 	pthread_mutex_unlock( &pool->mutex_pool );
+}
+
+void lp_threadpool_destroy_threads(lp_threadpool*pool){
+	pthread_mutex_lock(&pool->mutex_pool);
+	pool->threadpool_destroyed = 1;
+	pthread_mutex_unlock(&pool->mutex_pool);
+	pthread_cond_broadcast(&pool->cond_jobs);
+	for( int i=0; i<pool->nthreads; i++ ){
+		pthread_join(pool->worker_threads[i], NULL);
+	}
+	free(pool->worker_threads);
+	pool->nthreads = 0;
 }

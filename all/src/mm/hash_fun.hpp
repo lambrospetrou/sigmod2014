@@ -118,6 +118,22 @@ inline size_t hash_value( unsigned long n )
 // Sequences
 ///////////////////////////////////////////////////////////////////////
 
+/** Combine the hash of various object.
+ *
+ *  @param seed contain the initial seed value and, after the function
+ *  call, will contains the new value.
+ *
+ *  @param v the object to be hashed.
+ *  @relates hash
+ */
+template <class T>
+inline void hash_combine( size_t& seed, const T& v )
+{
+    // Taken from boost::hash::hash_combine
+    seed ^= hash_value( v ) + 0x9e3779b9 + (seed<<6) + (seed>>2);
+}
+
+
 /** Hash value specialization for a range of elements.
  *
  *  Compute the combined hash value for a collection of items.
@@ -203,21 +219,6 @@ inline size_t hash_value( const std::pair<T1,T2>& p )
 
 ///////////////////////////////////////////////////////////////////////
 
-
-/** Combine the hash of various object.
- *
- *  @param seed contain the initial seed value and, after the function
- *  call, will contains the new value.
- *
- *  @param v the object to be hashed.
- *  @relates hash
- */
-template <class T>
-inline void hash_combine( size_t& seed, const T& v )
-{
-    // Taken from boost::hash::hash_combine
-    seed ^= hash_value( v ) + 0x9e3779b9 + (seed<<6) + (seed>>2);
-}
 
 ///////////////////////////////////////////////////////////////////////
 

@@ -41,6 +41,8 @@ struct lp_threadpool{
 	pthread_barrier_t pool_barrier;
 
 	char headsTime;
+
+	int threadpool_destroyed;
 };
 
 
@@ -57,5 +59,6 @@ void* lp_tpworker_thread( void* _pool );
 void synchronize_threads_master(int tid, void * arg);
 void lp_threadpool_synchronize_master(lp_threadpool* pool);
 void synchronize_complete(lp_threadpool* pool);
+void lp_threadpool_destroy_threads(lp_threadpool*pool);
 
 #endif /* LPTHREADPOOL_H_ */

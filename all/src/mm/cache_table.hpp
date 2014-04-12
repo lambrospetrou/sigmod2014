@@ -507,6 +507,16 @@ public:
         insert( other.begin(), other.end() );
     }
 
+    /**
+     * @relates cache_table
+     */
+    template <class V, class K, class DF, class HF, class KEq, class KEx, class A>
+    inline void swap( cache_table<V,K,DF,HF,KEq,KEx,A>& ht1,
+                      cache_table<V,K,DF,HF,KEq,KEx,A>& ht2 )
+    {
+        ht1.swap( ht2 );
+    }
+
     /** The assignment operator
      *
      *  @param other the cache_table to be copied
@@ -519,7 +529,7 @@ public:
             cache_table new_table( other );
             swap( *this, other );
         }
-        
+
         return *this;
     }
 
@@ -867,16 +877,6 @@ private:
     value_type* m_end_marker;  ///< Pointer to the end of the table
     iterator    m_end_it;      ///< value of end()
 };
-
-/**
- * @relates cache_table
- */
-template <class V, class K, class DF, class HF, class KEq, class KEx, class A>
-inline void swap( cache_table<V,K,DF,HF,KEq,KEx,A>& ht1, 
-                  cache_table<V,K,DF,HF,KEq,KEx,A>& ht2 )
-{
-    ht1.swap( ht2 );
-}
 
 } // namespace mm
 

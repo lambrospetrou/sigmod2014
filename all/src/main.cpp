@@ -33,6 +33,8 @@
 #include "lplibs/LPSparseArrayGeneric.h"
 #include "lplibs/atomic_ops_if.h"
 
+#include "mm/cache_map.hpp"
+
 using namespace std;
 using std::tr1::unordered_map;
 using std::tr1::unordered_set;
@@ -50,11 +52,13 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 8
-#define COMM_WORKERS 3
-#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
+#define COMM_WORKERS 8
+#define Q_JOB_WORKERS NUM_CORES
+//#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
-#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
+//#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
+#define Q2_WORKER_THREADS NUM_CORES-1
 /////////
 
 #define NUM_THREADS WORKER_THREADS+1
@@ -73,6 +77,10 @@ typedef std::tr1::unordered_map<long, long, hash<long> > MAP_LONG_LONG;
 typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
 typedef std::tr1::unordered_map<long, vector<long>, hash<long> > MAP_LONG_VecL;
 typedef std::tr1::unordered_map<long, char*, hash<long> > MAP_LONG_STRING;
+
+// FAST BUT FIXED SIZE
+typedef mm::cache_map<long,long> CMAP_LONG_LONG;
+typedef mm::cache_map<int,int> CMAP_INT_INT;
 
 // TODO - THE HASHMAP THAT WILL BE USED BELOW IN THE CODE
 typedef MAP_LONG_LONG FINAL_MAP_LONG_LONG;
@@ -921,7 +929,7 @@ void readCommentReplyOfComment(char* inputDir) {
 	free(worker_threads);
 	free(buffer);
 
-	//fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 
@@ -2610,7 +2618,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 		int ee,esz,j,szz, ii, iisz;
 		int previousLevel;
-		vector<long> *edges;
 		// find the level 2 and 3 of each node
 		for( j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			LevelDegreeNode &cNode = currentSubgraph[j];
@@ -2621,11 +2628,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// we only need the 2nd level
 			previousLevel = -1;
 
+
 			// OPTIMIZE LEVEL FINDING with manual iterations
 			// level 1
-			edges = &(newGraph[Q[0]].edges);
-			for (ee = 0, esz = edges->size(); ee < esz; ee++) {
-				cAdjacent = (*edges)[ee];
+			vector<long> &edges = newGraph[Q[0]].edges;
+			for (ee = 0, esz = edges.size(); ee < esz; ee++) {
+				cAdjacent = edges[ee];
 				if (visited[cAdjacent] == -1) {
 					Q[qSize++] = cAdjacent;
 					visited[cAdjacent] = 1;
@@ -2634,9 +2642,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 			// level 2
 			for( ii=1, iisz=qSize; ii<iisz; ii++ ){
-				edges = &(newGraph[Q[ii]].edges);
-				for (ee = 0, esz = edges->size(); ee < esz; ee++) {
-					cAdjacent = (*edges)[ee];
+				vector<long> &edges = newGraph[Q[ii]].edges;
+				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
+					cAdjacent = edges[ee];
 					if (visited[cAdjacent] == -1) {
 						Q[qSize++] = cAdjacent;
 						visited[cAdjacent] = 2;
@@ -2646,69 +2654,17 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 			// level 3
 			for (ii = qIndex, iisz = qSize; ii < iisz; ii++) {
-				edges = &(newGraph[Q[ii]].edges);
-				for (ee = 0, esz = edges->size(); ee < esz; ee++) {
-					cAdjacent = (*edges)[ee];
+				vector<long> &edges = newGraph[Q[ii]].edges;
+				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
+					cAdjacent = edges[ee];
 					if (visited[cAdjacent] == -1) {
-						// just signal them visited - do not calculate real distance
-						//Q[qSize++] = cAdjacent;
 						visited[cAdjacent] = 3;
 						++cNode.L3;
 					}
 				}
 			}
 
-			// for each level we want to process
-			/*
-			int cLevel;
-			for( cLevel=1; cLevel<=BREAK_LEVEL-1; cLevel++ ){
-				// we have a new level so set the accumulator properly
-				if (cLevel == 1) {
-					currentCounterLevel = &(cNode.L1);
-				} else if (cLevel == 2) {
-					currentCounterLevel = &(cNode.L2);
-				} else if (cLevel == 3) {
-					currentCounterLevel = &(cNode.L3);
-				}
-				while (qIndex < qSize) {
-					cPerson = Q[qIndex++];
-					if( visited[cPerson] == cLevel )
-						break;
-					edges = &(newGraph[cPerson].edges);
-					for (ee = 0, esz = edges->size(); ee < esz; ee++) {
-						cAdjacent = (*edges)[ee];
-						if (visited[cAdjacent] == -1) {
-							// just signal them visited - do not calculate real distance
-							Q[qSize++] = cAdjacent;
-							visited[cAdjacent] = cLevel;
-							++*currentCounterLevel;
-						}
-					}
-				}
-			}
-			// get the counter for the last level
-			// we have a new level so accumulate the previous level
-			if (cLevel == 1) {
-				currentCounterLevel = &(cNode.L1);
-			} else if (cLevel == 2) {
-				currentCounterLevel = &(cNode.L2);
-			} else if (cLevel == 3) {
-				currentCounterLevel = &(cNode.L3);
-			}
-			// last level of iteration in order to count the people at the BREAK LEVEL
-			while (qIndex < qSize) {
-				cPerson = Q[qIndex++];
-				edges = &(newGraph[cPerson].edges);
-				for (ee = 0, esz = edges->size(); ee < esz; ee++) {
-					cAdjacent = (*edges)[ee];
-					if (visited[cAdjacent] == -1) {
-						// just signal them visited - do not calculate real distance
-						visited[cAdjacent] = 1;
-						++*currentCounterLevel;
-					}
-				}
-			}
-			*/
+
 			/*
 			while( qIndex < qSize ){
 				cPerson = Q[qIndex];
@@ -2761,6 +2717,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 			}
 			*/
+
 			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
 			cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
@@ -3248,7 +3205,8 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
-			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+			if( !isLarge )
+				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
 		}
@@ -3336,7 +3294,7 @@ int main(int argc, char** argv) {
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	pthread_t *commentsThread = readCommentsAsync();
+	//pthread_t *commentsThread = readCommentsAsync();
 	//readCommentsAsyncWorker(NULL);
 
 	// Q4 - we read this first in order to read the queries file now
@@ -3398,15 +3356,19 @@ int main(int argc, char** argv) {
 	// start q3, q4
 	lp_threadpool_startjobs(threadpool);
 	synchronize_complete(threadpool);
+	lp_threadpool_destroy_threads(threadpool);
 	fprintf(stderr,"query 3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
 	// now we can start executing QUERY 1
-	pthread_join(*commentsThread, NULL);
-	free(commentsThread);
-	//readCommentReplyOfComment(inputDir);
+	//pthread_join(*commentsThread, NULL);
+	//free(commentsThread);
+
+	readComments(inputDir);
+	readCommentReplyOfComment(inputDir);
 	//fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
-	//postProcessComments();
-	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	postProcessComments();
+	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+
 	executeQuery1Jobs(Q1_WORKER_THREADS);
 	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
