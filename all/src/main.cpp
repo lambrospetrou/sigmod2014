@@ -2313,7 +2313,7 @@ struct LevelDegreeNode{
 	long L2;
 	long L3;
 	long personId;
-	vector<long> Level3People;
+	//vector<long> Level3People;
 
 	LevelDegreeNode(){
 		personId = -1;
@@ -2602,10 +2602,11 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
 		*/
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
-		//fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 
-		long maxLevel1=0, maxLevel2=0, maxLevel3=0;
-		long *currentCounterLevel, *currentMaxLevel;
+		int BREAK_LEVEL = 3;
+		int NEXT_HIGHER_LEVEL=BREAK_LEVEL+1;
+		long *currentCounterLevel;
 
 		// find the level 2 and 3 of each node
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
@@ -2617,7 +2618,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// we only need the 2nd level
 			int previousLevel = -1;
 			while( qIndex < qSize ){
-				cPerson = Q[qIndex++];
+				cPerson = Q[qIndex];
 				if( visited[cPerson] != previousLevel ){
 					// we have a new level so accumulate the previous level
 					if( previousLevel == -1 ){
@@ -2629,7 +2630,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}
 				// here we should break at the level at which we are finished storing info
-				if( visited[cPerson] == 3 )
+				if( visited[cPerson] == BREAK_LEVEL-1 )
 					break;
 				previousLevel = visited[cPerson];
 				vector<long> &edges = newGraph[cPerson].edges;
@@ -2639,24 +2640,34 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 						Q[qSize++] = cAdjacent;
 						visited[cAdjacent] = visited[cPerson] + 1;
 						++*currentCounterLevel;
-						/*
-						if( visited[cAdjacent] == 3 )
-							cNode.Level3People.push_back(cAdjacent);
-						*/
+					}
+				}
+				qIndex++;
+			}
+			if( visited[cPerson] != previousLevel ){
+				// we have a new level so accumulate the previous level
+				if (previousLevel == -1) {
+					currentCounterLevel = &(cNode.L1);
+				} else if (previousLevel == 0) {
+					currentCounterLevel = &(cNode.L2);
+				} else if (previousLevel == 1) {
+					currentCounterLevel = &(cNode.L3);
+				}
+			}
+			// last level of iteration in order to count the people at the BREAK LEVEL
+			while( qIndex < qSize ){
+				cPerson = Q[qIndex++];
+				vector<long> &edges = newGraph[cPerson].edges;
+				for( long ee=0,esz=edges.size(); ee<esz; ee++ ){
+					cAdjacent = edges[ee];
+					if( visited[cAdjacent] == -1 ){
+						// just signal them visited - do not calculate real distance
+						//visited[cAdjacent] = visited[cPerson] + 1;
+						visited[cAdjacent] = 1;
+						++*currentCounterLevel;
 					}
 				}
 			}
-			// TODO - Update the level 3 people since we do not update the counter for those
-			//cNode.L3 = cNode.Level3People.size();
-			//cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
-			/*
-			if( maxLevel1 < cNode.L1 )
-				maxLevel1 = cNode.L1;
-			if( maxLevel2 < cNode.L2 )
-				maxLevel2 = cNode.L2;
-			if( maxLevel3 < cNode.L3 )
-				maxLevel3 = cNode.L3;
-			*/
 			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
 			cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
@@ -2668,7 +2679,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			fprintf(stderr, "%ld [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.totalReachability );
 		}
 */
-		//fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 		////////////////////////////////////////////////////////////////
 
 		//exit(1);
@@ -2694,17 +2705,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				maximumLevels[j].max3 = maximumLevels[j+1].max3;
 		}
 
-
 		long gd_real, nextHigherLevel;
-		// best case bounds
 		long breakBound;
-		/*
-		long bestLevel1 = maxLevel1;
-		long bestLevel1_2 = maxLevel1 + (maxLevel2 << 1);
-		long bestLevel1_2_3 = bestLevel1_2 + maxLevel3 * 3;
-		long maxLevel1_2 = maxLevel1 + maxLevel2;
-		long maxLevel1_2_3 = maxLevel1 + maxLevel2 + maxLevel3;
-		*/
 
 		vector<Query4SubNode> localResults;
 		long skipped=0;
@@ -2723,22 +2725,13 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 			}else{
 				// we have already found K results so compare the values before doing BFS
-				nextHigherLevel = ((r_p-cNode.totalReachability)<<2);
-				//nextHigherLevel = ((r_p-cNode.totalReachability)*3);
+				//nextHigherLevel = ((r_p-cNode.totalReachability)<<2);
+				nextHigherLevel = ((r_p-cNode.totalReachability)*NEXT_HIGHER_LEVEL);
+
 				long lower_bound = cNode.partialGeodesic + nextHigherLevel;
 				// skip this node if it is impossible to be top-k
 				if( lower_bound > localResults[k-1].geodesic ){
 					// check if we can BREAK this loop iteration
-/*
-					if( cNode.totalReachability >= maxLevel1_2_3 ){
-						breakBound = bestLevel1_2_3;
-					}else if( cNode.totalReachability >= maxLevel1_2 ){
-						breakBound = bestLevel1_2;
-					}else if( cNode.totalReachability >= maxLevel1 ){
-						breakBound = bestLevel1;
-					}
-*/
-
 					if( cNode.totalReachability >= ( maximumLevels[j].max1 + maximumLevels[j].max2 + maximumLevels[j].max3 ) ){
 						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) + (maximumLevels[j].max3 * 3);
 					} else if (cNode.totalReachability >= (maximumLevels[j].max1 + maximumLevels[j].max2) ) {
@@ -3161,7 +3154,8 @@ void readQueries(char *queriesFile) {
 			qwstruct->name_sz = name_sz;
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
-			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+
+			//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
 		}
