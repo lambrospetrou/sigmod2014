@@ -2378,11 +2378,10 @@ struct LevelDegreeNode{
 	}
 };
 
-long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue, LevelDegreeNode &cNode){
+long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long cPerson,
+		long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue, LevelDegreeNode &cNode){
 	//fprintf(stderr, "c[%d-%d] ", cPerson, localMaximumGeodesicDistance);
 
-	if( localMaximumGeodesicDistance == -1 )
-		localMaximumGeodesicDistance = LONG_MAX;
 	long gd=0;
 	memset(visited, -1, N_PERSONS);
 	long qIndex = 0;
@@ -2391,25 +2390,45 @@ long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long c
 	visited[cPerson] = 0;
 	long depth;
 	long cAdjacent;
-	while(qIndex<qSize){
-		cPerson = GeodesicBFSQueue[qIndex];
-		depth = visited[cPerson];
-		gd += depth;
-
-		// early exit
-		if( gd > localMaximumGeodesicDistance )
-			return gd;
-
-		vector<long> &edges = newGraph[cPerson].edges;
-		for( long e=0,esz=edges.size(); e<esz; e++ ){
-			cAdjacent = edges[e];
-			if( visited[cAdjacent] >= 0 )
-				continue;
-			visited[cAdjacent] = depth+1;
-			GeodesicBFSQueue[qSize++] = cAdjacent;
+	if( localMaximumGeodesicDistance == -1 ){
+		// WE DO NOT HAVE A THRESHOLD TO AVOID SO JUST DO BFS
+		while(qIndex<qSize){
+			cPerson = GeodesicBFSQueue[qIndex];
+			depth = visited[cPerson];
+			gd += depth;
+			vector<long> &edges = newGraph[cPerson].edges;
+			for( long e=0,esz=edges.size(); e<esz; e++ ){
+				cAdjacent = edges[e];
+				if( visited[cAdjacent] >= 0 )
+					continue;
+				visited[cAdjacent] = depth+1;
+				GeodesicBFSQueue[qSize++] = cAdjacent;
+			}
+			// next vertex from queue
+			qIndex++;
 		}
-		// next vertex from queue
-		qIndex++;
+	}else{
+		// WE HAVE A THRESHOLD TO AVOID WHILE DOING BFS
+		while(qIndex<qSize){
+			cPerson = GeodesicBFSQueue[qIndex];
+			depth = visited[cPerson];
+			gd += depth;
+
+			// early exit
+			if( gd > localMaximumGeodesicDistance )
+				return gd;
+
+			vector<long> &edges = newGraph[cPerson].edges;
+			for( long e=0,esz=edges.size(); e<esz; e++ ){
+				cAdjacent = edges[e];
+				if( visited[cAdjacent] >= 0 )
+					continue;
+				visited[cAdjacent] = depth+1;
+				GeodesicBFSQueue[qSize++] = cAdjacent;
+			}
+			// next vertex from queue
+			qIndex++;
+		}
 	}
 	return gd;
 }
