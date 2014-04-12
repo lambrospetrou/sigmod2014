@@ -2634,13 +2634,15 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// OPTIMIZE LEVEL FINDING with manual iterations
 			// level 1
 			vector<long> &edges = newGraph[Q[0]].edges;
+			cNode.L1 = edges.size();
 			for (ee = 0, esz = edges.size(); ee < esz; ee++) {
 				cAdjacent = edges[ee];
-				if (visited[cAdjacent] == -1) {
+				// not need to check since our edges are unique
+				//if (visited[cAdjacent] == -1) {
 					Q[qSize++] = cAdjacent;
 					visited[cAdjacent] = 1;
-					++cNode.L1;
-				}
+					//++cNode.L1;
+				//}
 			}
 			// level 2
 			for( ii=1, iisz=qSize; ii<iisz; ii++ ){
@@ -3188,7 +3190,8 @@ void readQueries(char *queriesFile) {
 			if( qwstruct->x > -1 )
 				Query1Structs.push_back(qwstruct);
 			else
-				lp_threadpool_addjob_nolock(threadpool_query1_nocomments,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
+				//lp_threadpool_addjob_nolock(threadpool_query1_nocomments,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
+				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
 
 			break;
 		}
@@ -3302,7 +3305,7 @@ int main(int argc, char** argv) {
 	time_global_start = getTime();
 
 	threadpool = lp_threadpool_init( Q_JOB_WORKERS, NUM_CORES);
-	threadpool_query1_nocomments = lp_threadpool_init( Q1_THREADPOOL_WORKER_THREADS, NUM_CORES);
+	//threadpool_query1_nocomments = lp_threadpool_init( Q1_THREADPOOL_WORKER_THREADS, NUM_CORES);
 
 
 #ifdef DEBUGGING
@@ -3378,13 +3381,13 @@ int main(int argc, char** argv) {
 
 	//fprintf(stdout, "before starting jobs in threadpool!!!");
 
-
+/*
 	// start q1 no comments
 	lp_threadpool_startjobs(threadpool_query1_nocomments);
 	synchronize_complete(threadpool_query1_nocomments);
 	lp_threadpool_destroy_threads(threadpool_query1_nocomments);
 	fprintf(stderr,"query 1 no-comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
+*/
 
 	// start q3, q4
 	lp_threadpool_startjobs(threadpool);
@@ -3403,7 +3406,7 @@ int main(int argc, char** argv) {
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 */
 	executeQuery1Jobs(Q1_WORKER_THREADS);
-	fprintf(stderr,"query 1 comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr,"query 1 with comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 
 	//if( isLarge )
