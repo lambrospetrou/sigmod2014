@@ -2627,7 +2627,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			for (ee = 0, esz = edges->size(); ee < esz; ee++) {
 				cAdjacent = (*edges)[ee];
 				if (visited[cAdjacent] == -1) {
-					// just signal them visited - do not calculate real distance
 					Q[qSize++] = cAdjacent;
 					visited[cAdjacent] = 1;
 					++cNode.L1;
@@ -2639,7 +2638,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				for (ee = 0, esz = edges->size(); ee < esz; ee++) {
 					cAdjacent = (*edges)[ee];
 					if (visited[cAdjacent] == -1) {
-						// just signal them visited - do not calculate real distance
 						Q[qSize++] = cAdjacent;
 						visited[cAdjacent] = 2;
 						++cNode.L2;
