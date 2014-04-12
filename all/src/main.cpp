@@ -27,14 +27,11 @@
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
 
-#include "lplibs/LPDisjointSetForest.h"
-#include "lplibs/LPBitset.h"
 #include "lplibs/LPThreadpool.h"
+#include "lplibs/LPBitset.h"
 #include "lplibs/LPSparseBitset.h"
 #include "lplibs/LPSparseArrayGeneric.h"
 #include "lplibs/atomic_ops_if.h"
-#include "lplibs/TopKCloseness.h"
-#include "lplibs/EfficientTopK.h"
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -1777,8 +1774,8 @@ long findTagLargestComponent(vector<Q2ListNode> &people, unsigned int queryBirth
 //long findTagLargestComponent(vector<Q2ListNode*> people, unsigned int queryBirth, long minComponentSize) {
 	// make the persons for this graph a set
 	long indexValidPersons=0;
-	//LPBitset newGraphPersons(N_PERSONS);
-	LPSparseBitset newGraphPersons;
+	LPBitset newGraphPersons(N_PERSONS);
+	//LPSparseBitset newGraphPersons;
 	for( unsigned long i=0,sz=people.size(); i<sz && people[i].birth >= queryBirth; i++ ){
 		newGraphPersons.set(people[i].personId);
 		indexValidPersons++;
@@ -2337,31 +2334,10 @@ struct LevelDegreeNode{
 	}
 
 	bool operator<(const LevelDegreeNode& other) const{
-		if( this->totalReachability > other.totalReachability )
-			return true;
-		else if( this->totalReachability < other.totalReachability )
-			return false;
-		if( this->L1 > other.L1 )
-			return true;
-		else if( this->L1 < other.L1 )
-			return false;
-		if( this->L2 > other.L2 )
-			return true;
-		else if( this->L2 < other.L2 )
-			return false;
-		if( this->L3 > other.L3 )
-			return true;
-		else if( this->L3 < other.L3 )
-			return false;
-		return this->personId <= other.personId;
 		/*
 		if( this->totalReachability > other.totalReachability )
 			return true;
 		else if( this->totalReachability < other.totalReachability )
-			return false;
-		if( this->partialGeodesic < other.partialGeodesic )
-			return true;
-		else if( this->partialGeodesic > other.partialGeodesic )
 			return false;
 		if( this->L1 > other.L1 )
 			return true;
@@ -2377,29 +2353,30 @@ struct LevelDegreeNode{
 			return false;
 		return this->personId <= other.personId;
 		*/
+
+		if( this->totalReachability > other.totalReachability )
+			return true;
+		else if( this->totalReachability < other.totalReachability )
+			return false;
+		if( this->L1 > other.L1 )
+			return true;
+		else if( this->L1 < other.L1 )
+			return false;
+		if( this->L2 > other.L2 )
+			return true;
+		else if( this->L2 < other.L2 )
+			return false;
+		if( this->partialGeodesic < other.partialGeodesic )
+			return true;
+		else if( this->partialGeodesic > other.partialGeodesic )
+			return false;
+		if( this->L3 > other.L3 )
+			return true;
+		else if( this->L3 < other.L3 )
+			return false;
+		return this->personId <= other.personId;
 	}
 };
-/*
-bool LevelDegreeNodePredicateDesc( const LevelDegreeNode& this_, const LevelDegreeNode& other ){
-	if( this_.totalReachability > other.totalReachability )
-		return true;
-	else if( this_.totalReachability < other.totalReachability )
-		return false;
-	if( this_.L1 > other.L1 )
-		return true;
-	else if( this_.L1 < other.L1 )
-		return false;
-	if( this_.L2 > other.L2 )
-		return true;
-	else if( this_.L2 < other.L2 )
-		return false;
-	if( this_.L3 > other.L3 )
-		return true;
-	else if( this_.L3 < other.L3 )
-		return false;
-	return this_.personId <= other.personId;
-}
-*/
 
 long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long cPerson, long localMaximumGeodesicDistance, char* visited, long *GeodesicBFSQueue, LevelDegreeNode &cNode){
 	//fprintf(stderr, "c[%d-%d] ", cPerson, localMaximumGeodesicDistance);
@@ -2606,7 +2583,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 						currentCounterLevel = &(cNode.L3);
 					}
 				}
-				if( visited[cPerson] == 3 )
+				// here we should break at the level at which we are finished storing info
+				if( visited[cPerson] == 2 )
 					break;
 				previousLevel = visited[cPerson];
 				vector<long> &edges = newGraph[cPerson].edges;
@@ -2665,21 +2643,25 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				maximumLevels[j].max2 = currentSubgraph[j].L2;
 			else
 				maximumLevels[j].max2 = maximumLevels[j+1].max2;
+			/*
 			if( currentSubgraph[j].L3 > maximumLevels[j+1].max3 )
 				maximumLevels[j].max3 = currentSubgraph[j].L3;
 			else
 				maximumLevels[j].max3 = maximumLevels[j+1].max3;
+			*/
 		}
 
 
 		long gd_real, nextHigherLevel;
 		// best case bounds
 		long breakBound;
+		/*
 		long bestLevel1 = maxLevel1;
 		long bestLevel1_2 = maxLevel1 + (maxLevel2 << 1);
 		long bestLevel1_2_3 = bestLevel1_2 + maxLevel3 * 3;
 		long maxLevel1_2 = maxLevel1 + maxLevel2;
 		long maxLevel1_2_3 = maxLevel1 + maxLevel2 + maxLevel3;
+		*/
 
 		vector<Query4SubNode> localResults;
 		long skipped=0;
@@ -2698,8 +2680,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 			}else{
 				// we have already found K results so compare the values before doing BFS
-				//long lower_bound = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3) + ((r_p-cNode.totalReachability)<<2);
-				nextHigherLevel = ((r_p-cNode.totalReachability)<<2);
+				//nextHigherLevel = ((r_p-cNode.totalReachability)<<2);
+				nextHigherLevel = ((r_p-cNode.totalReachability)*3);
 				long lower_bound = cNode.partialGeodesic + nextHigherLevel;
 				// skip this node if it is impossible to be top-k
 				if( lower_bound > localResults[k-1].geodesic ){
@@ -2714,9 +2696,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 */
 
-					if( cNode.totalReachability >= ( maximumLevels[j].max1 + maximumLevels[j].max2 + maximumLevels[j].max3 ) ){
+					/*if( cNode.totalReachability >= ( maximumLevels[j].max1 + maximumLevels[j].max2 + maximumLevels[j].max3 ) ){
 						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) + (maximumLevels[j].max3 * 3);
-					} else if (cNode.totalReachability >= (maximumLevels[j].max1 + maximumLevels[j].max2) ) {
+					} else */if (cNode.totalReachability >= (maximumLevels[j].max1 + maximumLevels[j].max2) ) {
 						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) +
 								((cNode.totalReachability-maximumLevels[j].max1-maximumLevels[j].max2)*3);
 					} else if (cNode.totalReachability >= maximumLevels[j].max1) {
