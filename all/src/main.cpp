@@ -2608,15 +2608,70 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		int NEXT_HIGHER_LEVEL=BREAK_LEVEL+1;
 		long *currentCounterLevel;
 
+		int ee,esz,j, szz;
+		int previousLevel;
+		vector<long> *edges;
 		// find the level 2 and 3 of each node
-		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
+		for( j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			LevelDegreeNode &cNode = currentSubgraph[j];
 			memset(visited, -1, N_PERSONS);
 			Q[0] = currentSubgraph[j].personId;
 			qIndex = 0; qSize = 1;
 			visited[Q[0]] = 0;
 			// we only need the 2nd level
-			int previousLevel = -1;
+			previousLevel = -1;
+
+			// for each level we want to process
+			int cLevel;
+			for( cLevel=1; cLevel<=BREAK_LEVEL-1; cLevel++ ){
+				// we have a new level so set the accumulator properly
+				if (cLevel == 1) {
+					currentCounterLevel = &(cNode.L1);
+				} else if (cLevel == 2) {
+					currentCounterLevel = &(cNode.L2);
+				} else if (cLevel == 3) {
+					currentCounterLevel = &(cNode.L3);
+				}
+				while (qIndex < qSize) {
+					cPerson = Q[qIndex++];
+					if( visited[cPerson] == cLevel )
+						break;
+					edges = &(newGraph[cPerson].edges);
+					for (ee = 0, esz = edges->size(); ee < esz; ee++) {
+						cAdjacent = (*edges)[ee];
+						if (visited[cAdjacent] == -1) {
+							// just signal them visited - do not calculate real distance
+							Q[qSize++] = cAdjacent;
+							visited[cAdjacent] = cLevel;
+							++*currentCounterLevel;
+						}
+					}
+				}
+			}
+			// get the counter for the last level
+			// we have a new level so accumulate the previous level
+			if (cLevel == 1) {
+				currentCounterLevel = &(cNode.L1);
+			} else if (cLevel == 2) {
+				currentCounterLevel = &(cNode.L2);
+			} else if (cLevel == 3) {
+				currentCounterLevel = &(cNode.L3);
+			}
+			// last level of iteration in order to count the people at the BREAK LEVEL
+			while (qIndex < qSize) {
+				cPerson = Q[qIndex++];
+				edges = &(newGraph[cPerson].edges);
+				for (ee = 0, esz = edges->size(); ee < esz; ee++) {
+					cAdjacent = (*edges)[ee];
+					if (visited[cAdjacent] == -1) {
+						// just signal them visited - do not calculate real distance
+						visited[cAdjacent] = 1;
+						++*currentCounterLevel;
+					}
+				}
+			}
+
+			/*
 			while( qIndex < qSize ){
 				cPerson = Q[qIndex];
 				if( visited[cPerson] != previousLevel ){
@@ -2644,21 +2699,20 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 				qIndex++;
 			}
-			if( visited[cPerson] != previousLevel ){
-				// we have a new level so accumulate the previous level
-				if (previousLevel == -1) {
-					currentCounterLevel = &(cNode.L1);
-				} else if (previousLevel == 0) {
-					currentCounterLevel = &(cNode.L2);
-				} else if (previousLevel == 1) {
-					currentCounterLevel = &(cNode.L3);
-				}
+			// get the counter for the last level
+			// we have a new level so accumulate the previous level
+			if (previousLevel == -1) {
+				currentCounterLevel = &(cNode.L1);
+			} else if (previousLevel == 0) {
+				currentCounterLevel = &(cNode.L2);
+			} else if (previousLevel == 1) {
+				currentCounterLevel = &(cNode.L3);
 			}
 			// last level of iteration in order to count the people at the BREAK LEVEL
 			while( qIndex < qSize ){
 				cPerson = Q[qIndex++];
 				vector<long> &edges = newGraph[cPerson].edges;
-				for( long ee=0,esz=edges.size(); ee<esz; ee++ ){
+				for( ee=0,esz=edges.size(); ee<esz; ee++ ){
 					cAdjacent = edges[ee];
 					if( visited[cAdjacent] == -1 ){
 						// just signal them visited - do not calculate real distance
@@ -2668,6 +2722,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}
 			}
+			*/
 			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
 			cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
@@ -2789,7 +2844,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		fprintf(stderr, "finished\n");
 */
 		//localResults.resize( localResults.size()>=(unsigned int)k ? k : localResults.size());
-		int szz = localResults.size()>=(unsigned int)k ? k : localResults.size();
+		szz = localResults.size()>=(unsigned int)k ? k : localResults.size();
 		for( int ii=0; ii<szz; ii++ ){
 			cCentrality = ((r_p * r_p)*1.0) / localResults[ii].geodesic;
 			globalResults.push_back(Query4PersonStruct(localResults[ii].personId, localResults[ii].geodesic, r_p, cCentrality));
