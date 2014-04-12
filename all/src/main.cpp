@@ -49,8 +49,8 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 4
-#define COMM_WORKERS 2
+#define NUM_CORES 8
+#define COMM_WORKERS 3
 #define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
@@ -2602,13 +2602,13 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
 		*/
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
-		fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		//fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 
 		int BREAK_LEVEL = 3;
 		int NEXT_HIGHER_LEVEL=BREAK_LEVEL+1;
 		long *currentCounterLevel;
 
-		int ee,esz,j, szz;
+		int ee,esz,j,szz, ii, iisz;
 		int previousLevel;
 		vector<long> *edges;
 		// find the level 2 and 3 of each node
@@ -2621,7 +2621,47 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// we only need the 2nd level
 			previousLevel = -1;
 
+			// OPTIMIZE LEVEL FINDING with manual iterations
+			// level 1
+			edges = &(newGraph[Q[0]].edges);
+			for (ee = 0, esz = edges->size(); ee < esz; ee++) {
+				cAdjacent = (*edges)[ee];
+				if (visited[cAdjacent] == -1) {
+					// just signal them visited - do not calculate real distance
+					Q[qSize++] = cAdjacent;
+					visited[cAdjacent] = 1;
+					++cNode.L1;
+				}
+			}
+			// level 2
+			for( ii=1, iisz=qSize; ii<iisz; ii++ ){
+				edges = &(newGraph[Q[ii]].edges);
+				for (ee = 0, esz = edges->size(); ee < esz; ee++) {
+					cAdjacent = (*edges)[ee];
+					if (visited[cAdjacent] == -1) {
+						// just signal them visited - do not calculate real distance
+						Q[qSize++] = cAdjacent;
+						visited[cAdjacent] = 2;
+						++cNode.L2;
+					}
+				}
+			}
+			// level 3
+			for (ii = qIndex, iisz = qSize; ii < iisz; ii++) {
+				edges = &(newGraph[Q[ii]].edges);
+				for (ee = 0, esz = edges->size(); ee < esz; ee++) {
+					cAdjacent = (*edges)[ee];
+					if (visited[cAdjacent] == -1) {
+						// just signal them visited - do not calculate real distance
+						//Q[qSize++] = cAdjacent;
+						visited[cAdjacent] = 3;
+						++cNode.L3;
+					}
+				}
+			}
+
 			// for each level we want to process
+			/*
 			int cLevel;
 			for( cLevel=1; cLevel<=BREAK_LEVEL-1; cLevel++ ){
 				// we have a new level so set the accumulator properly
@@ -2670,7 +2710,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}
 			}
-
+			*/
 			/*
 			while( qIndex < qSize ){
 				cPerson = Q[qIndex];
@@ -2734,7 +2774,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			fprintf(stderr, "%ld [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.totalReachability );
 		}
 */
-		fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		//fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 		////////////////////////////////////////////////////////////////
 
 		//exit(1);
@@ -2801,7 +2841,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 					breakBound += nextHigherLevel;
 					if (breakBound > localResults[k - 1].geodesic) {
-						fprintf(stderr, "break the loop at [%d] of [%d] and skipped[%d]\n", j, szz, skipped+1);
+						//fprintf(stderr, "break the loop at [%d] of [%d] and skipped[%d]\n", j, szz, skipped+1);
 						break;
 					}
 					skipped++;
@@ -3210,7 +3250,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
-			//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+			lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
 		}
