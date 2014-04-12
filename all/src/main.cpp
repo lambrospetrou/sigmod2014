@@ -52,8 +52,8 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define NUM_CORES 8
-#define COMM_WORKERS 4
+#define NUM_CORES 4
+#define COMM_WORKERS 2
 #define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
@@ -150,9 +150,7 @@ struct TagSubStruct {
 // QUERY SPECIFIC
 /////////////////////////////
 struct QueryBFS {
-	QueryBFS(long id, long d) {
-		person = id;
-		depth = d;
+	QueryBFS(long id, long d):person(id), depth(d) {
 	}
 	long person;
 	int depth;
@@ -165,10 +163,7 @@ struct Query3PQ {
 		idB = INT_MAX;
 		commonTags = 0;
 	}
-	Query3PQ(long a, long b, int ct) {
-		idA = a;
-		idB = b;
-		commonTags = ct;
+	Query3PQ(long a, long b, int ct):idA(a),idB(b),commonTags(ct) {
 	}
 	long idA;
 	long idB;
@@ -304,21 +299,6 @@ struct FileWorker{
 	int tid;
 };
 
-/*
-struct EstimationNode{
-	EstimationNode(){
-		personId = -1;
-		distance = -1;
-	}
-	EstimationNode(long id, long d){
-		personId = id;
-		distance = d;
-	}
-	long personId;
-	long distance;
-};
-*/
-
 ///////////////////////////////////////////////////////////////////////////////
 // FUNCTION PROTOTYPES
 ///////////////////////////////////////////////////////////////////////////////
@@ -369,8 +349,6 @@ long N_QUERIES = 0;
 long long time_global_start;
 
 lp_threadpool *threadpool;
-lp_threadpool *threadpool3;
-lp_threadpool *threadpool4;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
@@ -2739,7 +2717,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					if( cNode.totalReachability >= ( maximumLevels[j].max1 + maximumLevels[j].max2 + maximumLevels[j].max3 ) ){
 						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) + (maximumLevels[j].max3 * 3);
 					} else if (cNode.totalReachability >= (maximumLevels[j].max1 + maximumLevels[j].max2) ) {
-						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) + ((cNode.totalReachability-maximumLevels[j].max1-maximumLevels[j].max2)*3);
+						breakBound = maximumLevels[j].max1 + (maximumLevels[j].max2 << 1) +
+								((cNode.totalReachability-maximumLevels[j].max1-maximumLevels[j].max2)*3);
 					} else if (cNode.totalReachability >= maximumLevels[j].max1) {
 						breakBound = maximumLevels[j].max1 + ((cNode.totalReachability-maximumLevels[j].max1)<<1);
 					} else {
@@ -2791,8 +2770,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}
 		fprintf(stderr, "finished\n");
 */
-		localResults.resize( localResults.size()>=(unsigned int)k ? k : localResults.size());
-		for( int ii=0,szz=localResults.size(); ii<szz; ii++ ){
+		//localResults.resize( localResults.size()>=(unsigned int)k ? k : localResults.size());
+		int szz = localResults.size()>=(unsigned int)k ? k : localResults.size();
+		for( int ii=0; ii<szz; ii++ ){
 			cCentrality = ((r_p * r_p)*1.0) / localResults[ii].geodesic;
 			globalResults.push_back(Query4PersonStruct(localResults[ii].personId, localResults[ii].geodesic, r_p, cCentrality));
 		}
