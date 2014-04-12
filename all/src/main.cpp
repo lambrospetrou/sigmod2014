@@ -52,13 +52,14 @@ using std::tr1::hash;
 #define LONGEST_LINE_READING 2048
 
 #define NUM_CORES 8
-#define COMM_WORKERS 8
-#define Q_JOB_WORKERS NUM_CORES
-//#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
+#define COMM_WORKERS 1
+//#define Q_JOB_WORKERS NUM_CORES
+#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
-//#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
-#define Q2_WORKER_THREADS NUM_CORES-1
+#define Q1_THREADPOOL_WORKER_THREADS NUM_CORES-COMM_WORKERS
+#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
+//#define Q2_WORKER_THREADS NUM_CORES-1
 /////////
 
 #define NUM_THREADS WORKER_THREADS+1
@@ -354,6 +355,7 @@ long N_QUERIES = 0;
 long long time_global_start;
 
 lp_threadpool *threadpool;
+lp_threadpool *threadpool_query1_nocomments;
 
 PersonStruct *Persons;
 TrieNode *PlacesToId;
@@ -2876,6 +2878,21 @@ struct Query1WorkerStruct {
 
 vector<Query1WorkerStruct*> Query1Structs;
 
+void* Query1WorkerPoolFunction(int tid, void *args) {
+	Query1WorkerStruct *qArgs = (Query1WorkerStruct*) args;
+	//printf("tid[%d] [%d]\n", tid, *(int*)args);
+	char *visited = (char*)malloc(N_PERSONS);
+	long *Q_BFS = (long*)malloc(sizeof(long)*N_PERSONS);
+
+	query1(qArgs->p1, qArgs->p2, qArgs->x, qArgs->qid, visited, Q_BFS);
+
+	free(visited);
+	free(Q_BFS);
+	free(qArgs);
+	// end of job
+	return 0;
+}
+
 void* Query1WorkerFunction(void *args) {
 	QWorker *qws = (QWorker*)args;
 	Query1WorkerStruct *currentJob;
@@ -2894,7 +2911,7 @@ void* Query1WorkerFunction(void *args) {
 	free(Q_BFS);
 
 	free(qws);
-	pthread_exit(NULL);
+	//pthread_exit(NULL);
 	// end of job
 	return 0;
 }
@@ -2904,7 +2921,11 @@ void executeQuery1Jobs(int q1threads){
 	int perThreadJobs = totalJobs / q1threads;
 	int untilThreadJobsPlus = totalJobs % q1threads;
 	int lastEnd = 0;
-	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*q1threads);
+	pthread_t *worker1_threads = (pthread_t*)malloc(sizeof(pthread_t)*q1threads);
+	if( worker1_threads == NULL ){
+		fprintf(stdout, "out of memory at execution of query 1\n");
+		exit(1);
+	}
 	QWorker *qws;
 	cpu_set_t mask;
 	for (int i = 0; i < q1threads; i++) {
@@ -2916,7 +2937,7 @@ void executeQuery1Jobs(int q1threads){
 			lastEnd += perThreadJobs;
 		}
 		qws->end = lastEnd;
-		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query1WorkerFunction), qws );
+		pthread_create(&worker1_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(Query1WorkerFunction), qws );
 		/*
 		CPU_ZERO(&mask);
 		CPU_SET( i % q1threads , &mask);
@@ -2929,9 +2950,9 @@ void executeQuery1Jobs(int q1threads){
 
 	// DO NOT NEED TO wait for them to finish for now since we are reading files at the same time
 	for (int i = 0; i < q1threads; i++) {
-		pthread_join(worker_threads[i], NULL);
+		pthread_join(worker1_threads[i], NULL);
 	}
-	free(worker_threads);
+	free(worker1_threads);
 	// free all the memory being held for the comments
 	for( long i=0; i<N_PERSONS; i++ ){
 		if( Persons[i].adjacents > 0 )
@@ -2948,12 +2969,8 @@ void *readCommentsAsyncWorker(void *args){
 	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//fprintf(stderr, "finished processing comments\n");
 
-	if( COMM_WORKERS == 2 ){
-		lp_threadpool_addWorker(threadpool);
-		lp_threadpool_addWorker(threadpool);
-	}else if( COMM_WORKERS == 3 ){
-		lp_threadpool_addWorker(threadpool);
-		lp_threadpool_addWorker(threadpool);
+	// add the workers that are free now into the threadpool for queries 3,4
+	for(int i=0; i<COMM_WORKERS; i++){
 		lp_threadpool_addWorker(threadpool);
 	}
 
@@ -3159,12 +3176,19 @@ void readQueries(char *queriesFile) {
 			//query1(getStrAsLong(startLine+7), getStrAsLong(second), getStrAsLong(third), qid);
 
 			Query1WorkerStruct *qwstruct = (Query1WorkerStruct*) malloc(sizeof(Query1WorkerStruct));
+			if( qwstruct == NULL ){
+				fprintf(stderr, "out of memory at query 1 reading queries\n");
+				exit(1);
+			}
 			qwstruct->p1 = atol(startLine + 7);
 			qwstruct->p2 = atol(second);
 			qwstruct->x = atol(third);
 			qwstruct->qid = qid;
-			Query1Structs.push_back(qwstruct);
-			//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerFunction), (void*)qwstruct );
+
+			if( qwstruct->x > -1 )
+				Query1Structs.push_back(qwstruct);
+			else
+				lp_threadpool_addjob_nolock(threadpool_query1_nocomments,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerPoolFunction), qwstruct );
 
 			break;
 		}
@@ -3205,7 +3229,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
-			if( !isLarge )
+			//if( !isLarge )
 				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
@@ -3278,6 +3302,7 @@ int main(int argc, char** argv) {
 	time_global_start = getTime();
 
 	threadpool = lp_threadpool_init( Q_JOB_WORKERS, NUM_CORES);
+	threadpool_query1_nocomments = lp_threadpool_init( Q1_THREADPOOL_WORKER_THREADS, NUM_CORES);
 
 
 #ifdef DEBUGGING
@@ -3294,7 +3319,7 @@ int main(int argc, char** argv) {
 	// PROCESS THE COMMENTS OF EACH PERSON A
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
-	//pthread_t *commentsThread = readCommentsAsync();
+	pthread_t *commentsThread = readCommentsAsync();
 	//readCommentsAsyncWorker(NULL);
 
 	// Q4 - we read this first in order to read the queries file now
@@ -3353,6 +3378,14 @@ int main(int argc, char** argv) {
 
 	//fprintf(stdout, "before starting jobs in threadpool!!!");
 
+
+	// start q1 no comments
+	lp_threadpool_startjobs(threadpool_query1_nocomments);
+	synchronize_complete(threadpool_query1_nocomments);
+	lp_threadpool_destroy_threads(threadpool_query1_nocomments);
+	fprintf(stderr,"query 1 no-comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+
+
 	// start q3, q4
 	lp_threadpool_startjobs(threadpool);
 	synchronize_complete(threadpool);
@@ -3360,17 +3393,17 @@ int main(int argc, char** argv) {
 	fprintf(stderr,"query 3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
 	// now we can start executing QUERY 1
-	//pthread_join(*commentsThread, NULL);
-	//free(commentsThread);
-
+	pthread_join(*commentsThread, NULL);
+	free(commentsThread);
+/*
 	readComments(inputDir);
 	readCommentReplyOfComment(inputDir);
 	//fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
-
+*/
 	executeQuery1Jobs(Q1_WORKER_THREADS);
-	fprintf(stderr,"query 1 finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr,"query 1 comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 
 	//if( isLarge )
@@ -3398,7 +3431,7 @@ int main(int argc, char** argv) {
 	}
 
 	long long time_global_end = getTime();
-	sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]\n",
+	sprintf(msg, "Total time: micros[%lld] seconds[%.6f]\n",
 			time_global_end - time_global_start,
 			(time_global_end - time_global_start) / 1000000.0);
 	printErr(msg);

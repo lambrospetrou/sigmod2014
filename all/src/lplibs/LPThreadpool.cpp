@@ -61,6 +61,11 @@ void lp_threadpool_startjobs(lp_threadpool* pool){
 }
 
 void lp_threadpool_addWorker(lp_threadpool *pool){
+	pthread_mutex_lock(&pool->mutex_pool);
+	if( pool->threadpool_destroyed == 1 ){
+		pthread_mutex_unlock(&pool->mutex_pool);
+		return;
+	}
 	int nextThread = pool->nthreads++;
 	pthread_create(&pool->worker_threads[nextThread], NULL,reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
 	//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
@@ -72,6 +77,7 @@ void lp_threadpool_addWorker(lp_threadpool *pool){
 	}else{
 		//fprintf(stderr,"lp_threadpool_startjobs::success setting thread affinity tid[%d]\n", nextThread);
 	}
+	pthread_mutex_unlock(&pool->mutex_pool);
 }
 
 void inline lp_threadpool_addjob( lp_threadpool* pool, void *(*func)(int, void *), void* args ){
