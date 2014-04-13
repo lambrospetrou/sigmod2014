@@ -2284,7 +2284,6 @@ struct LevelDegreeNode{
 	}
 
 	bool operator<(const LevelDegreeNode& other) const{
-		/*
 		if( this->totalReachability > other.totalReachability )
 			return true;
 		else if( this->totalReachability < other.totalReachability )
@@ -2296,26 +2295,9 @@ struct LevelDegreeNode{
 		if( this->L2 > other.L2 )
 			return true;
 		else if( this->L2 < other.L2 )
-			return false;
-		if( this->L3 > other.L3 )
-			return true;
-		else if( this->L3 < other.L3 )
 			return false;
 		return this->personId <= other.personId;
-		*/
-
-		if( this->totalReachability > other.totalReachability )
-			return true;
-		else if( this->totalReachability < other.totalReachability )
-			return false;
-		if( this->L1 > other.L1 )
-			return true;
-		else if( this->L1 < other.L1 )
-			return false;
-		if( this->L2 > other.L2 )
-			return true;
-		else if( this->L2 < other.L2 )
-			return false;
+		/*
 		if( this->L3 > other.L3 )
 			return true;
 		else if( this->L3 < other.L3 )
@@ -2325,6 +2307,7 @@ struct LevelDegreeNode{
 		else if( this->partialGeodesic > other.partialGeodesic )
 			return false;
 		return this->personId <= other.personId;
+		*/
 	}
 };
 
@@ -2619,10 +2602,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 
 			//////////////////////////// THIS IS WHAT DELAYS US BUT WE NEED IT ////////////
-/*
+
 			// level 3
-			for (ii = qIndex, iisz = qSize; ii < iisz; ii++) {
-				fprintf(stderr, "range to check [%d]\n", iisz-ii);
+			// the ii is positioned at the first level 2 person
+			for ( iisz = qSize; ii < iisz; ii++) {
 				vector<long> &edges = newGraph[Q[ii]].edges;
 				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
 					cAdjacent = edges[ee];
@@ -2632,7 +2615,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}
 			}
-*/
+
 
 
 /*
@@ -2726,6 +2709,78 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			else
 				maximumLevels[j].max3 = maximumLevels[j+1].max3;
 		}
+
+		////////////////////////////////////////////////////////////////////////////////////////
+		// MAKE A FAST PREPROCESSING IN ORDER TO MAKE THE PREDICTION BETTER
+		// SINCE USING ONLY TWO LEVELS OF INFORMMATION DOES NOT ALLOW ANY BREAK OF THE ITERATION
+		// THEREFORE WE ARE DOING SOME SAMPLING FOR THE LEVELS > 3 IN ORDER TO GET A BETTER
+		// OVERVIEW OF THE REAL SITUATION OF EACH NODE
+		////////////////////////////////////////////////////////////////////////////////////////
+
+		if( currentSubgraph.size() > 2000 ){
+/*
+		// allocate the arrays
+		int levelsAnalyzed = 5;
+		int **LevelCounters = (int**)malloc(sizeof(int*)*N_PERSONS);
+		for( int j=0; j<N_PERSONS; j++ ){
+			LevelCounters[j] = (int*)malloc(sizeof(int)*levelsAnalyzed);
+			memset(LevelCounters[j], 0, N_PERSONS*sizeof(int));
+		}
+
+		// iterate over the sorted persons from the end and do your magic
+		for( j=currentSubgraph.size()-1, szz=currentSubgraph.size()-1000; j>szz; j-- ){
+			LevelDegreeNode &cNode = currentSubgraph[j];
+			memset(visited, -1, N_PERSONS);
+			Q[0] = currentSubgraph[j].personId;
+			qIndex = 0; qSize = 1;
+			visited[Q[0]] = 0;
+
+			// level 1
+			vector<long> &edges = newGraph[Q[0]].edges;
+			for (ee = 0, esz = edges.size(); ee < esz; ee++) {
+				Q[qSize++] = edges[ee];
+				visited[edges[ee]] = 1;
+			}
+			// level 2
+			for (ii = 1, iisz = qSize; ii < iisz; ii++) {
+				vector<long> &edges = newGraph[Q[ii]].edges;
+				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
+					cAdjacent = edges[ee];
+					if (visited[cAdjacent] == -1) {
+						Q[qSize++] = cAdjacent;
+						visited[cAdjacent] = 2;
+					}
+				}
+			}
+			// level 3
+			for (ii = qIndex, iisz = qSize; ii < iisz; ii++) {
+				vector<long> &edges = newGraph[Q[ii]].edges;
+				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
+					//cAdjacent = edges[ee];
+					if (visited[edges[ee]] == -1) {
+						visited[edges[ee]] = 3;
+					}
+				}
+			}
+
+			// now we need to count
+			Q[qSize++] = edges[ee];
+
+		}
+*/
+
+
+
+
+
+		} // end of pre-processing
+
+
+
+
+		///////////////////////////////////////////////////////////////////////////////////////
+
+
 
 		long gd_real, nextHigherLevel;
 		long breakBound;
@@ -3383,8 +3438,10 @@ int main(int argc, char** argv) {
 	//fprintf(stdout, "before starting jobs in threadpool!!!");
 
 	// create the jobs for query 1
+
 	if( !isLarge )
 		createQuery1Jobs(threadpool, &Query1Structs);
+
 
 	// allocate the visited arrays for the threads
 	for( int i=0; i<NUM_CORES; i++ ){
