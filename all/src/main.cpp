@@ -53,10 +53,10 @@ using std::tr1::hash;
 
 #define QUERY1_BATCH 50
 
-#define NUM_CORES 4
-#define COMM_WORKERS 4
-//#define Q_JOB_WORKERS NUM_CORES
-#define Q_JOB_WORKERS 1
+#define NUM_CORES 8
+#define COMM_WORKERS 2
+#define Q_JOB_WORKERS NUM_CORES
+//#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
 //#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
@@ -2428,10 +2428,10 @@ long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long c
 	}else{
 		// WE HAVE A THRESHOLD TO AVOID WHILE DOING BFS
 		int previousLevel = -1;
-		long gd_prediction = 0;
+		long gd_prediction = 0, oldqSize;
 		while(qIndex<qSize){
 			cPerson = GeodesicBFSQueue[qIndex];
-			depth = visited[cPerson];
+			/*
 			if( previousLevel != visited[cPerson] ){
 				//if( previousLevel == 2 ){
 					// make the prediction for this level and return if we are going to be
@@ -2455,23 +2455,41 @@ long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long c
 				//}
 			}
 			previousLevel = visited[cPerson];
-			//gd += depth;
-			// early exit
-			/*
-			if( gd > localMaximumGeodesicDistance )
-				return gd;
 			*/
 
+			depth = visited[cPerson]+1;
+			oldqSize = qSize;
 			vector<long> &edges = newGraph[cPerson].edges;
 			for( long e=0,esz=edges.size(); e<esz; e++ ){
 				cAdjacent = edges[e];
 				if( visited[cAdjacent] >= 0 )
 					continue;
-				visited[cAdjacent] = depth+1;
+				visited[cAdjacent] = depth;
 				GeodesicBFSQueue[qSize++] = cAdjacent;
 			}
+
 			// next vertex from queue
 			qIndex++;
+
+			// calculate the so far distance
+			if( qSize > oldqSize ){
+				gd_prediction += ((qSize-oldqSize)*depth);
+				if (gd_prediction > localMaximumGeodesicDistance) {
+					return gd_prediction;
+				} else if (gd_prediction == localMaximumGeodesicDistance) {
+					// check if we have more people to check - therefore meaning that we are
+					// going to pass the threshold anyway again
+					if (qSize < allComponentPeople) {
+						return INT_MAX;
+					} else {
+						// we have all the people so just return the distance
+						return gd_prediction;
+					}
+				} else if (qSize == allComponentPeople) {
+					return gd_prediction;
+				}
+			}
+
 		}
 	}
 	return gd;
@@ -2623,9 +2641,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
 		*/
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
-		fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		//fprintf(stderr, "tid[%d] starting LEVEL 2-3 subgraph [%.6f]seconds\n", tid, (getTime()-time_global_start)/1000000.0);
 
-		int BREAK_LEVEL = 3;
+		int BREAK_LEVEL = 2;
 		int NEXT_HIGHER_LEVEL=BREAK_LEVEL+1;
 		long *currentCounterLevel;
 
@@ -2669,9 +2687,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 
 			//////////////////////////// THIS IS WHAT DELAYS US BUT WE NEED IT ////////////
-
+/*
 			// level 3
 			for (ii = qIndex, iisz = qSize; ii < iisz; ii++) {
+				fprintf(stderr, "range to check [%d]\n", iisz-ii);
 				vector<long> &edges = newGraph[Q[ii]].edges;
 				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
 					cAdjacent = edges[ee];
@@ -2681,7 +2700,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}
 			}
-
+*/
 
 
 /*
@@ -2742,7 +2761,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
 		}
 
-		fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		//fprintf(stderr, "tid[%d] finished LEVEL 2-3 subgraph [%.6f]seconds\n",tid, (getTime()-time_global_start)/1000000.0);
 		std::stable_sort(currentSubgraph.begin(), currentSubgraph.end());
 /*
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
@@ -2817,7 +2836,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 					breakBound += nextHigherLevel;
 					if (breakBound > localResults[k - 1].geodesic) {
-						//fprintf(stderr, "break the loop at [%d] of [%d] and skipped[%d]\n", j, szz, skipped+1);
+						fprintf(stderr, "break the loop at [%d] of [%d] and skipped[%d]\n", j, szz, skipped+1);
 						break;
 					}
 					skipped++;
@@ -3282,8 +3301,8 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
-			//if( !isLarge )
-				//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+			if( !isLarge )
+				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
 		}
@@ -3432,7 +3451,8 @@ int main(int argc, char** argv) {
 	//fprintf(stdout, "before starting jobs in threadpool!!!");
 
 	// create the jobs for query 1
-	//createQuery1Jobs(threadpool, &Query1Structs);
+	if( !isLarge )
+		createQuery1Jobs(threadpool, &Query1Structs);
 
 	// allocate the visited arrays for the threads
 	for( int i=0; i<NUM_CORES; i++ ){
@@ -3447,7 +3467,7 @@ int main(int argc, char** argv) {
 	lp_threadpool_destroy_threads(threadpool);
 	fprintf(stderr,"query 1_3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
-/*
+
 	// now we can start executing QUERY 1
 	//pthread_join(*commentsThread, NULL);
 	//free(commentsThread);
@@ -3462,7 +3482,7 @@ int main(int argc, char** argv) {
 	lp_threadpool_startjobs(threadpool_query1_withcomments);
 	synchronize_complete(threadpool_query1_withcomments);
 	fprintf(stderr,"query 1 with comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-*/
+
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
