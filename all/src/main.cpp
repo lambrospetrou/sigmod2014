@@ -51,16 +51,16 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define QUERY1_BATCH 50
+#define QUERY1_BATCH 100
 
 #define NUM_CORES 8
-#define COMM_WORKERS 8
+#define COMM_WORKERS 4
 #define Q_JOB_WORKERS NUM_CORES
 //#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
 //#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
-#define Q2_WORKER_THREADS NUM_CORES-1
+#define Q2_WORKER_THREADS NUM_CORES
 /////////
 
 #define NUM_THREADS WORKER_THREADS+1
@@ -3426,6 +3426,7 @@ int main(int argc, char** argv) {
 	//fprintf(stdout, "before starting jobs in threadpool!!!");
 
 	// create the jobs for query 1
+	if( !isLarge )
 	createQuery1Jobs(threadpool, &Query1Structs);
 
 	// allocate the visited arrays for the threads
