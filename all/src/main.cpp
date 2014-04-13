@@ -51,12 +51,12 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define QUERY1_BATCH 100
+#define QUERY1_BATCH 50
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define COMM_WORKERS 4
-#define Q_JOB_WORKERS NUM_CORES
-//#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
+//#define Q_JOB_WORKERS NUM_CORES
+#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
 //#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
@@ -2623,7 +2623,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					lastGlobalMinimumCentrality.r_p * 1.0)/lastGlobalMinimumCentrality.centrality );
 		*/
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
-		//fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		fprintf(stderr, "starting LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 
 		int BREAK_LEVEL = 3;
 		int NEXT_HIGHER_LEVEL=BREAK_LEVEL+1;
@@ -2667,6 +2667,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}
 			}
+
+			//////////////////////////// THIS IS WHAT DELAYS US BUT WE NEED IT ////////////
+
 			// level 3
 			for (ii = qIndex, iisz = qSize; ii < iisz; ii++) {
 				vector<long> &edges = newGraph[Q[ii]].edges;
@@ -2680,7 +2683,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 
 
-			/*
+
+/*
 			while( qIndex < qSize ){
 				cPerson = Q[qIndex];
 				if( visited[cPerson] != previousLevel ){
@@ -2731,12 +2735,14 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}
 			}
-			*/
+*/
 
 			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
 			cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
 		}
+
+		fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 		std::stable_sort(currentSubgraph.begin(), currentSubgraph.end());
 /*
 		for( int j=0,szz=currentSubgraph.size(); j<szz; j++ ){
@@ -2744,7 +2750,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			fprintf(stderr, "%ld [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.totalReachability );
 		}
 */
-		//fprintf(stderr, "finished LEVEL 2-3 subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
+		//fprintf(stderr, "finished LEVEL 2-3 sorting subgraph [%.6f]seconds\n", (getTime()-time_global_start)/1000000.0);
 		////////////////////////////////////////////////////////////////
 
 		//exit(1);
@@ -3277,7 +3283,7 @@ void readQueries(char *queriesFile) {
 			//lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			//if( !isLarge )
-				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
+				//lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
 		}
@@ -3298,7 +3304,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool4,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
-			if( !isLarge )
+			//if( !isLarge )
 				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
 			// TODO - add the asked Tag into the set
@@ -3426,8 +3432,7 @@ int main(int argc, char** argv) {
 	//fprintf(stdout, "before starting jobs in threadpool!!!");
 
 	// create the jobs for query 1
-	if( !isLarge )
-		createQuery1Jobs(threadpool, &Query1Structs);
+	//createQuery1Jobs(threadpool, &Query1Structs);
 
 	// allocate the visited arrays for the threads
 	for( int i=0; i<NUM_CORES; i++ ){
@@ -3442,6 +3447,7 @@ int main(int argc, char** argv) {
 	lp_threadpool_destroy_threads(threadpool);
 	fprintf(stderr,"query 1_3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
+/*
 	// now we can start executing QUERY 1
 	//pthread_join(*commentsThread, NULL);
 	//free(commentsThread);
@@ -3456,7 +3462,7 @@ int main(int argc, char** argv) {
 	lp_threadpool_startjobs(threadpool_query1_withcomments);
 	synchronize_complete(threadpool_query1_withcomments);
 	fprintf(stderr,"query 1 with comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
+*/
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
