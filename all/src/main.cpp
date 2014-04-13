@@ -2536,17 +2536,22 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	Query4PersonStruct lastGlobalMinimumCentrality;
 
 	// NEEDED FOR THE PREPROCESSING STEPS
-	int levelsAnalyzed = 5;
+	int levelsAnalyzed = 7;
 	int **LevelCounters;
-	int peopleSample = 1000;
+	int peopleSample, peopleExtremeLimit=10000;
 	MaxLevels *maximumLevels;
 
 
-	LevelCounters = (int**)malloc(sizeof(int*)*N_PERSONS);
-	for( int j=0; j<N_PERSONS; j++ ){
-		LevelCounters[j] = (int*)malloc(sizeof(int)*(levelsAnalyzed+1));
+	LevelCounters = new (std::nothrow) int*[N_PERSONS];
+	if( LevelCounters == NULL ){
+		fprintf(stdout, "no memory while allocating LevelCounters\n");
 	}
-
+	for( int j=0; j<N_PERSONS; j++ ){
+		LevelCounters[j] = new (std::nothrow) int[levelsAnalyzed+1];
+		if( LevelCounters[j] == NULL ){
+			fprintf(stdout, "no memory while allocating LevelCounters[j]\n");
+		}
+	}
 
 	double cCentrality;
 	long cPerson;
@@ -2561,11 +2566,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}
 
 		int UseExtremePruning;
-		if( r_p > peopleSample )
+		if( r_p > peopleExtremeLimit )
 			UseExtremePruning = 1;
 		else
 			UseExtremePruning = 0;
 
+		peopleSample = allPersons >> 3;
 
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
 		//fprintf(stderr, "tid[%d] starting LEVEL 2-3 subgraph [%.6f]seconds\n", tid, (getTime()-time_global_start)/1000000.0);
@@ -2648,10 +2654,15 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 			for( j=0; j<N_PERSONS; j++ ){
 				memset(LevelCounters[j], 0, (levelsAnalyzed+1)*sizeof(int));
+				/*
+				for( ii=0; ii<=levelsAnalyzed; ii++ ){
+					LevelCounters[j][ii] = 0;
+				}
+				*/
 			}
 
 			// iterate over the sorted persons from the end and do your magic
-			for( j=currentSubgraph.size()-1, szz=currentSubgraph.size()-peopleSample; j>szz; j-- ){
+			for( j=currentSubgraph.size()-1, szz=currentSubgraph.size()-peopleSample-1; j>szz; j-- ){
 				LevelDegreeNode &cNode = currentSubgraph[j];
 				memset(visited, -1, N_PERSONS);
 				Q[0] = currentSubgraph[j].personId;
@@ -2691,7 +2702,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				long depth;
 				while( qIndex < qSize ){
 					cPerson = Q[qIndex++];
-					if( visited[cPerson] > levelsAnalyzed )
+					if( visited[cPerson] == levelsAnalyzed )
 						break;
 					depth = visited[cPerson] + 1;
 					vector<long> &edges = newGraph[cPerson].edges;
@@ -2701,7 +2712,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 							Q[qSize++] = edges[ee];
 							visited[edges[ee]] = depth;
 							// increase the counter of this level for each neighbor
-							LevelCounters[edges[ee]][depth]++;
+							++LevelCounters[edges[ee]][depth];
 						}
 					}
 				}// end of BFS
@@ -2713,10 +2724,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			// make the preprocessing like before with no sampled information
 
 			// find the max for each level for each person
-			maximumLevels = (MaxLevels*)malloc(sizeof(MaxLevels)*currentSubgraph.size());
+			maximumLevels = (MaxLevels*)malloc(sizeof(MaxLevels)*allPersons);
 			maximumLevels[r_p].max1 = currentSubgraph[r_p].L1;
 			maximumLevels[r_p].max2 = currentSubgraph[r_p].L2;
-			maximumLevels[r_p].max3 = currentSubgraph[r_p].L3;
+			//maximumLevels[r_p].max3 = currentSubgraph[r_p].L3;
 			for( long j=currentSubgraph.size()-2; j>=0; j-- ){
 				if( currentSubgraph[j].L1 > maximumLevels[j+1].max1 )
 					maximumLevels[j].max1 = currentSubgraph[j].L1;
@@ -2726,10 +2737,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					maximumLevels[j].max2 = currentSubgraph[j].L2;
 				else
 					maximumLevels[j].max2 = maximumLevels[j+1].max2;
+				/*
 				if( currentSubgraph[j].L3 > maximumLevels[j+1].max3 )
 					maximumLevels[j].max3 = currentSubgraph[j].L3;
 				else
 					maximumLevels[j].max3 = maximumLevels[j+1].max3;
+				*/
 			}
 		} // end of pre-processing
 
@@ -2758,11 +2771,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}else{
 
 				if( UseExtremePruning ){
+
 					// take into account the sampling we did before
 					long partialGeodesicAbove3 = 0, peopleAbove3 = 0;
 					for( ii=4; ii<=levelsAnalyzed; ii++ ){
 						peopleAbove3 += LevelCounters[cNode.personId][ii];
-						partialGeodesicAbove3 += LevelCounters[cNode.personId][ii] * ii;
+						partialGeodesicAbove3 += (LevelCounters[cNode.personId][ii] * ii);
 					}
 					nextHigherLevel = ((r_p-cNode.totalReachability-peopleAbove3)*NEXT_HIGHER_LEVEL) + partialGeodesicAbove3;
 					lower_bound = cNode.partialGeodesic + nextHigherLevel;
@@ -2770,6 +2784,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 						skipped++;
 						continue;
 					}
+
 				}else{
 					// we have already found K results so compare the values before doing BFS
 					nextHigherLevel = ((r_p-cNode.totalReachability)*NEXT_HIGHER_LEVEL);
@@ -2860,9 +2875,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	}// end for each cluster
 
 	for( int j=0; j<N_PERSONS; j++ ){
-		free(LevelCounters[j]);
+		delete []LevelCounters[j];
 	}
-	free(LevelCounters);
+	delete[] LevelCounters;
 
 	//exit(1);
 
