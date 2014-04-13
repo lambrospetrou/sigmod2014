@@ -3298,7 +3298,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool4,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
-			//if( !isLarge )
+			if( !isLarge )
 				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query4WorkerFunction), qwstruct );
 
 			// TODO - add the asked Tag into the set
@@ -3427,7 +3427,7 @@ int main(int argc, char** argv) {
 
 	// create the jobs for query 1
 	if( !isLarge )
-	createQuery1Jobs(threadpool, &Query1Structs);
+		createQuery1Jobs(threadpool, &Query1Structs);
 
 	// allocate the visited arrays for the threads
 	for( int i=0; i<NUM_CORES; i++ ){
@@ -3441,7 +3441,6 @@ int main(int argc, char** argv) {
 	synchronize_complete(threadpool);
 	lp_threadpool_destroy_threads(threadpool);
 	fprintf(stderr,"query 1_3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
-
 
 	// now we can start executing QUERY 1
 	//pthread_join(*commentsThread, NULL);
