@@ -2230,72 +2230,6 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 // QUERY 4
 //////////////////////////////////////////////////////////////////////
 
-struct Q4InnerJob{
-	int start;
-	int end;
-	vector<Query4PersonStruct> *persons;
-	MAP_INT_VecL *newGraph;
-};
-
-void *Query4InnerWorker(void *args){
-	Q4InnerJob *qArgs = (Q4InnerJob*)args;
-
-	vector<Query4PersonStruct> *persons = qArgs->persons;
-	MAP_INT_VecL *newGraph = qArgs->newGraph;
-
-	// now we have to calculate the shortest paths between them
-	int n_1 = persons->size() - 1;
-	//MAP_LONG_CHAR visitedBFS;
-	LPSparseArrayGeneric<char> visitedBFS;
-	deque<QueryBFS> Q;
-	for (int i = qArgs->start, sz = qArgs->end; i < sz; i++) {
-		visitedBFS.clear();
-		Q.clear();
-		// create a local copy of the struct
-		Query4PersonStruct cPerson = (*persons)[i];
-		long qIndex = 0;
-		long qSize = 1;
-		Q.push_back(QueryBFS(cPerson.person, 0));
-		while (qIndex < qSize) {
-			QueryBFS c = Q.front();
-			Q.pop_front();
-			qIndex++;
-			//visitedBFS[c.person] = 2;
-			visitedBFS.set(c.person, 2);
-			// update info for the current person centrality
-			cPerson.s_p += c.depth;
-
-			// insert each unvisited neighbor of the current node
-			vector<long> &edges = (*newGraph)[c.person];
-			//long*edges = Persons[c.person].adjacentPersonsIds;
-			for (int e = 0, szz = edges.size(); e < szz; e++) {
-				//for (int e = 0, szz = Persons[c.person].adjacents; e < szz; e++) {
-				//long eId = (*edges)[e];
-				long eId = edges[e];
-				//if (visitedBFS[eId] == 0) {
-				if (visitedBFS.get(eId) == 0) {
-					//visitedBFS[eId] = 1;
-					visitedBFS.set(eId, 1);
-					Q.push_back(QueryBFS(eId, c.depth + 1));
-					qSize++;
-				}
-			}
-		}
-		// we do not have to check if n_1 == 0 since if it was the outer FOR here would not execute
-		if (cPerson.s_p == 0)
-			cPerson.centrality = 0;
-		else {
-			// calculate the centrality for this person
-			cPerson.r_p += qSize - 1;
-			cPerson.centrality = ((double) (cPerson.r_p * cPerson.r_p))/ (n_1 * cPerson.s_p);
-		}
-		// assign the calculated person to the vector
-		(*persons)[i] = cPerson;
-	}
-
-	return 0;
-}
-
 struct Query4SubNode{
 	Query4SubNode(){
 		geodesic = INT_MAX;
@@ -2321,8 +2255,6 @@ bool Query4SubNodePredicate(const Query4SubNode& d1,const Query4SubNode& d2) {
 struct GraphNode{
 	vector<long> edges;
 	long LevelDegreeNodeIndex;
-	//FM fmSketch;
-	//FM fmSketch_level1;
 };
 struct LevelDegreeNode{
 	long partialGeodesic;
