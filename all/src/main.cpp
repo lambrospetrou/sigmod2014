@@ -53,7 +53,7 @@ using std::tr1::hash;
 
 #define QUERY1_BATCH 50
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define COMM_WORKERS 2
 #define Q_JOB_WORKERS NUM_CORES
 //#define Q_JOB_WORKERS 1
@@ -1455,7 +1455,7 @@ void readTags(char *inputDir) {
 		(*TagIdToIndex)[id] = insertedTag->vIndex;
 		//printf("tag[%ld] name[%*s] index[%ld]\n", id, nameDivisor-name, name,  insertedTag->vIndex);
 
-		// TODO - SAVE THE TAG NAME
+		// TODO these are never freed - SAVE THE TAG NAME
 		char *tagName = (char*)malloc(name_sz+1);
 		strncpy(tagName, name, name_sz);
 		tagName[name_sz] = '\0';
@@ -2541,6 +2541,13 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	int peopleSample = 1000;
 	MaxLevels *maximumLevels;
 
+
+	LevelCounters = (int**)malloc(sizeof(int*)*N_PERSONS);
+	for( int j=0; j<N_PERSONS; j++ ){
+		LevelCounters[j] = (int*)malloc(sizeof(int)*(levelsAnalyzed+1));
+	}
+
+
 	double cCentrality;
 	long cPerson;
 	for( int i=0,sz=SubgraphsPersons.size(); i<sz; i++ ){
@@ -2639,16 +2646,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 		if( UseExtremePruning ){
 
-			LevelCounters = (int**)malloc(sizeof(int*)*N_PERSONS);
-			for( j=0; j<N_PERSONS; j++ ){
-				LevelCounters[j] = (int*)malloc(sizeof(int)*(levelsAnalyzed+1));
-				memset(LevelCounters[j], 0, (levelsAnalyzed+1)*sizeof(int));
-			}
-			/*
 			for( j=0; j<N_PERSONS; j++ ){
 				memset(LevelCounters[j], 0, (levelsAnalyzed+1)*sizeof(int));
 			}
-			*/
 
 			// iterate over the sorted persons from the end and do your magic
 			for( j=currentSubgraph.size()-1, szz=currentSubgraph.size()-peopleSample; j>szz; j-- ){
@@ -2829,16 +2829,18 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 */
 		}// end of persons of this subgraph
 
-		fprintf(stderr, "skipped[%d]\n", skipped);
-
+		//fprintf(stderr, "[%d] before free[%d]\n",UseExtremePruning, skipped);
 		if( UseExtremePruning ){
+			/*
 			for( j=0; j<N_PERSONS; j++ ){
 				free(LevelCounters[j]);
 			}
 			free(LevelCounters);
+			*/
 		}else{
 			free(maximumLevels);
 		}
+		fprintf(stderr, "[%d] skipped[%d]\n",UseExtremePruning, skipped);
 
 		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 /*
@@ -2847,14 +2849,20 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}
 		fprintf(stderr, "finished\n");
 */
+
 		//localResults.resize( localResults.size()>=(unsigned int)k ? k : localResults.size());
 		szz = localResults.size()>=(unsigned int)k ? k : localResults.size();
 		for( int ii=0; ii<szz; ii++ ){
 			cCentrality = ((r_p * r_p)*1.0) / localResults[ii].geodesic;
 			globalResults.push_back(Query4PersonStruct(localResults[ii].personId, localResults[ii].geodesic, r_p, cCentrality));
 		}
-	}
 
+	}// end for each cluster
+
+	for( int j=0; j<N_PERSONS; j++ ){
+		free(LevelCounters[j]);
+	}
+	free(LevelCounters);
 
 	//exit(1);
 
@@ -3055,6 +3063,7 @@ void* Query2WorkerFunction(void *args) {
 	for( int i=qws->start, end=qws->end; i<end; i++ ){
 		currentJob = Query2Structs[i];
 		query2(currentJob->k, currentJob->date, currentJob->date_sz, currentJob->qid);
+		free(currentJob->date);
 		free(currentJob);
 		// the following can be omitted for speedups
 		Query2Structs[i] = 0;
