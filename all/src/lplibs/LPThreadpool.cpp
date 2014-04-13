@@ -258,8 +258,8 @@ void synchronize_complete(lp_threadpool* pool){
 void lp_threadpool_destroy_threads(lp_threadpool*pool){
 	pthread_mutex_lock(&pool->mutex_pool);
 	pool->threadpool_destroyed = 1;
-	pthread_mutex_unlock(&pool->mutex_pool);
 	pthread_cond_broadcast(&pool->cond_jobs);
+	pthread_mutex_unlock(&pool->mutex_pool);
 	for( int i=0; i<pool->nthreads; i++ ){
 		pthread_join(pool->worker_threads[i], NULL);
 	}
