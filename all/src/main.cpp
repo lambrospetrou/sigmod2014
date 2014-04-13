@@ -53,8 +53,8 @@ using std::tr1::hash;
 
 #define QUERY1_BATCH 50
 
-#define NUM_CORES 4
-#define COMM_WORKERS 3
+#define NUM_CORES 8
+#define COMM_WORKERS 8
 #define Q_JOB_WORKERS NUM_CORES
 //#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 #define Q1_WORKER_THREADS NUM_CORES
@@ -2525,13 +2525,16 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	//fprintf(stderr, "all persons [%d] [%.6f]secs\n", persons.size(), (getTime()-time_global_start)/1000000.0);
 
+	//long *Q = (long*)malloc(N_PERSONS*sizeof(long));
+	//char *visited = (char*)malloc(N_PERSONS);
+	long *Q = ThreadsBFSArrays[tid-1];
+	char *visited = ThreadsVisitedArrays[tid-1];
+	memset(visited, 0, N_PERSONS);
+
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	unordered_map<long, GraphNode> newGraph; // holds the edges of the new Graph induced
 	vector<vector<LevelDegreeNode> > SubgraphsPersons;
-	long *Q = (long*)malloc(N_PERSONS*sizeof(long));
 	long qIndex=0,qSize=1;
-	char *visited = (char*)malloc(N_PERSONS);
-	memset(visited, 0, N_PERSONS);
 	int currentComponent = -1;
 	long cAdjacent;
 	for( long i=0,sz=persons.size(); i<sz; i++ ){
@@ -2860,8 +2863,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	//exit(1);
 
-	free(GeodesicDistanceVisited);
-	free(GeodesicBFSQueue);
+	//free(GeodesicDistanceVisited);
+	//free(GeodesicBFSQueue);
 
 	//fprintf(stderr, "all processing [%d] [%.6f]secs\n",  globalResults.size(), (getTime()-time_global_start)/1000000.0);
 
@@ -3421,14 +3424,6 @@ int main(int argc, char** argv) {
 	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
 	//fprintf(stdout, "before starting jobs in threadpool!!!");
-
-/*
-	// start q1 no comments
-	lp_threadpool_startjobs(threadpool_query1_nocomments);
-	synchronize_complete(threadpool_query1_nocomments);
-	lp_threadpool_destroy_threads(threadpool_query1_nocomments);
-	fprintf(stderr,"query 1 no-comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-*/
 
 	// create the jobs for query 1
 	createQuery1Jobs(threadpool, &Query1Structs);
