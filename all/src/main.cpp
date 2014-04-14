@@ -2435,6 +2435,8 @@ struct MaxLevels{
 	int max3;
 };
 
+int **GlobalLevelCounters[NUM_CORES+1];
+
 void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
 
@@ -2532,24 +2534,26 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	vector<Query4PersonStruct> globalResults;
 	vector<Query4SubNode> localResults;
 
-	long localMaximumGeodesicDistance=INT_MAX;
+	//long localMaximumGeodesicDistance=INT_MAX;
 	Query4PersonStruct lastGlobalMinimumCentrality;
 
 	// NEEDED FOR THE PREPROCESSING STEPS
 	int levelsAnalyzed = 7;
-	int **LevelCounters;
 	int peopleSample, peopleExtremeLimit=10000;
 	MaxLevels *maximumLevels;
+	int **LevelCounters = GlobalLevelCounters[tid];
 
-
-	LevelCounters = new (std::nothrow) int*[N_PERSONS];
-	if( LevelCounters == NULL ){
-		fprintf(stdout, "no memory while allocating LevelCounters\n");
-	}
-	for( int j=0; j<N_PERSONS; j++ ){
-		LevelCounters[j] = new (std::nothrow) int[levelsAnalyzed+1];
-		if( LevelCounters[j] == NULL ){
-			fprintf(stdout, "no memory while allocating LevelCounters[j]\n");
+	// check if the arrays are initialized and initalize them if not
+	if( GlobalLevelCounters[tid] == 0 ){
+		GlobalLevelCounters[tid] = new (std::nothrow) int*[N_PERSONS];
+		if( GlobalLevelCounters[tid] == NULL ){
+			fprintf(stdout, "no memory while allocating LevelCounters\n");
+		}
+		for( int j=0; j<N_PERSONS; j++ ){
+			GlobalLevelCounters[tid][j] = new (std::nothrow) int[levelsAnalyzed+1];
+			if( GlobalLevelCounters[tid][j] == NULL ){
+				fprintf(stdout, "no memory while allocating LevelCounters[j]\n");
+			}
 		}
 	}
 
@@ -2654,11 +2658,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 			for( j=0; j<N_PERSONS; j++ ){
 				memset(LevelCounters[j], 0, (levelsAnalyzed+1)*sizeof(int));
-				/*
-				for( ii=0; ii<=levelsAnalyzed; ii++ ){
-					LevelCounters[j][ii] = 0;
-				}
-				*/
 			}
 
 			// iterate over the sorted persons from the end and do your magic
@@ -2718,6 +2717,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}// end of BFS
 
 			}// end of each sampled person
+
+			// sort the people again now
+
 
 		} // end of pre-processing
 		else{
@@ -2845,14 +2847,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}// end of persons of this subgraph
 
 		//fprintf(stderr, "[%d] before free[%d]\n",UseExtremePruning, skipped);
-		if( UseExtremePruning ){
-			/*
-			for( j=0; j<N_PERSONS; j++ ){
-				free(LevelCounters[j]);
-			}
-			free(LevelCounters);
-			*/
-		}else{
+		if( !UseExtremePruning ){
 			free(maximumLevels);
 		}
 		fprintf(stderr, "[%d] skipped[%d]\n",UseExtremePruning, skipped);
@@ -2873,11 +2868,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}
 
 	}// end for each cluster
-
-	for( int j=0; j<N_PERSONS; j++ ){
-		delete []LevelCounters[j];
-	}
-	delete[] LevelCounters;
 
 	//exit(1);
 
@@ -3449,11 +3439,15 @@ int main(int argc, char** argv) {
 	if( !isLarge )
 		createQuery1Jobs(threadpool, &Query1Structs);
 
-
 	// allocate the visited arrays for the threads
 	for( int i=0; i<NUM_CORES; i++ ){
 		ThreadsVisitedArrays[i] = (char*)malloc(N_PERSONS);
 		ThreadsBFSArrays[i] = (long*)malloc(sizeof(long)*N_PERSONS);
+	}
+
+	// initialize the level counters
+	for( int i=0; i<NUM_CORES+1; i++ ){
+		GlobalLevelCounters[i] = 0;
 	}
 
 	// start q3, q4 and query 1 no comments
@@ -3462,6 +3456,14 @@ int main(int argc, char** argv) {
 	synchronize_complete(threadpool);
 	lp_threadpool_destroy_threads(threadpool);
 	fprintf(stderr,"query 1_3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
+
+	// deallocate the arrays needed by query 4 since we do not need them anymore
+	for( int i=0; i<NUM_CORES+1; i++ ){
+		for( int j=0; j<N_PERSONS; j++ ){
+			delete[] GlobalLevelCounters[i][j];
+		}
+		delete[] GlobalLevelCounters[i];
+	}
 
 
 	// now we can start executing QUERY 1
