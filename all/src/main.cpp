@@ -1942,12 +1942,16 @@ bool Query3PersonStructPredicate(const Query3PersonStruct& d1,const Query3Person
 }
 
 
+
+
 void query3(int k, int h, char *name, int name_sz, long qid) {
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
-
+	if (qid == 1010)
+		fprintf(stderr, "Query3 %d starts [%.6f]secs\n", qid,
+				(getTime() - time_global_start) / 1000000.0);
 	unordered_map<int, vector<Query3PersonStruct> > ComponentsMap;
 
-	long totalPersons=0;
+	long totalPersons = 0;
 
 	// TODO - could use unordered set for memory issues since this could be way smaller
 	// like in most of the queries
@@ -1973,8 +1977,9 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			if (visitedPersons->isSet(*cPerson))
 				continue;
 			visitedPersons->set(*cPerson);
-			ComponentsMap[Persons[*cPerson].subgraphNumber].push_back(Query3PersonStruct(
-					*cPerson, PersonToTags[*cPerson].tags.size()));
+			ComponentsMap[Persons[*cPerson].subgraphNumber].push_back(
+					Query3PersonStruct(*cPerson,
+							PersonToTags[*cPerson].tags.size()));
 
 			totalPersons++;
 		}
@@ -1997,148 +2002,173 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 
 	//fprintf(stderr, "3[%d-%lu]",k, totalPersons);
 	/*
-	if( isLarge ){
-		fprintf(stderr, "3[%d-%lu]",k, totalPersons);
-		return;
-	}
-	*/
+	 if( isLarge ){
+	 fprintf(stderr, "3[%d-%lu]",k, totalPersons);
+	 return;
+	 }
+	 */
 
 	//printf("found for place [%*s] persons[%ld] index[%ld]\n", name_sz, name, persons.size(), index);
-
-	unsigned int GlobalResultsLimit = (100 < k) ? k+100 : 100;
+	unsigned int GlobalResultsLimit = (100 < k) ? k + 100 : 100;
 
 	// the global queue that will hold the Top-K pairs
 	vector<Query3PQ> GlobalPQ1;
 	vector<Query3PQ> GlobalPQ2;
 	vector<Query3PQ> *GlobalPQ = &GlobalPQ1;
-	Query3PQ minimum(INT_MAX,INT_MAX, 0);
+	Query3PQ minimum(INT_MAX, INT_MAX, 0);
 
 	// for each cluster calculate the common tags and check if we have a new Top-K pair
-	unordered_map<int, vector<Query3PersonStruct> >::iterator clBegin = ComponentsMap.begin();
-	unordered_map<int, vector<Query3PersonStruct> >::iterator clEnd = ComponentsMap.end();
-	for( ; clBegin != clEnd; clBegin++ ){
+	unordered_map<int, vector<Query3PersonStruct> >::iterator clBegin =
+			ComponentsMap.begin();
+	unordered_map<int, vector<Query3PersonStruct> >::iterator clEnd =
+			ComponentsMap.end();
+	for (; clBegin != clEnd; clBegin++) {
 		vector<Query3PersonStruct> *currentClusterPersons = &((*clBegin).second);
 		// we cannot find pairs in 1-person clusters
-		if( currentClusterPersons->size() < 2 )
+		if (currentClusterPersons->size() < 2)
 			continue;
-		std::stable_sort(currentClusterPersons->begin(), currentClusterPersons->end(), Query3PersonStructPredicate);
+		std::stable_sort(currentClusterPersons->begin(),
+				currentClusterPersons->end(), Query3PersonStructPredicate);
 		// since the maximum tags of this cluster are less than the global minimum
 		// there is no chance to find a valid pair
-		if( GlobalPQ->size() >= (unsigned int)k ){
-			if( currentClusterPersons->at(0).numOfTags < minimum.commonTags )
+		if (GlobalPQ->size() >= (unsigned int) k) {
+			if (currentClusterPersons->at(0).numOfTags < minimum.commonTags)
 				continue;
-			if( currentClusterPersons->at(1).numOfTags < minimum.commonTags )
+			if (currentClusterPersons->at(1).numOfTags < minimum.commonTags)
 				continue;
 		}
 		// for each person in the cluster
-		for( int i=0, sz=currentClusterPersons->size()-1; i<sz; i++ ){
+		for (int i = 0, sz = currentClusterPersons->size() - 1; i < sz; i++) {
 			// we cannot find suitable common tags by this person since his tags are less
 			// than the current minimum
 			Query3PersonStruct *currentPerson = &(currentClusterPersons->at(i));
-			if( GlobalPQ->size() >= (unsigned int)k && currentPerson->numOfTags < minimum.commonTags )
+			if (GlobalPQ->size() >= (unsigned int) k
+					&& currentPerson->numOfTags < minimum.commonTags)
 				break;
 
-			for( int j=i+1, szz=currentClusterPersons->size(); j<szz; j++ ){
-				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
+			for (int j = i + 1, szz = currentClusterPersons->size(); j < szz;
+					j++) {
+				Query3PersonStruct *secondPerson = &currentClusterPersons->at(
+						j);
 
 				// CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
-				if(  (GlobalPQ->size() >= (unsigned int)k) && (secondPerson->numOfTags < minimum.commonTags) )
+				if ((GlobalPQ->size() >= (unsigned int) k)
+						&& (secondPerson->numOfTags < minimum.commonTags))
 					break;
 
 				// we now have to calculate the common tags between these two people
 				int cTags = 0;
-				vector<long> *tagsA = &PersonToTags[currentPerson->personId].tags;
+				vector<long> *tagsA =
+						&PersonToTags[currentPerson->personId].tags;
 				vector<long> *tagsB = &PersonToTags[secondPerson->personId].tags;
 				std::vector<long>::const_iterator iA = tagsA->begin();
 				std::vector<long>::const_iterator endA = tagsA->end();
 				std::vector<long>::const_iterator iB = tagsB->begin();
 				std::vector<long>::const_iterator endB = tagsB->end();
+				int countA = 0, countB = 0, sizeA = tagsA->size(), sizeB =
+						tagsB->size();
 				for (; iA != endA && iB != endB;) {
-					if (*iA < *iB)
+					if (*iA < *iB) {
+						countA++;
 						iA++;
-					else if (*iB < *iA)
+					} else if (*iB < *iA) {
 						iB++;
-					else if (*iA == *iB) {
+						countB++;
+					} else if (*iA == *iB) {
 						cTags++;
 						iA++;
+						countA++;
 						iB++;
+						countB++;
 					}
-				}// end of common tags calculation
+					if (sizeA - countA + cTags < minimum.commonTags
+							|| sizeB - countB + cTags < minimum.commonTags)
+						break;
+				}			// end of common tags calculation
 
 				// check the common tags
-				if( cTags < minimum.commonTags )
+				if (cTags < minimum.commonTags)
 					continue;
 
 				// check hops with our index
 				/*
-				if( ShortestPathIndex.QueryDistance(currentPerson->personId,secondPerson->personId) > h ){
-					continue;
-				}
-				*/
+				 if( ShortestPathIndex.QueryDistance(currentPerson->personId,secondPerson->personId) > h ){
+				 continue;
+				 }
+				 */
 
 				/*
-				if( BFS_query3(currentPerson->personId,secondPerson->personId, h) > h ){
-					continue;
-				}*/
+				 if( BFS_query3(currentPerson->personId,secondPerson->personId, h) > h ){
+				 continue;
+				 }*/
 
 				if (currentPerson->personId <= secondPerson->personId) {
-					GlobalPQ->push_back(Query3PQ(currentPerson->personId,secondPerson->personId, cTags));
+					GlobalPQ->push_back(
+							Query3PQ(currentPerson->personId,
+									secondPerson->personId, cTags));
 				} else {
-					GlobalPQ->push_back(Query3PQ(secondPerson->personId,currentPerson->personId, cTags));
+					GlobalPQ->push_back(
+							Query3PQ(secondPerson->personId,
+									currentPerson->personId, cTags));
 				}
-				if( GlobalPQ->size() >= (unsigned int)k ){
+				if (GlobalPQ->size() >= (unsigned int) k) {
 					// just insert the new pair in the answers - we have to take into account the sentinel element
-					if( GlobalPQ->size() == GlobalResultsLimit ){
+					if (GlobalPQ->size() == GlobalResultsLimit) {
 						// we need to clear the vector from the less-than-Top-K elements
 						//std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorStaticObjects);
-						std::stable_sort(GlobalPQ->begin(), GlobalPQ->end(), Query3PQ_ComparatorMinStaticObjects);
+						std::stable_sort(GlobalPQ->begin(), GlobalPQ->end(),
+								Query3PQ_ComparatorMinStaticObjects);
 						// we need to resize the vector at size K
 						//GlobalPQ->resize(k);
 						vector<Query3PQ> *destVec;
 						// find out which vector is the currently used one
-						if( GlobalPQ1.size() == GlobalResultsLimit ){
+						if (GlobalPQ1.size() == GlobalResultsLimit) {
 							destVec = &GlobalPQ2;
-						}else{
+						} else {
 							destVec = &GlobalPQ1;
 						}
 						// find the Top-K similar pairs from the current results
-						for( int cC=0, sz=GlobalResultsLimit, kk=k; cC<sz && kk>0; cC++){
-							if( BFS_query3(GlobalPQ->at(cC).idA,GlobalPQ->at(cC).idB, h) > h )
+						for (int cC = 0, sz = GlobalResultsLimit, kk = k;
+								cC < sz && kk > 0; cC++) {
+							if (BFS_query3(GlobalPQ->at(cC).idA,
+									GlobalPQ->at(cC).idB, h) > h)
 								continue;
 							kk--;
 							destVec->push_back(GlobalPQ->at(cC));
 						}
 						// clear the current queue since we will add the new Top-K elements later
 						GlobalPQ->clear();
-						minimum = destVec->at(destVec->size()-1);
+						minimum = destVec->at(destVec->size() - 1);
 						GlobalPQ = destVec;
 					}/*else if( GlobalPQ.size() == k ){
-						if( !Query3PQ_ComparatorStaticObjects(minimum, GlobalPQ.back()) ){
-							std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorMinStaticObjects);
-							minimum = GlobalPQ[GlobalPQ.size()-1];
-						}
-					}*/
+					 if( !Query3PQ_ComparatorStaticObjects(minimum, GlobalPQ.back()) ){
+					 std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorMinStaticObjects);
+					 minimum = GlobalPQ[GlobalPQ.size()-1];
+					 }
+					 }*/
 				}
-			}// end of checking pairs for current person
-		}// end of cluster's people
-	}// end of processing the clusters
+			}						// end of checking pairs for current person
+		}						// end of cluster's people
+	}						// end of processing the clusters
 
 	// now we have to pop the K most common tag pairs
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
-
+	if (qid == 1010)
+		fprintf(stderr, "Query3 %d end [%.6f]secs\n", qid,
+				(getTime() - time_global_start) / 1000000.0);
 	// we need to clear the vector from the less-than-Top-K elements
-	std::stable_sort(GlobalPQ->begin(), GlobalPQ->end(), Query3PQ_ComparatorMinStaticObjects);
+	std::stable_sort(GlobalPQ->begin(), GlobalPQ->end(),
+			Query3PQ_ComparatorMinStaticObjects);
 	std::stringstream ss;
-	for ( int i=0,sz=GlobalPQ->size(); k>0 && i<sz; i++ ) {
-		if( BFS_query3(GlobalPQ->at(i).idA,GlobalPQ->at(i).idB, h) > h )
+	for (int i = 0, sz = GlobalPQ->size(); k > 0 && i < sz; i++) {
+		if (BFS_query3(GlobalPQ->at(i).idA, GlobalPQ->at(i).idB, h) > h)
 			continue;
 		k--;
 		ss << GlobalPQ->at(i).idA << "|" << GlobalPQ->at(i).idB << " ";
 	}
 	Answers[qid] = ss.str();
 }
-
 //////////////////////////////////////////////////////////////////////
 // QUERY 4
 //////////////////////////////////////////////////////////////////////
