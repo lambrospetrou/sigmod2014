@@ -1610,93 +1610,6 @@ void postProcessTagBirthdays() {
 }
 
 
-
-///////////////////////////////////////////////////////////////////////
-///////////////////// READING FILES - WORKER JOBS /////////////////////
-///////////////////////////////////////////////////////////////////////
-
-// TODO - optimization instead of adding all the jobs : KEEP ONE FOR YOURSELF
-
-/*
-int phase2_placesFinished = 0;
-
-void* phase3_ReadForumHasTags(int tid, void *args){
-	readForumHasTag(inputDir);
-	return 0;
-}
-
-void* phase3_ReadForumHasMembers(int tid, void *args){
-	readForumHasMember(inputDir);
-	return 0;
-}
-
-void* phase2_ReadPlacePartOfPlace(int tid, void *args){
-	readPlacePartOfPlace(inputDir);
-	phase2_placesFinished = 1;
-	//FAI_U32(&phase2_placesFinished);
-	return 0;
-}
-
-void* phase2_ReadTagsAndPersonTags(int tid, void* args){
-	readPersonHasInterestTag(inputDir);
-	// Q2 - create the final arrays
-	postProcessTagBirthdays();
-
-	readTags(inputDir);
-	// add the rest of tag functions
-	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase3_ReadForumHasTags), NULL );
-	phase3_ReadForumHasMembers(tid, NULL);
-	return 0;
-}
-
-void* phase2_ReadComments(int tid, void *args){
-	readComments(inputDir);
-	postProcessComments();
-	return 0;
-}
-
-void* phase1_ReadPersons(int tid, void *args){
-	readPersons(inputDir);
-	readPersonKnowsPerson(inputDir);
-
-	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase2_ReadComments), NULL );
-	// process the tags now that we have persons
-	phase2_ReadTagsAndPersonTags(tid, NULL);
-
-	return 0;
-}
-
-void* phase1_ReadPlacesFiles(int tid, void* args){
-	readPlaces(inputDir);
-	// add the rest of places jobs
-	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(phase2_ReadPlacePartOfPlace), NULL );
-
-	// execute one job too
-	readPersonLocatedAtPlace(inputDir);
-	readOrgsLocatedAtPlace(inputDir);
-	readPersonWorksStudyAtOrg(inputDir);
-
-	// now we can delete PlaceId to Index hashmap since no further
-	// data will come containing the PlaceId
-	while( phase2_placesFinished == 0 );
-
-	delete PlaceIdToIndex;
-	PlaceIdToIndex = NULL;
-
-	return 0;
-}
-
-*/
-
-
-
-
-
-
-
-
-
-
 ///////////////////////////////////////////////////////////////////////
 // QUERY EXECUTORS
 ///////////////////////////////////////////////////////////////////////
@@ -2252,6 +2165,8 @@ bool Query4SubNodePredicate(const Query4SubNode& d1,const Query4SubNode& d2) {
 	return d1.geodesic < d2.geodesic;
 }
 
+int **GlobalLevelCounters[NUM_CORES+1];
+
 struct GraphNode{
 	vector<long> edges;
 	long LevelDegreeNodeIndex;
@@ -2346,31 +2261,6 @@ long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long c
 		long gd_prediction = 0, oldqSize;
 		while(qIndex<qSize){
 			cPerson = GeodesicBFSQueue[qIndex];
-			/*
-			if( previousLevel != visited[cPerson] ){
-				//if( previousLevel == 2 ){
-					// make the prediction for this level and return if we are going to be
-					// above the threshold anyway
-					//gd_prediction = gd + ((qSize-qIndex)*(previousLevel+1));
-					gd_prediction += ((qSize-qIndex)*(previousLevel+1));
-					if( gd_prediction > localMaximumGeodesicDistance ){
-						return gd_prediction;
-					}else if( gd_prediction == localMaximumGeodesicDistance ){
-						// check if we have more people to check - therefore meaning that we are
-						// going to pass the threshold anyway again
-						if( qSize < allComponentPeople ){
-							return INT_MAX;
-						}else{
-							// we have all the people so just return the distance
-							return gd_prediction;
-						}
-					}else if( qSize == allComponentPeople ){
-						return gd_prediction;
-					}
-				//}
-			}
-			previousLevel = visited[cPerson];
-			*/
 
 			depth = visited[cPerson]+1;
 			oldqSize = qSize;
@@ -2435,7 +2325,89 @@ struct MaxLevels{
 	int max3;
 };
 
-int **GlobalLevelCounters[NUM_CORES+1];
+
+bool LevelDegreeNodeInfoPredicate(const LevelDegreeNode& this_,const LevelDegreeNode& other, int tid, int analyzedLevel, int r_p) {
+	long peopleAbove3_this = 0, peopleAbove3_other = 0;
+	for( int i=4; i<analyzedLevel; i++ ){
+		peopleAbove3_this += GlobalLevelCounters[tid][this_.personId][i];
+		peopleAbove3_other += GlobalLevelCounters[tid][other.personId][i];
+	}
+	long estimatedL3_this = r_p - this_.totalReachability - peopleAbove3_this;
+	long estimatedL3_other = r_p - other.totalReachability - peopleAbove3_other;
+
+	if( this_.totalReachability+estimatedL3_this > other.totalReachability+estimatedL3_other )
+		return true;
+	else if( this_.totalReachability+estimatedL3_this < other.totalReachability+estimatedL3_other )
+		return false;
+	if( this_.totalReachability > other.totalReachability )
+		return true;
+	else if( this_.totalReachability < other.totalReachability )
+		return false;
+	if( this_.L1 > other.L1 )
+		return true;
+	else if( this_.L1 < other.L1 )
+		return false;
+	if( this_.L2 > other.L2 )
+		return true;
+	else if( this_.L2 < other.L2 )
+		return false;
+	if (estimatedL3_this > estimatedL3_other)
+		return true;
+	else if (estimatedL3_this < estimatedL3_other)
+		return false;
+	if (GlobalLevelCounters[tid][this_.personId][4] > GlobalLevelCounters[tid][other.personId][4])
+		return true;
+	else if (GlobalLevelCounters[tid][this_.personId][4] < GlobalLevelCounters[tid][other.personId][4])
+		return false;
+	if (GlobalLevelCounters[tid][this_.personId][5] > GlobalLevelCounters[tid][other.personId][5])
+		return true;
+	else if (GlobalLevelCounters[tid][this_.personId][5] < GlobalLevelCounters[tid][other.personId][5])
+		return false;
+	return this_.personId <= other.personId;
+}
+
+void mergeLevelDegreeNodes(vector<LevelDegreeNode> *a, long low, long mid, long high, LevelDegreeNode *b, int tid, int analyzedLevel, int r_p) {
+	long i = low, j = mid + 1, k = low;
+
+	while (i <= mid && j <= high) {
+		if ( LevelDegreeNodeInfoPredicate((*a)[i], (*a)[j], tid, analyzedLevel, r_p) ) {
+			b[k] = (*a)[i];
+			k++;
+			i++;
+		} else {
+			b[k] = (*a)[j];
+			k++;
+			j++;
+		}
+	}
+	while (i <= mid) {
+		b[k] = (*a)[i];
+		k++;
+		i++;
+	}
+
+	while (j <= high) {
+		b[k] = (*a)[j];
+		k++;
+		j++;
+	}
+
+	k--;
+	while (k >= low) {
+		(*a)[k] = b[k];
+		k--;
+	}
+}
+
+void mergesortLevelDegreeNodes(vector<LevelDegreeNode> *a, long low, long high, LevelDegreeNode *b, int tid, int analyzedLevel, int r_p) {
+	if (low < high) {
+		long m = ((high - low) >> 1) + low;
+		mergesortLevelDegreeNodes(a, low, m, b, tid, analyzedLevel, r_p);
+		mergesortLevelDegreeNodes(a, m + 1, high, b, tid, analyzedLevel, r_p);
+		mergeLevelDegreeNodes(a, low, m, high, b, tid, analyzedLevel, r_p);
+	}
+}
+
 
 void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
@@ -2538,12 +2510,11 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	Query4PersonStruct lastGlobalMinimumCentrality;
 
 	// NEEDED FOR THE PREPROCESSING STEPS
-	int levelsAnalyzed = 7;
+	int levelsAnalyzed = 4;
 	int peopleSample, peopleExtremeLimit=10000;
 	MaxLevels *maximumLevels;
-	int **LevelCounters = GlobalLevelCounters[tid];
 
-	// check if the arrays are initialized and initalize them if not
+	// check if the arrays are initialized and initialize them if not
 	if( GlobalLevelCounters[tid] == 0 ){
 		GlobalLevelCounters[tid] = new (std::nothrow) int*[N_PERSONS];
 		if( GlobalLevelCounters[tid] == NULL ){
@@ -2556,6 +2527,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 		}
 	}
+	int **LevelCounters = GlobalLevelCounters[tid];
 
 	double cCentrality;
 	long cPerson;
@@ -2575,7 +2547,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		else
 			UseExtremePruning = 0;
 
-		peopleSample = allPersons >> 3;
+		peopleSample = allPersons >> 1;
 
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
 		//fprintf(stderr, "tid[%d] starting LEVEL 2-3 subgraph [%.6f]seconds\n", tid, (getTime()-time_global_start)/1000000.0);
@@ -2661,7 +2633,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 
 			// iterate over the sorted persons from the end and do your magic
-			for( j=currentSubgraph.size()-1, szz=currentSubgraph.size()-peopleSample-1; j>szz; j-- ){
+			//for( j=currentSubgraph.size()-1, szz=currentSubgraph.size()-peopleSample-1; j>szz; j-- ){
+			for( j=currentSubgraph.size()-(peopleSample>>1), szz=currentSubgraph.size()-peopleSample-1; j>szz; j-- ){
 				LevelDegreeNode &cNode = currentSubgraph[j];
 				memset(visited, -1, N_PERSONS);
 				Q[0] = currentSubgraph[j].personId;
@@ -2698,6 +2671,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 
 				// now we need to count for the levels > 3
+
 				long depth;
 				while( qIndex < qSize ){
 					cPerson = Q[qIndex++];
@@ -2716,9 +2690,13 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}// end of BFS
 
+
 			}// end of each sampled person
 
 			// sort the people again now
+			LevelDegreeNode *temp = (LevelDegreeNode*)malloc(sizeof(LevelDegreeNode)*currentSubgraph.size());
+			mergesortLevelDegreeNodes(&currentSubgraph, 0, r_p, temp, tid, levelsAnalyzed, r_p);
+			free(temp);
 
 
 		} // end of pre-processing
@@ -2762,6 +2740,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			cPerson = currentSubgraph.at(j).personId;
 			LevelDegreeNode &cNode = currentSubgraph.at(j);
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d] gd[%d] r_p[%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability, cNode.partialGeodesic, r_p );
+			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d] gd[%d] r_p[%d]\n", cNode.personId, cNode.L1, cNode.L2, GlobalLevelCounters[tid][cPerson][4], cNode.totalReachability, cNode.partialGeodesic, r_p );
 			/////////// YOU ARE AT EACH PERSON OF A SUBGRAPH ///////////
 
 			if( localResults.size() < (unsigned int)k ){
@@ -3350,7 +3329,6 @@ int main(int argc, char** argv) {
 	CPU_ZERO(&mask);
 	CPU_SET( NUM_CORES-1 , &mask);
 
-
 	// MAKE GLOBAL INITIALIZATIONS
 	char msg[100];
 	_initializations();
@@ -3359,7 +3337,6 @@ int main(int argc, char** argv) {
 
 	threadpool = lp_threadpool_init( Q_JOB_WORKERS, NUM_CORES);
 	threadpool_query1_withcomments = lp_threadpool_init( Q1_THREADPOOL_WORKER_THREADS, NUM_CORES);
-
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
@@ -3457,13 +3434,17 @@ int main(int argc, char** argv) {
 	lp_threadpool_destroy_threads(threadpool);
 	fprintf(stderr,"query 1_3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
+
 	// deallocate the arrays needed by query 4 since we do not need them anymore
 	for( int i=0; i<NUM_CORES+1; i++ ){
-		for( int j=0; j<N_PERSONS; j++ ){
-			delete[] GlobalLevelCounters[i][j];
+		if( GlobalLevelCounters[i] != 0 ){
+			for( int j=0; j<N_PERSONS; j++ ){
+				delete[] GlobalLevelCounters[i][j];
+			}
+			delete[] GlobalLevelCounters[i];
 		}
-		delete[] GlobalLevelCounters[i];
 	}
+
 
 
 	// now we can start executing QUERY 1
