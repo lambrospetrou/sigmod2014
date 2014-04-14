@@ -2578,11 +2578,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			UseExtremePruning = 0;
 
 		peopleSample = allPersons >> 1;
+		UseExtremePruning = 0;
 
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
 		//fprintf(stderr, "tid[%d] starting LEVEL 2-3 subgraph [%.6f]seconds\n", tid, (getTime()-time_global_start)/1000000.0);
 
-		int BREAK_LEVEL = 2;
+		int BREAK_LEVEL = 3;
 		int NEXT_HIGHER_LEVEL=BREAK_LEVEL+1;
 
 		int ee,esz,j,szz, ii, iisz;
@@ -2621,7 +2622,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 
 			//////////////////////////// THIS IS WHAT DELAYS US BUT WE NEED IT ////////////
-/*
+
 			// level 3
 			// the ii is positioned at the first level 2 person
 			for ( iisz = qSize; ii < iisz; ii++) {
@@ -2634,7 +2635,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					}
 				}
 			}
-*/
+
 			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
 			cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
@@ -2737,7 +2738,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			maximumLevels = (MaxLevels*)malloc(sizeof(MaxLevels)*allPersons);
 			maximumLevels[r_p].max1 = currentSubgraph[r_p].L1;
 			maximumLevels[r_p].max2 = currentSubgraph[r_p].L2;
-			//maximumLevels[r_p].max3 = currentSubgraph[r_p].L3;
+			maximumLevels[r_p].max3 = currentSubgraph[r_p].L3;
 			for( long j=currentSubgraph.size()-2; j>=0; j-- ){
 				if( currentSubgraph[j].L1 > maximumLevels[j+1].max1 )
 					maximumLevels[j].max1 = currentSubgraph[j].L1;
@@ -2747,12 +2748,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					maximumLevels[j].max2 = currentSubgraph[j].L2;
 				else
 					maximumLevels[j].max2 = maximumLevels[j+1].max2;
-				/*
 				if( currentSubgraph[j].L3 > maximumLevels[j+1].max3 )
 					maximumLevels[j].max3 = currentSubgraph[j].L3;
 				else
 					maximumLevels[j].max3 = maximumLevels[j+1].max3;
-				*/
 			}
 		} // end of pre-processing
 
@@ -2817,7 +2816,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 						breakBound += nextHigherLevel;
 						if (breakBound > localResults[k - 1].geodesic) {
-							fprintf(stderr, "break the loop at [%d] of [%d] and skipped[%d]\n", j, szz, skipped+1);
+							//fprintf(stderr, "break the loop at [%d] of [%d] and skipped[%d]\n", j, szz, skipped+1);
 							break;
 						}
 						skipped++;
@@ -2859,7 +2858,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		if( !UseExtremePruning ){
 			free(maximumLevels);
 		}
-		fprintf(stderr, "[%d] skipped[%d]\n",UseExtremePruning, skipped);
+		//fprintf(stderr, "[%d] skipped[%d]\n",UseExtremePruning, skipped);
 
 		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 /*
