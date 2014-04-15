@@ -52,8 +52,8 @@ using std::tr1::hash;
 #define QUERY1_BATCH 20
 
 #define NUM_CORES 4
-#define COMM_WORKERS 2
-#define Q_JOB_WORKERS NUM_CORES - COMM_WORKERS
+#define COMM_WORKERS 4
+#define Q_JOB_WORKERS NUM_CORES
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
@@ -88,11 +88,17 @@ struct PersonStruct {
 		adjacents = 0;
 		adjacentPersonsIds = NULL;
 		adjacentPersonWeightsSorted = NULL;
+		adjacentCommentsOut = NULL;
+		adjacentCommentsIn = NULL;
 	}
 	long *adjacentPersonsIds;
+
 	long adjacents;
 
 	int *adjacentPersonWeightsSorted;
+
+	int *adjacentCommentsIn;
+	int *adjacentCommentsOut;
 
 	int subgraphNumber;
 }__attribute__((aligned(CACHE_LINE_SIZE)));
@@ -367,10 +373,8 @@ vector<string> Answers;
 
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
-FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
+//FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
 FINAL_MAP_LONG_LONG *CommentToPerson;
-//LPConcHashtable *CommentToPerson;
-//LPConcHashtable *CommentsPersonToPerson;
 
 FINAL_MAP_INT_INT *PlaceIdToIndex;
 FINAL_MAP_INT_INT *OrgToPlace;
@@ -730,12 +734,18 @@ void readPersonKnowsPerson(char *inputDir) {
 			if (ids.size() > 0) {
 				// store the neighbors
 				PersonStruct *person = &Persons[prevId];
-				person->adjacentPersonsIds = (long*) malloc(
-						sizeof(long) * ids.size());
+				person->adjacentPersonsIds = (long*) malloc(sizeof(long) * ids.size());
 				for (long i = 0, sz = ids.size(); i < sz; i++) {
 					person->adjacentPersonsIds[i] = ids[i];
 				}
 				person->adjacents = ids.size();
+
+				// allocate the comment arrays
+				person->adjacentCommentsIn = (int*) malloc(sizeof(int) * person->adjacents);
+				memset(person->adjacentCommentsIn, 0, person->adjacents);
+				person->adjacentCommentsOut = (int*) malloc(sizeof(int) * person->adjacents);
+				memset(person->adjacentCommentsOut, 0, person->adjacents);
+
 				ids.clear();
 			}
 		}
@@ -755,6 +765,12 @@ void readPersonKnowsPerson(char *inputDir) {
 			person->adjacentPersonsIds[i] = ids[i];
 		}
 		person->adjacents = ids.size();
+
+		// allocate the comment arrays
+		person->adjacentCommentsIn = (int*) malloc(sizeof(int) * person->adjacents);
+		memset(person->adjacentCommentsIn, 0, person->adjacents);
+		person->adjacentCommentsOut = (int*) malloc(sizeof(int) * person->adjacents);
+		memset(person->adjacentCommentsOut, 0, person->adjacents);
 	}
 
 	free(buffer);
@@ -775,110 +791,6 @@ void readPersonKnowsPerson(char *inputDir) {
 }
 
 
-
-
-void *CommWorkerFunction(void* args){
-	FileWorker *qws = (FileWorker*)args;
-	int tid = qws->tid;
-
-	//fprintf(stderr, "comments tid[%ld] start[%ld] end[%ld]\n", tid, qws->start, qws->end);
-
-	long idA,idB;
-	// process the whole file in memory
-	char *startLine = qws->start;
-	char *EndOfFile = qws->end;
-
-	char *idDivisor, *lineEnd;
-	while (startLine < EndOfFile) {
-		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
-		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
-		idA = atol(startLine);
-		idB = atol(idDivisor+1);
-
-		//CommentToPerson->set(idA,idB/10);
-
-		startLine = lineEnd + 1;
-	}
-	free(qws);
-	return 0;
-}
-
-
-
-void readComments_(char* inputDir) {
-	char path[1024];
-	///////////////////////////////////////////////////////////////////
-	// READ THE COMMENTS AGAINST EACH PERSON
-	///////////////////////////////////////////////////////////////////
-	path[0] = '\0';
-	strcat(path, inputDir);
-	strcat(path, CSV_COMMENT_HAS_CREATOR);
-
-	long commentsNum = countFileLines(path);
-
-	FILE *input = fopen(path, "r");
-	if (input == NULL) {
-		printErr("could not open comment_hasCreator_person.csv!");
-	}
-	long lSize;
-	char *buffer = getFileBytes(input, &lSize);
-	fclose(input);
-
-#ifdef DEBUGGING
-	char msg[100];
-	long comments=0;
-#endif
-
-	//CommentToPerson = new LPConcHashtable(commentsNum);
-
-	int commThreads = COMM_WORKERS;
-	long perThreadPortion = lSize / commThreads;
-	// skip the first line
-	char* lastEnd = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
-	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*commThreads);
-	//FileWorker *qws;
-	cpu_set_t mask;
-	for (int i = 1; i < commThreads; i++) {
-		FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
-		qws->start = lastEnd;
-		lastEnd = qws->start + perThreadPortion;
-		lastEnd = (char*) memchr(lastEnd, '\n', LONGEST_LINE_READING)+1;
-		qws->end = lastEnd;
-		qws->tid = i;
-		qws->buffer = buffer;
-		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(CommWorkerFunction), qws );
-		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
-		// TODO - SET AFFINITY
-		/*
-		CPU_ZERO(&mask);
-		CPU_SET( (NUM_CORES - (i+1))-1 , &mask); // NUM_CORES - i = the thread that runs asynchronously
-		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
-			fprintf(stderr, "postProcessComments::Error setting thread affinity tid[%d]\n", i);
-		}
-		*/
-	}
-	// the main thread should also execute the last portion of the file
-	FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
-	qws->start = lastEnd;
-	qws->end = buffer + lSize;
-	qws->tid = 0;
-	qws->buffer = buffer;
-	CommWorkerFunction(qws);
-
-	// wait for them to finish for now since we are reading files at the same time
-	for (int i = 1; i < commThreads; i++) {
-		pthread_join(worker_threads[i], NULL);
-	}
-	free(worker_threads);
-	free(buffer);
-
-	fprintf(stderr, "finished reading comment has creator [%.8f]\n", (getTime()-time_global_start)/1000000.0);
-}
-
-
-
-
-
 void readComments(char* inputDir) {
 	char path[1024];
 
@@ -889,7 +801,7 @@ void readComments(char* inputDir) {
 	strcat(path, inputDir);
 	strcat(path, CSV_COMMENT_HAS_CREATOR);
 
-	long commentsNum = countFileLines(path);
+	//long commentsNum = countFileLines(path);
 
 	FILE *input = fopen(path, "r");
 	if (input == NULL) {
@@ -904,8 +816,7 @@ void readComments(char* inputDir) {
 	long comments=0;
 #endif
 
-	CommentToPerson = new FINAL_MAP_LONG_LONG(commentsNum);
-
+	CommentToPerson = new FINAL_MAP_LONG_LONG( N_PERSONS << 10 );
 
 	// process the whole file in memory
 	// skip the first line
@@ -917,10 +828,6 @@ void readComments(char* inputDir) {
 	while (startLine < EndOfFile) {
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
-		//*idDivisor = '\0';
-		//*lineEnd = '\0';
-		//idA = getStrAsLong(startLine);
-		//idB = getStrAsLong(idDivisor + 1);
 
 		idA = atol(startLine);
 		idB = atol(idDivisor+1);
@@ -947,6 +854,9 @@ void readComments(char* inputDir) {
 	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////
+
+
 void *CommRepCommWorkerFunction(void* args){
 	FileWorker *qws = (FileWorker*)args;
 	int tid = qws->tid;
@@ -958,27 +868,37 @@ void *CommRepCommWorkerFunction(void* args){
 	//if( tid==0 )
 	//fprintf(stderr, "tid[%d] start[%s] end[%s]\n", tid, qws->start, qws->end);
 
+	long i,sz, *edges;
+
 	char *idDivisor, *lineEnd;
 	while (startLine < EndOfFile) {
 		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
 		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
-		//*idDivisor = '\0';
-		//*lineEnd = '\0';
-		//idA = getStrAsLong(startLine);
-		//idB = getStrAsLong(idDivisor+1);
 		idA = atol(startLine);
 		idB = atol(idDivisor+1);
-
-		//personA = CommentToPerson->get(idA);
-		//personB = CommentToPerson->get(idB);
 
 		personA = (*CommentToPerson)[idA];
 		personB = (*CommentToPerson)[idB];
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
-			long key_a_b = CantorPairingFunction(personA, personB);
-			++CommentsPersonToPerson[tid][key_a_b];
+			//long key_a_b = CantorPairingFunction(personA, personB);
+			//++CommentsPersonToPerson[tid][key_a_b];
+			edges = Persons[personA].adjacentPersonsIds;
+			for( i=0, sz=Persons[personA].adjacents; i<sz; i++ ){
+				if( edges[i] == personB ){
+					FAI_U64( &Persons[personA].adjacentCommentsOut[i] );
+					break;
+				}
+			}
+			edges = Persons[personB].adjacentPersonsIds;
+			for( int i=0, sz=Persons[personB].adjacents; i<sz; i++ ){
+				if (edges[i] == personA) {
+					FAI_U64(&Persons[personB].adjacentCommentsIn[i]);
+					break;
+				}
+			}
+
 		}
 		//printf("%ld %ld\n", idA, idB);
 
@@ -1008,7 +928,7 @@ void readCommentReplyOfComment(char* inputDir) {
 	// a portion of the file in parallel
 
 	int commThreads = COMM_WORKERS;
-	CommentsPersonToPerson = new FINAL_MAP_LONG_LONG[COMM_WORKERS]();
+	//CommentsPersonToPerson = new FINAL_MAP_LONG_LONG[COMM_WORKERS]();
 
 	long perThreadPortion = lSize / commThreads;
 	// skip the first line
@@ -1069,18 +989,12 @@ void *PostProcessingCommentsJob(void *args){
 		if (adjacents > 0) {
 			long *adjacentIds = Persons[i].adjacentPersonsIds;
 			int *weights = (int*) malloc(sizeof(int) * adjacents);
+			int *ins = Persons[i].adjacentCommentsIn;
+			int *outs = Persons[i].adjacentCommentsOut;
 			Persons[i].adjacentPersonWeightsSorted = weights;
 			for (long cAdjacent = 0, szz = adjacents; cAdjacent < szz; cAdjacent++) {
-				adjacentId = adjacentIds[cAdjacent];
-				key_a_b = CantorPairingFunction(i, adjacentId);
-				key_b_a = CantorPairingFunction(adjacentId, i);
-				weightAB = weightBA = 0;
-				for (int j = 0; j < COMM_WORKERS; j++) {
-					if( CommentsPersonToPerson[j].find(key_a_b) != CommentsPersonToPerson[j].end() )
-						weightAB += CommentsPersonToPerson[j][key_a_b];
-					if( CommentsPersonToPerson[j].find(key_b_a) != CommentsPersonToPerson[j].end() )
-						weightBA += CommentsPersonToPerson[j][key_b_a];
-				}
+				weightAB = outs[cAdjacent];
+				weightBA = ins[cAdjacent];
 				weights[cAdjacent] = (weightAB < weightBA) ? weightAB : weightBA;
 			}
 			if( adjacents > 1 )
@@ -1138,7 +1052,6 @@ void postProcessComments() {
 	free(worker_threads);
 	// since we have all the data needed in arrays we can delete the hash maps
 	delete CommentToPerson;
-	delete[] CommentsPersonToPerson;
 }
 
 
@@ -3536,7 +3449,7 @@ int main(int argc, char** argv) {
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
 	// pass 1 to read only the comments file
-	pthread_t *commentsThread = readCommentsAsync(0);
+	//pthread_t *commentsThread = readCommentsAsync(0);
 
 	// Q4 - we read this first in order to read the queries file now
 	readTags(inputDir);
@@ -3623,11 +3536,11 @@ int main(int argc, char** argv) {
 	}
 
 	// now we can start executing QUERY 1
-	pthread_join(*commentsThread, NULL);
-	free(commentsThread);
-	//readComments(inputDir);
-	//readCommentReplyOfComment(inputDir);
-	//postProcessComments();
+	//pthread_join(*commentsThread, NULL);
+	//free(commentsThread);
+	readComments(inputDir);
+	readCommentReplyOfComment(inputDir);
+	postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 
 	//executeQuery1Jobs(Q1_WORKER_THREADS);
