@@ -1947,6 +1947,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	long totalPersons = 0;
 
 	char *visitedPersons = (char*)malloc(N_PERSONS);
+	memset(visitedPersons, 0, N_PERSONS);
 	long *Q = (long*)malloc(sizeof(long)*N_PERSONS);
 
 	char *visitedPlaces = (char*)malloc(Places.size());
@@ -1988,7 +1989,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			}
 		}
 	}
-	delete visitedPlaces;
+	free(visitedPlaces);
 
 	//fprintf(stderr, "3[%d-%lu]",k, totalPersons);
 	/*
