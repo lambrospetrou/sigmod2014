@@ -22,6 +22,8 @@ public:
 	int contains(long key);
 	long get(long key);
 
+	long arraySize();
+
 	void printLists();
 	void printBuckets();
 

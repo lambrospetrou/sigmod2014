@@ -37,6 +37,10 @@ int LPConcHashtable::contains(long key){
 	return list_contains(this->ArrayLists[MurmurHash3_64(key) % this->ArraySize], key);
 }
 
+long LPConcHashtable::arraySize(){
+	return this->ArraySize;
+}
+
 void LPConcHashtable::printBuckets(){
 	for( long i=0; i<this->ArraySize; i++ ){
 		fprintf(stderr, "list[%d] size[%d]\n", i, this->ArrayLists[i]->size);
