@@ -52,7 +52,7 @@ using std::tr1::hash;
 #define QUERY1_BATCH 50
 
 #define NUM_CORES 8
-#define COMM_WORKERS 3
+#define COMM_WORKERS 2
 #define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
@@ -1626,17 +1626,7 @@ void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 		ss << -1;
 		Answers[qid] = ss.str();
 		return;
-	}/*else if( x == -1 ){
-		std::stringstream ss;
-		int dist = ShortestPathIndex.QueryDistance(p1,p2);
-		if( dist == INT_MAX){
-			ss << -1;
-		}else{
-			ss << dist;
-		}
-		Answers[qid] = ss.str();
-		return;
-	}*/
+	}
 
 	int answer = -1;
 
@@ -1647,7 +1637,7 @@ void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 	long qSize=1;
 	Q_BFS[0] = p1;
 	visited[p1] = 0;
-	long cAdjacent;
+	long i, sz, depth;
 	while (qIndex < qSize) {
 		cPerson = Q_BFS[qIndex++];
 
@@ -1656,33 +1646,32 @@ void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 		// the comments are valid
 		long *adjacents = Persons[cPerson].adjacentPersonsIds;
 		int *weights = Persons[cPerson].adjacentPersonWeightsSorted;
+		depth = visited[cPerson] + 1;
 		// if there is comments limit
 		if (x != -1) {
-			for (long i = 0, sz = Persons[cPerson].adjacents;
+			for (i = 0, sz = Persons[cPerson].adjacents;
 					(i < sz) && (weights[i] > x); i++) {
-				cAdjacent = adjacents[i];
-				if (visited[cAdjacent] < 0) {
-					if (cAdjacent == p2) {
-						answer = visited[cPerson] + 1;
+				if (visited[adjacents[i]] < 0) {
+					if (adjacents[i] == p2) {
+						answer = depth;
 						break;
 					}
-					visited[cAdjacent] = visited[cPerson] + 1;
-					Q_BFS[qSize++] = cAdjacent;
+					visited[adjacents[i]] = depth;
+					Q_BFS[qSize++] = adjacents[i];
 				}
 			}
 		} else {
 			// no comments limit
-			for (long i = 0, sz = Persons[cPerson].adjacents; i < sz; i++) {
-				cAdjacent = adjacents[i];
+			for (i = 0, sz = Persons[cPerson].adjacents; i < sz; i++) {
 				// if node not visited and not added
-				if (visited[cAdjacent] < 0) {
-					if (cAdjacent == p2) {
-						answer = visited[cPerson] + 1;
+				if (visited[adjacents[i]] < 0) {
+					if (adjacents[i] == p2) {
+						answer = depth;
 						break;
 					}
 					// mark node as added - GREY
-					visited[cAdjacent] = visited[cPerson] + 1;
-					Q_BFS[qSize++] = cAdjacent;
+					visited[adjacents[i]] = depth;
+					Q_BFS[qSize++] = adjacents[i];
 				}
 			}
 		} // end of neighbors processing
