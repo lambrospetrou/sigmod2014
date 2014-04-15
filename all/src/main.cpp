@@ -3324,6 +3324,7 @@ int main(int argc, char** argv) {
 	time_global_start = getTime();
 
 
+
 	threadpool = lp_threadpool_init( Q_JOB_WORKERS, NUM_CORES);
 	threadpool_query1_withcomments = lp_threadpool_init( Q1_THREADPOOL_WORKER_THREADS, NUM_CORES);
 
