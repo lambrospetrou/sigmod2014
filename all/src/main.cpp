@@ -2160,6 +2160,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	}
 	Answers[qid] = ss.str();
 
+
 	free(visitedPersons);
 	free(Q);
 }
