@@ -1848,49 +1848,40 @@ void query2(int k, char *date, int date_sz, long qid) {
 	Answers[qid] = ss.str().c_str();
 }
 
-int BFS_query3(long idA, long idB, int h) {
-	LPBitset visited(N_PERSONS);
-	//char *visited = (char*) malloc(N_PERSONS);
-	//memset(visited, 0, N_PERSONS);
-
-	deque<QueryBFS> Q;
+int BFS_query3(long idA, long idB, int h, char* visited, long *Q) {
+	memset(visited, -1, N_PERSONS);
+	int depth;
 	long qIndex = 0;
 	long qSize = 1;
-	Q.push_back(QueryBFS(idA, 0));
+	//Q.push_back(QueryBFS(idA, 0));
+	Q[0] = idA;
+	visited[idA] = 0;
 	while (qIndex < qSize) {
-		QueryBFS cPerson = Q.front();
-		Q.pop_front();
-		qIndex++;
+		long cPerson = Q[qIndex++];
 
 		// we have reached the hop limit of the query
 		// so we have to exit since the person we want to reach cannot be found
 		// in less than h-hops since he should have already be found
 		// while pushing the neighbors below. The destination node should
 		// never appear here since he will never be pushed into the Queue.
-		if (cPerson.depth > h) {
+		if (visited[cPerson] > h) {
 			break;
 		}
-
-		long *neighbors = Persons[cPerson.person].adjacentPersonsIds;
-		for (long i = 0, sz = Persons[cPerson.person].adjacents; i < sz; i++) {
+		depth = visited[cPerson] + 1;
+		long *neighbors = Persons[cPerson].adjacentPersonsIds;
+		for (long i = 0, sz = Persons[cPerson].adjacents; i < sz; i++) {
 			long cB = neighbors[i];
 			// if person is not visited and not added yet
-			//if (visited[cB] == 0) {
-			if (!visited.isSet(cB)) {
+			if (visited[cB] == -1) {
 				// check if this is our person
 				if (idB == cB) {
-					//free(visited);
-					return cPerson.depth + 1;
+					return depth;
 				}
-				// mark person as GREY - added
-				visited.set(cB);
-				//visited[cB]=1;
-				Q.push_back(QueryBFS(cB, cPerson.depth + 1));
-				qSize++;
+				visited[cB] = depth;
+				Q[qSize++] = cB;
 			}
 		}
 	}
-	//free(visited);
 	return INT_MAX;
 }
 
@@ -1946,41 +1937,43 @@ bool Query3PersonStructPredicate(const Query3PersonStruct& d1,const Query3Person
 
 void query3(int k, int h, char *name, int name_sz, long qid) {
 	//printf("query3 k[%d] h[%d] name[%*s] name_sz[%d]\n", k, h, name_sz, name, name_sz);
+	/*
 	if (qid == 1010)
 		fprintf(stderr, "Query3 %d starts [%.6f]secs\n", qid,
 				(getTime() - time_global_start) / 1000000.0);
+	*/
 	unordered_map<int, vector<Query3PersonStruct> > ComponentsMap;
 
 	long totalPersons = 0;
 
-	// TODO - could use unordered set for memory issues since this could be way smaller
-	// like in most of the queries
-	LPBitset *visitedPersons = new LPBitset(N_PERSONS);
-	LPBitset *visitedPlace = new LPBitset(Places.size());
+	char *visitedPersons = (char*)malloc(N_PERSONS);
+	long *Q = (long*)malloc(sizeof(long)*N_PERSONS);
+
+	char *visitedPlaces = (char*)malloc(Places.size());
+	memset(visitedPlaces, 0, Places.size());
+
 	TrieNode *place = TrieFind(PlacesToId, name, name_sz);
 	long index = place->vIndex;
-	deque<long> Q_places;
-	Q_places.push_back(index);
+	//deque<long> Q_places;
+	//Q_places.push_back(index);
 	// set as added
-	visitedPlace->set(index);
+	//visitedPlace->set(index);
+	Q[0] = index;
 	long qIndex = 0;
 	long qSize = 1;
 	while (qIndex < qSize) {
-		long cPlace = Q_places.front();
-		Q_places.pop_front();
-		qIndex++;
+		long cPlace = Q[qIndex++];
 		// set visited
 		PlaceNodeStruct *cPlaceStruct = Places[cPlace];
 		std::vector<long>::iterator cPerson = cPlaceStruct->personsThis.begin();
 		std::vector<long>::iterator end = cPlaceStruct->personsThis.end();
 		for (; cPerson != end; cPerson++) {
-			if (visitedPersons->isSet(*cPerson))
+			if (visitedPersons[*cPerson])
 				continue;
-			visitedPersons->set(*cPerson);
+			visitedPersons[*cPerson] = 1;
 			ComponentsMap[Persons[*cPerson].subgraphNumber].push_back(
 					Query3PersonStruct(*cPerson,
 							PersonToTags[*cPerson].tags.size()));
-
 			totalPersons++;
 		}
 
@@ -1988,17 +1981,14 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 				cPlaceStruct->placesPartOfIndex.begin();
 				it != cPlaceStruct->placesPartOfIndex.end(); ++it) {
 			// if not visited
-			if (visitedPlace->isSet(*it) == 0) {
+			if (visitedPlaces[*it] == 0) {
 				// set as added
-				visitedPlace->set(*it);
-				Q_places.push_back(*it);
-				qSize++;
+				visitedPlaces[*it] = 1;
+				Q[qSize++] = *it;
 			}
 		}
 	}
-	//delete[] visitedPlace;
-	delete visitedPlace;
-	delete visitedPersons;
+	delete visitedPlaces;
 
 	//fprintf(stderr, "3[%d-%lu]",k, totalPersons);
 	/*
@@ -2130,7 +2120,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 						for (int cC = 0, sz = GlobalResultsLimit, kk = k; cC < sz && kk > 0; cC++) {
 							if( PassedBFS.find(CantorPairingFunction(GlobalPQ->at(cC).idA, GlobalPQ->at(cC).idB)) == PassedBFS.end() ){
 								// we did not found this pair before
-								if ( BFS_query3(GlobalPQ->at(cC).idA,GlobalPQ->at(cC).idB, h) > h)
+								if ( BFS_query3(GlobalPQ->at(cC).idA,GlobalPQ->at(cC).idB, h, visitedPersons, Q) > h)
 									continue;
 								PassedBFS.insert(CantorPairingFunction(GlobalPQ->at(cC).idA, GlobalPQ->at(cC).idB));
 							}
@@ -2150,22 +2140,27 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	// now we have to pop the K most common tag pairs
 	// but we also have to check that the distance between them
 	// is below the H-hops needed by the query.
+	/*
 	if (qid == 1010)
 		fprintf(stderr, "Query3 %d end [%.6f]secs\n", qid,
 				(getTime() - time_global_start) / 1000000.0);
+	*/
 	// we need to clear the vector from the less-than-Top-K elements
 	std::stable_sort(GlobalPQ->begin(), GlobalPQ->end(),
 			Query3PQ_ComparatorMinStaticObjects);
 	std::stringstream ss;
 	for (int i = 0, sz = GlobalPQ->size(); k > 0 && i < sz; i++) {
 		if( PassedBFS.find(CantorPairingFunction(GlobalPQ->at(i).idA, GlobalPQ->at(i).idB)) == PassedBFS.end() ){
-			if (BFS_query3(GlobalPQ->at(i).idA, GlobalPQ->at(i).idB, h) > h)
+			if (BFS_query3(GlobalPQ->at(i).idA, GlobalPQ->at(i).idB, h, visitedPersons, Q) > h)
 				continue;
 		}
 		k--;
 		ss << GlobalPQ->at(i).idA << "|" << GlobalPQ->at(i).idB << " ";
 	}
 	Answers[qid] = ss.str();
+
+	free(visitedPersons);
+	free(Q);
 }
 //////////////////////////////////////////////////////////////////////
 // QUERY 4
