@@ -1654,35 +1654,20 @@ void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 
 	memset(visited, -1, N_PERSONS);
 
-	long cPerson;
-	long qIndex = 0;
-	long qSize=1;
-	Q_BFS[0] = p1;
-	visited[p1] = 0;
-	long i, sz, depth;
-	while (qIndex < qSize) {
-		cPerson = Q_BFS[qIndex++];
-		// we must add the current neighbors into the queue if
-		// the comments are valid
-		long *adjacents = Persons[cPerson].adjacentPersonsIds;
-		int *ins = Persons[cPerson].adjacentCommentsIn;
-		int *outs = Persons[cPerson].adjacentCommentsOut;
-		depth = visited[cPerson] + 1;
-		// if there is comments limit
-		if (x != -1) {
-			for (i = 0, sz = Persons[cPerson].adjacents; (i < sz); i++) {
-				if( ins[i] > x && outs[i] > x ){
-					if (visited[adjacents[i]] < 0) {
-						if (adjacents[i] == p2) {
-							answer = depth;
-							break;
-						}
-						visited[adjacents[i]] = depth;
-						Q_BFS[qSize++] = adjacents[i];
-					}
-				}
-			}
-		} else {
+	if (x == -1) {
+		long cPerson;
+		long qIndex = 0;
+		long qSize = 1;
+		Q_BFS[0] = p1;
+		visited[p1] = 0;
+		long i, sz, depth;
+		while (qIndex < qSize) {
+			cPerson = Q_BFS[qIndex++];
+			// we must add the current neighbors into the queue if
+			// the comments are valid
+			long *adjacents = Persons[cPerson].adjacentPersonsIds;
+			depth = visited[cPerson] + 1;
+			// if there is comments limit
 			// no comments limit
 			for (i = 0, sz = Persons[cPerson].adjacents; i < sz; i++) {
 				// if node not visited and not added
@@ -1696,12 +1681,49 @@ void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 					Q_BFS[qSize++] = adjacents[i];
 				}
 			}
-		} // end of neighbors processing
-		  // check if an answer has been found
-		if (answer != -1) {
-			break;
+			// check if an answer has been found
+			if (answer != -1) {
+				break;
+			}
+		}
+
+	} else {
+		long cPerson;
+		long qIndex = 0;
+		long qSize = 1;
+		Q_BFS[0] = p1;
+		visited[p1] = 0;
+		long i, sz, depth;
+		while (qIndex < qSize) {
+			cPerson = Q_BFS[qIndex++];
+			// we must add the current neighbors into the queue if
+			// the comments are valid
+			long *adjacents = Persons[cPerson].adjacentPersonsIds;
+			int *ins = Persons[cPerson].adjacentCommentsIn;
+			int *outs = Persons[cPerson].adjacentCommentsOut;
+			depth = visited[cPerson] + 1;
+			// if there is comments limit
+
+			for (i = 0, sz = Persons[cPerson].adjacents; (i < sz); i++) {
+				if (ins[i] > x && outs[i] > x) {
+					if (visited[adjacents[i]] < 0) {
+						if (adjacents[i] == p2) {
+							answer = depth;
+							break;
+						}
+						visited[adjacents[i]] = depth;
+						Q_BFS[qSize++] = adjacents[i];
+					}
+				}
+			}
+
+			// check if an answer has been found
+			if (answer != -1) {
+				break;
+			}
 		}
 	}
+
 
 	// no path found
 	//Answers1.push_back(-1);
