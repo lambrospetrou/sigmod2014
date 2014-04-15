@@ -51,9 +51,9 @@ using std::tr1::hash;
 
 #define QUERY1_BATCH 20
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define COMM_WORKERS 2
-#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
+#define Q_JOB_WORKERS NUM_CORES - COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
@@ -368,8 +368,8 @@ vector<string> Answers;
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
 FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
-//FINAL_MAP_LONG_LONG *CommentToPerson;
-LPConcHashtable *CommentToPerson;
+FINAL_MAP_LONG_LONG *CommentToPerson;
+//LPConcHashtable *CommentToPerson;
 //LPConcHashtable *CommentsPersonToPerson;
 
 FINAL_MAP_INT_INT *PlaceIdToIndex;
@@ -774,6 +774,111 @@ void readPersonKnowsPerson(char *inputDir) {
 	N_SUBGRAPHS = calculateAndAssignSubgraphs();
 }
 
+
+
+
+void *CommWorkerFunction(void* args){
+	FileWorker *qws = (FileWorker*)args;
+	int tid = qws->tid;
+
+	//fprintf(stderr, "comments tid[%ld] start[%ld] end[%ld]\n", tid, qws->start, qws->end);
+
+	long idA,idB;
+	// process the whole file in memory
+	char *startLine = qws->start;
+	char *EndOfFile = qws->end;
+
+	char *idDivisor, *lineEnd;
+	while (startLine < EndOfFile) {
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
+		idA = atol(startLine);
+		idB = atol(idDivisor+1);
+
+		//CommentToPerson->set(idA,idB/10);
+
+		startLine = lineEnd + 1;
+	}
+	free(qws);
+	return 0;
+}
+
+
+
+void readComments_(char* inputDir) {
+	char path[1024];
+	///////////////////////////////////////////////////////////////////
+	// READ THE COMMENTS AGAINST EACH PERSON
+	///////////////////////////////////////////////////////////////////
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_COMMENT_HAS_CREATOR);
+
+	long commentsNum = countFileLines(path);
+
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open comment_hasCreator_person.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+	fclose(input);
+
+#ifdef DEBUGGING
+	char msg[100];
+	long comments=0;
+#endif
+
+	//CommentToPerson = new LPConcHashtable(commentsNum);
+
+	int commThreads = COMM_WORKERS;
+	long perThreadPortion = lSize / commThreads;
+	// skip the first line
+	char* lastEnd = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
+	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*commThreads);
+	//FileWorker *qws;
+	cpu_set_t mask;
+	for (int i = 1; i < commThreads; i++) {
+		FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
+		qws->start = lastEnd;
+		lastEnd = qws->start + perThreadPortion;
+		lastEnd = (char*) memchr(lastEnd, '\n', LONGEST_LINE_READING)+1;
+		qws->end = lastEnd;
+		qws->tid = i;
+		qws->buffer = buffer;
+		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(CommWorkerFunction), qws );
+		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		// TODO - SET AFFINITY
+		/*
+		CPU_ZERO(&mask);
+		CPU_SET( (NUM_CORES - (i+1))-1 , &mask); // NUM_CORES - i = the thread that runs asynchronously
+		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
+			fprintf(stderr, "postProcessComments::Error setting thread affinity tid[%d]\n", i);
+		}
+		*/
+	}
+	// the main thread should also execute the last portion of the file
+	FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
+	qws->start = lastEnd;
+	qws->end = buffer + lSize;
+	qws->tid = 0;
+	qws->buffer = buffer;
+	CommWorkerFunction(qws);
+
+	// wait for them to finish for now since we are reading files at the same time
+	for (int i = 1; i < commThreads; i++) {
+		pthread_join(worker_threads[i], NULL);
+	}
+	free(worker_threads);
+	free(buffer);
+
+	fprintf(stderr, "finished reading comment has creator [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+}
+
+
+
+
+
 void readComments(char* inputDir) {
 	char path[1024];
 
@@ -799,8 +904,8 @@ void readComments(char* inputDir) {
 	long comments=0;
 #endif
 
-	//CommentToPerson = new FINAL_MAP_LONG_LONG();
-	CommentToPerson = new LPConcHashtable(commentsNum>>1);
+	CommentToPerson = new FINAL_MAP_LONG_LONG(commentsNum);
+
 
 	// process the whole file in memory
 	// skip the first line
@@ -821,8 +926,7 @@ void readComments(char* inputDir) {
 		idB = atol(idDivisor+1);
 
 		// set the person to each comment
-		//(*CommentToPerson)[idA] = idB;
-		CommentToPerson->set(idA,idB);
+		(*CommentToPerson)[idA] = idB;
 
 		//printf("%d %d\n", idA, idB);
 
@@ -865,12 +969,11 @@ void *CommRepCommWorkerFunction(void* args){
 		idA = atol(startLine);
 		idB = atol(idDivisor+1);
 
-		// get the person ids for each comment id
-		//personA = (*CommentToPerson)[idA];
-		//personB = (*CommentToPerson)[idB];
+		//personA = CommentToPerson->get(idA);
+		//personB = CommentToPerson->get(idB);
 
-		personA = CommentToPerson->get(idA);
-		personB = CommentToPerson->get(idB);
+		personA = (*CommentToPerson)[idA];
+		personB = (*CommentToPerson)[idB];
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
@@ -3504,7 +3607,6 @@ int main(int argc, char** argv) {
 
 	// initialize the level counters
 	for( int i=0; i<NUM_CORES+1; i++ ){
-		GlobalLevelCounters[i] = 0;
 		PersonCurrentDegree[i] = 0;
 	}
 
@@ -3514,26 +3616,17 @@ int main(int argc, char** argv) {
 	lp_threadpool_destroy_threads(threadpool);
 	fprintf(stderr,"query 1_3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
-
 	// deallocate the arrays needed by query 4 since we do not need them anymore
 	for( int i=0; i<NUM_CORES+1; i++ ){
-		if( GlobalLevelCounters[i] != 0 ){
-			for( int j=0; j<N_PERSONS; j++ ){
-				delete[] GlobalLevelCounters[i][j];
-			}
-			delete[] GlobalLevelCounters[i];
-		}
 		if( PersonCurrentDegree[i] )
 			delete[] PersonCurrentDegree[i];
 	}
 
-
 	// now we can start executing QUERY 1
 	pthread_join(*commentsThread, NULL);
-	//free(commentsThread);
+	free(commentsThread);
 	//readComments(inputDir);
 	//readCommentReplyOfComment(inputDir);
-	//fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	//postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 

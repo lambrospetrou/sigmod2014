@@ -21,20 +21,24 @@ LPConcHashtable::LPConcHashtable(long arraySize){
 }
 
 int LPConcHashtable::set(long key, long value){
-	return list_add_withValue( this->ArrayLists[MurmurHash3_64(key) % this->ArraySize], key, value);
+	//return list_add_withValue( this->ArrayLists[MurmurHash3_64(key) % this->ArraySize], key, value);
+	return list_add_withValue( this->ArrayLists[key % this->ArraySize], key, value);
 }
 
 int LPConcHashtable::inc(long key){
-	return list_inc( this->ArrayLists[MurmurHash3_64(key) % this->ArraySize], key);
+	//return list_inc( this->ArrayLists[MurmurHash3_64(key) % this->ArraySize], key);
+	return list_inc( this->ArrayLists[key % this->ArraySize], key);
 }
 
 
 long LPConcHashtable::get(long key){
-	return list_get(this->ArrayLists[MurmurHash3_64(key) % this->ArraySize ], key);
+	//return list_get(this->ArrayLists[MurmurHash3_64(key) % this->ArraySize ], key);
+	return list_get(this->ArrayLists[key % this->ArraySize ], key);
 }
 
 int LPConcHashtable::contains(long key){
-	return list_contains(this->ArrayLists[MurmurHash3_64(key) % this->ArraySize], key);
+	//return list_contains(this->ArrayLists[MurmurHash3_64(key) % this->ArraySize], key);
+	return list_contains(this->ArrayLists[key % this->ArraySize], key);
 }
 
 long LPConcHashtable::arraySize(){
