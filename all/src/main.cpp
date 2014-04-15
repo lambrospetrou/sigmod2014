@@ -51,7 +51,7 @@ using std::tr1::hash;
 
 #define QUERY1_BATCH 20
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define COMM_WORKERS 4
 #define Q_JOB_WORKERS NUM_CORES
 //#define Q_JOB_WORKERS 1
@@ -561,6 +561,20 @@ static inline unsigned long CantorPairingFunction(long k1, long k2) {
 	return (((k1 + k2) * (k1 + k2 + 14)) >> 1) + k2;
 }
 
+static inline long binarySearch(long *array, int value, int low, int high){
+	int mid;
+	while( low <= high ){
+		mid = ((high-low)>>1) + low;
+		if( array[mid] == value )
+			return mid;
+		else if( array[mid] > value )
+			high = mid-1;
+		else
+			low = mid+1;
+	}
+	return -1;
+}
+
 //////////////////////////////////////////////////////////////////////////////
 
 void readPersons(char* inputDir) {
@@ -734,6 +748,7 @@ void readPersonKnowsPerson(char *inputDir) {
 			if (ids.size() > 0) {
 				// store the neighbors
 				PersonStruct *person = &Persons[prevId];
+				std::stable_sort(ids.begin(), ids.end());
 				person->adjacentPersonsIds = (long*) malloc(sizeof(long) * ids.size());
 				for (long i = 0, sz = ids.size(); i < sz; i++) {
 					person->adjacentPersonsIds[i] = ids[i];
@@ -851,7 +866,7 @@ void readComments(char* inputDir) {
 	printOut(msg);
 #endif
 
-	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -882,22 +897,15 @@ void *CommRepCommWorkerFunction(void* args){
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
-			//long key_a_b = CantorPairingFunction(personA, personB);
-			//++CommentsPersonToPerson[tid][key_a_b];
-			edges = Persons[personA].adjacentPersonsIds;
-			for( i=0, sz=Persons[personA].adjacents; i<sz; i++ ){
-				if( edges[i] == personB ){
-					FAI_U64( &Persons[personA].adjacentCommentsOut[i] );
-					break;
-				}
+			idA = binarySearch(Persons[personA].adjacentPersonsIds, personB, 0, Persons[personA].adjacents-1);
+			if( idA != -1 ){
+				int l=Persons[personA].adjacentCommentsOut[idA];
+				FAI_U64(&Persons[personA].adjacentCommentsOut[idA]);
+				fprintf(stderr, "old[%d] new[%d]\n", l, Persons[personA].adjacentCommentsOut[idA]);
 			}
-			edges = Persons[personB].adjacentPersonsIds;
-			for( int i=0, sz=Persons[personB].adjacents; i<sz; i++ ){
-				if (edges[i] == personA) {
-					FAI_U64(&Persons[personB].adjacentCommentsIn[i]);
-					break;
-				}
-			}
+			idB = binarySearch(Persons[personB].adjacentPersonsIds, personA, 0, Persons[personB].adjacents-1);
+			if( idB != -1 )
+				FAI_U64(&Persons[personB].adjacentCommentsIn[idB]);
 
 		}
 		//printf("%ld %ld\n", idA, idB);
@@ -970,7 +978,7 @@ void readCommentReplyOfComment(char* inputDir) {
 	free(worker_threads);
 	free(buffer);
 
-	fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 
@@ -979,9 +987,6 @@ void *PostProcessingCommentsJob(void *args){
 	//fprintf(stderr, "s[%d] e[%d] t[%d]\n", qws->start, qws->end, qws->tid);
 	long *temp = (long*) malloc(sizeof(long) * (N_PERSONS));
 	int *tempWeights = (int*) malloc(sizeof(int) * (N_PERSONS));
-	long adjacentId;
-	long key_a_b;
-	long key_b_a;
 	long weightAB;
 	long weightBA;
 	for (long i = qws->start, sz = qws->end; i < sz; i++) {
@@ -1641,7 +1646,6 @@ void postProcessTagBirthdays() {
 
 void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 	//printf("query1: %d %d %d\n", p1, p2, x);
-
 	if(p1 == p2){
 		std::stringstream ss;
 		ss << 0;
