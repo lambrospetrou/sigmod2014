@@ -53,7 +53,7 @@ using std::tr1::hash;
 
 #define QUERY1_BATCH 50
 
-#define NUM_CORES 4
+#define NUM_CORES 8
 #define COMM_WORKERS 2
 #define Q_JOB_WORKERS NUM_CORES
 //#define Q_JOB_WORKERS 1
@@ -835,7 +835,7 @@ void readComments(char* inputDir) {
 	printOut(msg);
 #endif
 
-	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 void *CommRepCommWorkerFunction(void* args){
@@ -939,7 +939,7 @@ void readCommentReplyOfComment(char* inputDir) {
 	free(worker_threads);
 	free(buffer);
 
-	fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 
@@ -2017,6 +2017,8 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	vector<Query3PQ> *GlobalPQ = &GlobalPQ1;
 	Query3PQ minimum(INT_MAX, INT_MAX, 0);
 
+	unordered_set<long> PassedBFS;
+
 	// for each cluster calculate the common tags and check if we have a new Top-K pair
 	unordered_map<int, vector<Query3PersonStruct> >::iterator clBegin =
 			ComponentsMap.begin();
@@ -2046,10 +2048,8 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 					&& currentPerson->numOfTags < minimum.commonTags)
 				break;
 
-			for (int j = i + 1, szz = currentClusterPersons->size(); j < szz;
-					j++) {
-				Query3PersonStruct *secondPerson = &currentClusterPersons->at(
-						j);
+			for (int j = i + 1, szz = currentClusterPersons->size(); j < szz; j++) {
+				Query3PersonStruct *secondPerson = &currentClusterPersons->at(j);
 
 				// CHECK FOR THE TAGS NUMBER AND EXIT QUICKLY SINCE THEY ARE SORTED
 				if ((GlobalPQ->size() >= (unsigned int) k)
@@ -2058,8 +2058,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 
 				// we now have to calculate the common tags between these two people
 				int cTags = 0;
-				vector<long> *tagsA =
-						&PersonToTags[currentPerson->personId].tags;
+				vector<long> *tagsA = &PersonToTags[currentPerson->personId].tags;
 				vector<long> *tagsB = &PersonToTags[secondPerson->personId].tags;
 				std::vector<long>::const_iterator iA = tagsA->begin();
 				std::vector<long>::const_iterator endA = tagsA->end();
@@ -2128,13 +2127,13 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 							destVec = &GlobalPQ1;
 						}
 						// find the Top-K similar pairs from the current results
-						for (int cC = 0, sz = GlobalResultsLimit, kk = k;
-								cC < sz && kk > 0; cC++) {
-							// TODO - DO NOT DO AGAIN THE BFS FOR THE SAME PERSONS
-							// STORE IN A HASHMAP THE RESULTS OF THE BFS IN ORDER TO USE THEM LATER
-							if (BFS_query3(GlobalPQ->at(cC).idA,
-									GlobalPQ->at(cC).idB, h) > h)
-								continue;
+						for (int cC = 0, sz = GlobalResultsLimit, kk = k; cC < sz && kk > 0; cC++) {
+							if( PassedBFS.find(CantorPairingFunction(GlobalPQ->at(cC).idA, GlobalPQ->at(cC).idB)) == PassedBFS.end() ){
+								// we did not found this pair before
+								if ( BFS_query3(GlobalPQ->at(cC).idA,GlobalPQ->at(cC).idB, h) > h)
+									continue;
+								PassedBFS.insert(CantorPairingFunction(GlobalPQ->at(cC).idA, GlobalPQ->at(cC).idB));
+							}
 							kk--;
 							destVec->push_back(GlobalPQ->at(cC));
 						}
@@ -2142,16 +2141,11 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 						GlobalPQ->clear();
 						minimum = destVec->at(destVec->size() - 1);
 						GlobalPQ = destVec;
-					}/*else if( GlobalPQ.size() == k ){
-					 if( !Query3PQ_ComparatorStaticObjects(minimum, GlobalPQ.back()) ){
-					 std::stable_sort(GlobalPQ.begin(), GlobalPQ.end(), Query3PQ_ComparatorMinStaticObjects);
-					 minimum = GlobalPQ[GlobalPQ.size()-1];
-					 }
-					 }*/
-				}
-			}						// end of checking pairs for current person
-		}						// end of cluster's people
-	}						// end of processing the clusters
+					}// end if reachd results limit
+				}// end if results > k
+			}// end of checking pairs for current person
+		}// end of cluster's people
+	}// end of processing the clusters
 
 	// now we have to pop the K most common tag pairs
 	// but we also have to check that the distance between them
@@ -2164,8 +2158,10 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			Query3PQ_ComparatorMinStaticObjects);
 	std::stringstream ss;
 	for (int i = 0, sz = GlobalPQ->size(); k > 0 && i < sz; i++) {
-		if (BFS_query3(GlobalPQ->at(i).idA, GlobalPQ->at(i).idB, h) > h)
-			continue;
+		if( PassedBFS.find(CantorPairingFunction(GlobalPQ->at(i).idA, GlobalPQ->at(i).idB)) == PassedBFS.end() ){
+			if (BFS_query3(GlobalPQ->at(i).idA, GlobalPQ->at(i).idB, h) > h)
+				continue;
+		}
 		k--;
 		ss << GlobalPQ->at(i).idA << "|" << GlobalPQ->at(i).idB << " ";
 	}
@@ -2242,6 +2238,10 @@ struct LevelDegreeNode{
 		if( this->L2 > other.L2 )
 			return true;
 		else if( this->L2 < other.L2 )
+			return false;
+		if( this->L3 > other.L3 )
+			return true;
+		else if( this->L3 < other.L3 )
 			return false;
 		return this->personId <= other.personId;
 		/*
@@ -2548,23 +2548,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 	// NEEDED FOR THE PREPROCESSING STEPS
 	int levelsAnalyzed = 3;
-	int peopleSample, peopleExtremeLimit=1000;
 	MaxLevels *maximumLevels;
-
-	// check if the arrays are initialized and initialize them if not
-	if( GlobalLevelCounters[tid] == 0 ){
-		GlobalLevelCounters[tid] = new (std::nothrow) int*[N_PERSONS];
-		if( GlobalLevelCounters[tid] == NULL ){
-			fprintf(stdout, "no memory while allocating LevelCounters\n");
-		}
-		for( int j=0; j<N_PERSONS; j++ ){
-			GlobalLevelCounters[tid][j] = new (std::nothrow) int[levelsAnalyzed+1];
-			if( GlobalLevelCounters[tid][j] == NULL ){
-				fprintf(stdout, "no memory while allocating LevelCounters[j]\n");
-			}
-		}
-	}
-	int **LevelCounters = GlobalLevelCounters[tid];
 
 	double cCentrality;
 	long cPerson;
@@ -2578,20 +2562,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			continue;
 		}
 
-		int UseExtremePruning;
-		if( r_p > peopleExtremeLimit )
-			UseExtremePruning = 1;
-		else
-			UseExtremePruning = 0;
-
-		peopleSample = allPersons >> 1;
-		//UseExtremePruning = 0;
-
-		if( UseExtremePruning ){
-			for (int j = 0; j < N_PERSONS; j++) {
-				memset(LevelCounters[j], 0, (levelsAnalyzed + 1) * sizeof(int));
-			}
-		}
 
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
 		//fprintf(stderr, "tid[%d] starting LEVEL 2-3 subgraph [%.6f]seconds\n", tid, (getTime()-time_global_start)/1000000.0);
@@ -2599,7 +2569,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		int BREAK_LEVEL = 3;
 		int NEXT_HIGHER_LEVEL=BREAK_LEVEL+1;
 
-		int ee,esz,j,szz, ii, iisz;
+		int ee,esz,j,szz, ii, iisz, oldQSize;
 		// find the level 2 and 3 of each node
 		for( j=0,szz=currentSubgraph.size(); j<szz; j++ ){
 			LevelDegreeNode &cNode = currentSubgraph[j];
@@ -2622,6 +2592,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				//}
 			}
 			// level 2
+			oldQSize = qSize;
 			for( ii=1, iisz=qSize; ii<iisz; ii++ ){
 				vector<long> &edges = newGraph[Q[ii]].edges;
 				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
@@ -2629,47 +2600,27 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					if (visited[cAdjacent] == -1) {
 						Q[qSize++] = cAdjacent;
 						visited[cAdjacent] = 2;
-						++cNode.L2;
+						//++cNode.L2;
 					}
 				}
 			}
-
+			cNode.L2 = qSize - oldQSize;
 			//////////////////////////// THIS IS WHAT DELAYS US BUT WE NEED IT ////////////
 
 			// level 3
 			// the ii is positioned at the first level 2 person
-			if( UseExtremePruning ){
-				if( szz - j < peopleSample ){
-					for ( iisz = qSize; ii < iisz; ii++) {
-						vector<long> &edges = newGraph[Q[ii]].edges;
-						for (ee = 0, esz = edges.size(); ee < esz; ee++) {
-							cAdjacent = edges[ee];
-							if (visited[cAdjacent] == -1) {
-								visited[cAdjacent] = 3;
-								++cNode.L3;
-								++LevelCounters[edges[ee]][3];
-							}
-						}
+			for (iisz = qSize; ii < iisz; ii++) {
+				vector<long> &edges = newGraph[Q[ii]].edges;
+				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
+					cAdjacent = edges[ee];
+					if (visited[cAdjacent] == -1) {
+						visited[cAdjacent] = 3;
+						++cNode.L3;
 					}
 				}
-				LevelCounters[cNode.personId][0] = 1;
-				cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
-				cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
-			}else{
-				// if not extreme pruning do the old version that all people do level 3
-				for (iisz = qSize; ii < iisz; ii++) {
-					vector<long> &edges = newGraph[Q[ii]].edges;
-					for (ee = 0, esz = edges.size(); ee < esz; ee++) {
-						cAdjacent = edges[ee];
-						if (visited[cAdjacent] == -1) {
-							visited[cAdjacent] = 3;
-							++cNode.L3;
-						}
-					}
-				}
-				cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
-				cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			}
+			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
+			cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3 * 3);
 
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
 
@@ -2690,78 +2641,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		// OVERVIEW OF THE REAL SITUATION OF EACH NODE
 		////////////////////////////////////////////////////////////////////////////////////////
 
-		if( UseExtremePruning ){
-/*
-			// iterate over the sorted persons from the end and do your magic
-			for( j=currentSubgraph.size()-1, szz=currentSubgraph.size()-peopleSample-1; j>szz; j-- ){
-				LevelDegreeNode &cNode = currentSubgraph[j];
-				memset(visited, -1, N_PERSONS);
-				Q[0] = currentSubgraph[j].personId;
-				qIndex = 0; qSize = 1;
-				visited[Q[0]] = 0;
-
-				// level 1
-				vector<long> &edges = newGraph[Q[0]].edges;
-				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
-					Q[qSize++] = edges[ee];
-					visited[edges[ee]] = 1;
-				}
-				// level 2
-				for (qIndex = 1, iisz = qSize; ii < iisz; ii++) {
-					vector<long> &edges = newGraph[Q[qIndex]].edges;
-					for (ee = 0, esz = edges.size(); ee < esz; ee++) {
-						cAdjacent = edges[ee];
-						if (visited[cAdjacent] == -1) {
-							Q[qSize++] = cAdjacent;
-							visited[cAdjacent] = 2;
-						}
-					}
-				}
-				// level 3
-				for ( iisz = qSize; ii < iisz; ii++) {
-					vector<long> &edges = newGraph[Q[qIndex]].edges;
-					for (ee = 0, esz = edges.size(); ee < esz; ee++) {
-						//cAdjacent = edges[ee];
-						if (visited[edges[ee]] == -1) {
-							Q[qSize++] = edges[ee];
-							visited[edges[ee]] = 3;
-						}
-					}
-				}
-
-				// now we need to count for the levels > 3
-
-				long depth;
-				while( qIndex < qSize ){
-					cPerson = Q[qIndex++];
-					if( visited[cPerson] == levelsAnalyzed )
-						break;
-					depth = visited[cPerson] + 1;
-					vector<long> &edges = newGraph[cPerson].edges;
-					for (ee = 0, esz = edges.size(); ee < esz; ee++) {
-						//cAdjacent = edges[ee];
-						if (visited[edges[ee]] == -1) {
-							Q[qSize++] = edges[ee];
-							visited[edges[ee]] = depth;
-							// increase the counter of this level for each neighbor
-							++LevelCounters[edges[ee]][depth];
-						}
-					}
-				}// end of BFS
-
-
-			}// end of each sampled person
-*/
-
-			// sort the people again now
-			LevelDegreeNode *temp = (LevelDegreeNode*)malloc(sizeof(LevelDegreeNode)*currentSubgraph.size());
-			mergesortLevelDegreeNodes(&currentSubgraph, 0, r_p, temp, tid, levelsAnalyzed, r_p, peopleSample);
-			free(temp);
-
-		} // end of pre-processing
-		else{
-			// make the preprocessing like before with no sampled information
-
 			// find the max for each level for each person
 			maximumLevels = (MaxLevels*)malloc(sizeof(MaxLevels)*allPersons);
 			maximumLevels[r_p].max1 = currentSubgraph[r_p].L1;
@@ -2781,8 +2660,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				else
 					maximumLevels[j].max3 = maximumLevels[j+1].max3;
 			}
-		} // end of pre-processing
-
 		// END OF PHASE 2 OF PRE-PROCESSING
 
 		///////////////////////////////////////////////////////////////////////////////////////
@@ -2808,41 +2685,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 				}
 			}else{
 
-				if( UseExtremePruning ){
-
-					// take into account the sampling we did before
-					long partialGeodesicAbove3 = 0, peopleAbove3 = 0;
-					/*
-					for( ii=4; ii<=levelsAnalyzed; ii++ ){
-						peopleAbove3 += LevelCounters[cNode.personId][ii];
-						partialGeodesicAbove3 += (LevelCounters[cNode.personId][ii] * ii);
-					}
-					nextHigherLevel = ((r_p-cNode.totalReachability-peopleAbove3)*NEXT_HIGHER_LEVEL) + partialGeodesicAbove3;
-					lower_bound = cNode.partialGeodesic + nextHigherLevel;
-					if( lower_bound > localResults[k-1].geodesic ){
-						skipped++;
-						continue;
-					}
-					*/
-
-					long estimatedL3_this;
-					if( GlobalLevelCounters[tid][cNode.personId][0] )
-						estimatedL3_this = cNode.L3;
-					else
-						estimatedL3_this = GlobalLevelCounters[tid][cNode.personId][3] + (r_p-cNode.totalReachability-peopleSample);
-						//estimatedL3_this = GlobalLevelCounters[tid][cNode.personId][3];
-					peopleAbove3 = r_p - cNode.totalReachability - estimatedL3_this;
-					nextHigherLevel = peopleAbove3 * NEXT_HIGHER_LEVEL;
-					if( GlobalLevelCounters[tid][cNode.personId][0] )
-						lower_bound = cNode.partialGeodesic + nextHigherLevel;
-					else
-						lower_bound = cNode.partialGeodesic + nextHigherLevel + GlobalLevelCounters[tid][cNode.personId][3]*3;
-					if (lower_bound > localResults[k - 1].geodesic) {
-						skipped++;
-						continue;
-					}
-
-				}else{
 					// we have already found K results so compare the values before doing BFS
 					nextHigherLevel = ((r_p-cNode.totalReachability)*NEXT_HIGHER_LEVEL);
 					lower_bound = cNode.partialGeodesic + nextHigherLevel;
@@ -2869,8 +2711,6 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 						skipped++;
 						continue;
 					}
-
-				}
 
 				gd_real = calculateGeodesicDistance(newGraph, cPerson, localResults[k-1].geodesic, GeodesicDistanceVisited, GeodesicBFSQueue, cNode, allPersons);
 
@@ -2902,10 +2742,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		}// end of persons of this subgraph
 
 		//fprintf(stderr, "[%d] before free[%d]\n",UseExtremePruning, skipped);
-		if( !UseExtremePruning ){
-			free(maximumLevels);
-		}
-		fprintf(stderr, "[%d] skipped[%d]\n",UseExtremePruning, skipped);
+		free(maximumLevels);
 
 		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 /*
@@ -3340,7 +3177,7 @@ void readQueries(char *queriesFile) {
 			qwstruct->qid = qid;
 			//lp_threadpool_addjob_nolock(threadpool3,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
-			if( !isLarge )
+			//if( !isLarge )
 				lp_threadpool_addjob_nolock(threadpool,reinterpret_cast<void* (*)(int,void*)>(Query3WorkerFunction), qwstruct );
 
 			break;
@@ -3489,7 +3326,7 @@ int main(int argc, char** argv) {
 
 	// create the jobs for query 1
 
-	if( !isLarge )
+	//if( !isLarge )
 		createQuery1Jobs(threadpool, &Query1Structs);
 
 	// allocate the visited arrays for the threads
@@ -3522,7 +3359,6 @@ int main(int argc, char** argv) {
 	}
 
 
-
 	// now we can start executing QUERY 1
 	//pthread_join(*commentsThread, NULL);
 	//free(commentsThread);
@@ -3530,13 +3366,13 @@ int main(int argc, char** argv) {
 	readCommentReplyOfComment(inputDir);
 	//fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 	postProcessComments();
-	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 
 	//executeQuery1Jobs(Q1_WORKER_THREADS);
 	createQuery1Jobs(threadpool_query1_withcomments, &Query1StructsWithComments);
 	lp_threadpool_startjobs(threadpool_query1_withcomments);
 	synchronize_complete(threadpool_query1_withcomments);
-	fprintf(stderr,"query 1 with comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
+	//fprintf(stderr,"query 1 with comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
 
 
 #ifdef DEBUGGING
