@@ -52,12 +52,10 @@ using std::tr1::hash;
 #define QUERY1_BATCH 20
 
 #define NUM_CORES 8
-#define COMM_WORKERS 4
+#define COMM_WORKERS 8
 #define Q_JOB_WORKERS NUM_CORES
-//#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
-//#define Q2_WORKER_THREADS NUM_CORES-COMM_WORKERS
 #define Q2_WORKER_THREADS NUM_CORES
 /////////
 
@@ -757,9 +755,9 @@ void readPersonKnowsPerson(char *inputDir) {
 
 				// allocate the comment arrays
 				person->adjacentCommentsIn = (int*) malloc(sizeof(int) * person->adjacents);
-				memset(person->adjacentCommentsIn, 0, person->adjacents);
+				memset(person->adjacentCommentsIn, 0, person->adjacents*sizeof(int));
 				person->adjacentCommentsOut = (int*) malloc(sizeof(int) * person->adjacents);
-				memset(person->adjacentCommentsOut, 0, person->adjacents);
+				memset(person->adjacentCommentsOut, 0, person->adjacents*sizeof(int));
 
 				ids.clear();
 			}
@@ -783,9 +781,9 @@ void readPersonKnowsPerson(char *inputDir) {
 
 		// allocate the comment arrays
 		person->adjacentCommentsIn = (int*) malloc(sizeof(int) * person->adjacents);
-		memset(person->adjacentCommentsIn, 0, person->adjacents);
+		memset(person->adjacentCommentsIn, 0, person->adjacents*sizeof(int));
 		person->adjacentCommentsOut = (int*) malloc(sizeof(int) * person->adjacents);
-		memset(person->adjacentCommentsOut, 0, person->adjacents);
+		memset(person->adjacentCommentsOut, 0, person->adjacents*sizeof(int));
 	}
 
 	free(buffer);
@@ -898,15 +896,11 @@ void *CommRepCommWorkerFunction(void* args){
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
 			idA = binarySearch(Persons[personA].adjacentPersonsIds, personB, 0, Persons[personA].adjacents-1);
-			if( idA != -1 ){
-				int l=Persons[personA].adjacentCommentsOut[idA];
+			if( idA != -1 )
 				FAI_U64(&Persons[personA].adjacentCommentsOut[idA]);
-				fprintf(stderr, "old[%d] new[%d]\n", l, Persons[personA].adjacentCommentsOut[idA]);
-			}
 			idB = binarySearch(Persons[personB].adjacentPersonsIds, personA, 0, Persons[personB].adjacents-1);
 			if( idB != -1 )
 				FAI_U64(&Persons[personB].adjacentCommentsIn[idB]);
-
 		}
 		//printf("%ld %ld\n", idA, idB);
 
@@ -985,14 +979,11 @@ void readCommentReplyOfComment(char* inputDir) {
 void *PostProcessingCommentsJob(void *args){
 	QWorker *qws = (QWorker*)args;
 	//fprintf(stderr, "s[%d] e[%d] t[%d]\n", qws->start, qws->end, qws->tid);
-	long *temp = (long*) malloc(sizeof(long) * (N_PERSONS));
-	int *tempWeights = (int*) malloc(sizeof(int) * (N_PERSONS));
 	long weightAB;
 	long weightBA;
 	for (long i = qws->start, sz = qws->end; i < sz; i++) {
 		long adjacents = Persons[i].adjacents;
 		if (adjacents > 0) {
-			long *adjacentIds = Persons[i].adjacentPersonsIds;
 			int *weights = (int*) malloc(sizeof(int) * adjacents);
 			int *ins = Persons[i].adjacentCommentsIn;
 			int *outs = Persons[i].adjacentCommentsOut;
@@ -1002,14 +993,14 @@ void *PostProcessingCommentsJob(void *args){
 				weightBA = ins[cAdjacent];
 				weights[cAdjacent] = (weightAB < weightBA) ? weightAB : weightBA;
 			}
+			/*
 			if( adjacents > 1 )
 				mergesortComments(weights, adjacentIds, 0, adjacents - 1, temp,	tempWeights);
+			*/
 		}
 
 	}
 	//fprintf(stderr, "finished s[%d] e[%d] t[%d]\n", qws->start, qws->end, qws->tid);
-	free(temp);
-	free(tempWeights);
 	free(qws);
 	//pthread_exit(0);
 	return 0;
@@ -1670,8 +1661,8 @@ void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 	long i, sz, depth;
 	while (qIndex < qSize) {
 		cPerson = Q_BFS[qIndex++];
-
-		//printf("current: %ld %d\n", current.person, current.depth);
+		if( p1 == 5441 && p2 == 5863 && cPerson == 6010 )
+			printf("current: %ld %d\n", cPerson, visited[cPerson]);
 		// we must add the current neighbors into the queue if
 		// the comments are valid
 		long *adjacents = Persons[cPerson].adjacentPersonsIds;
@@ -1679,15 +1670,18 @@ void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 		depth = visited[cPerson] + 1;
 		// if there is comments limit
 		if (x != -1) {
-			for (i = 0, sz = Persons[cPerson].adjacents;
-					(i < sz) && (weights[i] > x); i++) {
-				if (visited[adjacents[i]] < 0) {
-					if (adjacents[i] == p2) {
-						answer = depth;
-						break;
+			for (i = 0, sz = Persons[cPerson].adjacents; (i < sz); i++) {
+				if( weights[i] > x ){
+					if (visited[adjacents[i]] < 0) {
+						if (adjacents[i] == p2) {
+							if( p1 == 5441 && p2 == 5863 )
+								printf("current: %ld %d\n", cPerson, visited[cPerson]);
+							answer = depth;
+							break;
+						}
+						visited[adjacents[i]] = depth;
+						Q_BFS[qSize++] = adjacents[i];
 					}
-					visited[adjacents[i]] = depth;
-					Q_BFS[qSize++] = adjacents[i];
 				}
 			}
 		} else {
@@ -1710,6 +1704,7 @@ void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 			break;
 		}
 	}
+
 	// no path found
 	//Answers1.push_back(-1);
 	//printf("q1: [%d]", answer);
