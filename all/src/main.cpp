@@ -53,7 +53,7 @@ using std::tr1::hash;
 
 #define QUERY1_BATCH 50
 
-#define NUM_CORES 8
+#define NUM_CORES 4
 #define COMM_WORKERS 2
 #define Q_JOB_WORKERS NUM_CORES
 //#define Q_JOB_WORKERS 1
@@ -2130,6 +2130,8 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 						// find the Top-K similar pairs from the current results
 						for (int cC = 0, sz = GlobalResultsLimit, kk = k;
 								cC < sz && kk > 0; cC++) {
+							// TODO - DO NOT DO AGAIN THE BFS FOR THE SAME PERSONS
+							// STORE IN A HASHMAP THE RESULTS OF THE BFS IN ORDER TO USE THEM LATER
 							if (BFS_query3(GlobalPQ->at(cC).idA,
 									GlobalPQ->at(cC).idB, h) > h)
 								continue;
@@ -2356,19 +2358,30 @@ struct MaxLevels{
 };
 
 
-bool LevelDegreeNodeInfoPredicate(const LevelDegreeNode& this_,const LevelDegreeNode& other, int tid, int analyzedLevel, int r_p) {
+bool LevelDegreeNodeInfoPredicate(const LevelDegreeNode& this_,const LevelDegreeNode& other, int tid, int analyzedLevel, int r_p, int peopleSample) {
 	long peopleAbove3_this = 0, peopleAbove3_other = 0;
-	for( int i=4; i<analyzedLevel; i++ ){
-		peopleAbove3_this += GlobalLevelCounters[tid][this_.personId][i];
-		peopleAbove3_other += GlobalLevelCounters[tid][other.personId][i];
-	}
-	long estimatedL3_this = r_p - this_.totalReachability - peopleAbove3_this;
-	long estimatedL3_other = r_p - other.totalReachability - peopleAbove3_other;
+
+	long estimatedL3_this, estimatedL3_other;
+	if( GlobalLevelCounters[tid][this_.personId][0] )
+		estimatedL3_this = this_.L3;
+	else
+		//estimatedL3_this = GlobalLevelCounters[tid][this_.personId][3] + (r_p-this_.totalReachability-peopleSample);
+		estimatedL3_this = GlobalLevelCounters[tid][this_.personId][3];
+
+	if( GlobalLevelCounters[tid][other.personId][0] )
+		estimatedL3_other = other.L3;
+	else
+		//estimatedL3_other = GlobalLevelCounters[tid][other.personId][3] + (r_p-other.totalReachability-peopleSample);
+		estimatedL3_other = GlobalLevelCounters[tid][other.personId][3];
+
+	peopleAbove3_this = r_p - this_.totalReachability - estimatedL3_this;
+	peopleAbove3_other = r_p - other.totalReachability - estimatedL3_other;
 
 	if( this_.totalReachability+estimatedL3_this > other.totalReachability+estimatedL3_other )
 		return true;
 	else if( this_.totalReachability+estimatedL3_this < other.totalReachability+estimatedL3_other )
 		return false;
+
 	if( this_.totalReachability > other.totalReachability )
 		return true;
 	else if( this_.totalReachability < other.totalReachability )
@@ -2381,26 +2394,20 @@ bool LevelDegreeNodeInfoPredicate(const LevelDegreeNode& this_,const LevelDegree
 		return true;
 	else if( this_.L2 < other.L2 )
 		return false;
+
 	if (estimatedL3_this > estimatedL3_other)
 		return true;
 	else if (estimatedL3_this < estimatedL3_other)
 		return false;
-	if (GlobalLevelCounters[tid][this_.personId][4] > GlobalLevelCounters[tid][other.personId][4])
-		return true;
-	else if (GlobalLevelCounters[tid][this_.personId][4] < GlobalLevelCounters[tid][other.personId][4])
-		return false;
-	if (GlobalLevelCounters[tid][this_.personId][5] > GlobalLevelCounters[tid][other.personId][5])
-		return true;
-	else if (GlobalLevelCounters[tid][this_.personId][5] < GlobalLevelCounters[tid][other.personId][5])
-		return false;
+
 	return this_.personId <= other.personId;
 }
 
-void mergeLevelDegreeNodes(vector<LevelDegreeNode> *a, long low, long mid, long high, LevelDegreeNode *b, int tid, int analyzedLevel, int r_p) {
+void mergeLevelDegreeNodes(vector<LevelDegreeNode> *a, long low, long mid, long high, LevelDegreeNode *b, int tid, int analyzedLevel, int r_p, int peopleSample) {
 	long i = low, j = mid + 1, k = low;
 
 	while (i <= mid && j <= high) {
-		if ( LevelDegreeNodeInfoPredicate((*a)[i], (*a)[j], tid, analyzedLevel, r_p) ) {
+		if ( LevelDegreeNodeInfoPredicate((*a)[i], (*a)[j], tid, analyzedLevel, r_p, peopleSample) ) {
 			b[k] = (*a)[i];
 			k++;
 			i++;
@@ -2429,12 +2436,12 @@ void mergeLevelDegreeNodes(vector<LevelDegreeNode> *a, long low, long mid, long 
 	}
 }
 
-void mergesortLevelDegreeNodes(vector<LevelDegreeNode> *a, long low, long high, LevelDegreeNode *b, int tid, int analyzedLevel, int r_p) {
+void mergesortLevelDegreeNodes(vector<LevelDegreeNode> *a, long low, long high, LevelDegreeNode *b, int tid, int analyzedLevel, int r_p, int peopleSample) {
 	if (low < high) {
 		long m = ((high - low) >> 1) + low;
-		mergesortLevelDegreeNodes(a, low, m, b, tid, analyzedLevel, r_p);
-		mergesortLevelDegreeNodes(a, m + 1, high, b, tid, analyzedLevel, r_p);
-		mergeLevelDegreeNodes(a, low, m, high, b, tid, analyzedLevel, r_p);
+		mergesortLevelDegreeNodes(a, low, m, b, tid, analyzedLevel, r_p, peopleSample);
+		mergesortLevelDegreeNodes(a, m + 1, high, b, tid, analyzedLevel, r_p, peopleSample);
+		mergeLevelDegreeNodes(a, low, m, high, b, tid, analyzedLevel, r_p, peopleSample);
 	}
 }
 
@@ -2540,8 +2547,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	Query4PersonStruct lastGlobalMinimumCentrality;
 
 	// NEEDED FOR THE PREPROCESSING STEPS
-	int levelsAnalyzed = 4;
-	int peopleSample, peopleExtremeLimit=10000;
+	int levelsAnalyzed = 3;
+	int peopleSample, peopleExtremeLimit=1000;
 	MaxLevels *maximumLevels;
 
 	// check if the arrays are initialized and initialize them if not
@@ -2578,7 +2585,13 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			UseExtremePruning = 0;
 
 		peopleSample = allPersons >> 1;
-		UseExtremePruning = 0;
+		//UseExtremePruning = 0;
+
+		if( UseExtremePruning ){
+			for (int j = 0; j < N_PERSONS; j++) {
+				memset(LevelCounters[j], 0, (levelsAnalyzed + 1) * sizeof(int));
+			}
+		}
 
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
 		//fprintf(stderr, "tid[%d] starting LEVEL 2-3 subgraph [%.6f]seconds\n", tid, (getTime()-time_global_start)/1000000.0);
@@ -2625,19 +2638,39 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 			// level 3
 			// the ii is positioned at the first level 2 person
-			for ( iisz = qSize; ii < iisz; ii++) {
-				vector<long> &edges = newGraph[Q[ii]].edges;
-				for (ee = 0, esz = edges.size(); ee < esz; ee++) {
-					cAdjacent = edges[ee];
-					if (visited[cAdjacent] == -1) {
-						visited[cAdjacent] = 3;
-						++cNode.L3;
+			if( UseExtremePruning ){
+				if( szz - j < peopleSample ){
+					for ( iisz = qSize; ii < iisz; ii++) {
+						vector<long> &edges = newGraph[Q[ii]].edges;
+						for (ee = 0, esz = edges.size(); ee < esz; ee++) {
+							cAdjacent = edges[ee];
+							if (visited[cAdjacent] == -1) {
+								visited[cAdjacent] = 3;
+								++cNode.L3;
+								++LevelCounters[edges[ee]][3];
+							}
+						}
 					}
 				}
+				LevelCounters[cNode.personId][0] = 1;
+				cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
+				cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
+			}else{
+				// if not extreme pruning do the old version that all people do level 3
+				for (iisz = qSize; ii < iisz; ii++) {
+					vector<long> &edges = newGraph[Q[ii]].edges;
+					for (ee = 0, esz = edges.size(); ee < esz; ee++) {
+						cAdjacent = edges[ee];
+						if (visited[cAdjacent] == -1) {
+							visited[cAdjacent] = 3;
+							++cNode.L3;
+						}
+					}
+				}
+				cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
+				cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			}
 
-			cNode.totalReachability = cNode.L1 + cNode.L2 + cNode.L3;
-			cNode.partialGeodesic = cNode.L1 + (cNode.L2 << 1) + (cNode.L3*3);
 			//fprintf(stderr, "%ld [%d] [%d] [%d] [%d]\n", cNode.personId, cNode.L1, cNode.L2, cNode.L3, cNode.totalReachability );
 
 		}// END OF FIRST PHASE OF PRE-PROCESSING - for each person in the subgraph
@@ -2658,14 +2691,9 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		////////////////////////////////////////////////////////////////////////////////////////
 
 		if( UseExtremePruning ){
-
-			for( j=0; j<N_PERSONS; j++ ){
-				memset(LevelCounters[j], 0, (levelsAnalyzed+1)*sizeof(int));
-			}
-
+/*
 			// iterate over the sorted persons from the end and do your magic
-			//for( j=currentSubgraph.size()-1, szz=currentSubgraph.size()-peopleSample-1; j>szz; j-- ){
-			for( j=currentSubgraph.size()-(peopleSample>>1), szz=currentSubgraph.size()-peopleSample-1; j>szz; j-- ){
+			for( j=currentSubgraph.size()-1, szz=currentSubgraph.size()-peopleSample-1; j>szz; j-- ){
 				LevelDegreeNode &cNode = currentSubgraph[j];
 				memset(visited, -1, N_PERSONS);
 				Q[0] = currentSubgraph[j].personId;
@@ -2723,12 +2751,12 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 
 			}// end of each sampled person
+*/
 
 			// sort the people again now
 			LevelDegreeNode *temp = (LevelDegreeNode*)malloc(sizeof(LevelDegreeNode)*currentSubgraph.size());
-			mergesortLevelDegreeNodes(&currentSubgraph, 0, r_p, temp, tid, levelsAnalyzed, r_p);
+			mergesortLevelDegreeNodes(&currentSubgraph, 0, r_p, temp, tid, levelsAnalyzed, r_p, peopleSample);
 			free(temp);
-
 
 		} // end of pre-processing
 		else{
@@ -2784,6 +2812,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 
 					// take into account the sampling we did before
 					long partialGeodesicAbove3 = 0, peopleAbove3 = 0;
+					/*
 					for( ii=4; ii<=levelsAnalyzed; ii++ ){
 						peopleAbove3 += LevelCounters[cNode.personId][ii];
 						partialGeodesicAbove3 += (LevelCounters[cNode.personId][ii] * ii);
@@ -2791,6 +2820,24 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					nextHigherLevel = ((r_p-cNode.totalReachability-peopleAbove3)*NEXT_HIGHER_LEVEL) + partialGeodesicAbove3;
 					lower_bound = cNode.partialGeodesic + nextHigherLevel;
 					if( lower_bound > localResults[k-1].geodesic ){
+						skipped++;
+						continue;
+					}
+					*/
+
+					long estimatedL3_this;
+					if( GlobalLevelCounters[tid][cNode.personId][0] )
+						estimatedL3_this = cNode.L3;
+					else
+						estimatedL3_this = GlobalLevelCounters[tid][cNode.personId][3] + (r_p-cNode.totalReachability-peopleSample);
+						//estimatedL3_this = GlobalLevelCounters[tid][cNode.personId][3];
+					peopleAbove3 = r_p - cNode.totalReachability - estimatedL3_this;
+					nextHigherLevel = peopleAbove3 * NEXT_HIGHER_LEVEL;
+					if( GlobalLevelCounters[tid][cNode.personId][0] )
+						lower_bound = cNode.partialGeodesic + nextHigherLevel;
+					else
+						lower_bound = cNode.partialGeodesic + nextHigherLevel + GlobalLevelCounters[tid][cNode.personId][3]*3;
+					if (lower_bound > localResults[k - 1].geodesic) {
 						skipped++;
 						continue;
 					}
@@ -2858,7 +2905,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		if( !UseExtremePruning ){
 			free(maximumLevels);
 		}
-		//fprintf(stderr, "[%d] skipped[%d]\n",UseExtremePruning, skipped);
+		fprintf(stderr, "[%d] skipped[%d]\n",UseExtremePruning, skipped);
 
 		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
 /*
