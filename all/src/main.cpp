@@ -52,8 +52,8 @@ using std::tr1::hash;
 #define QUERY1_BATCH 20
 
 #define NUM_CORES 8
-#define COMM_WORKERS NUM_CORES
-#define Q_JOB_WORKERS NUM_CORES
+#define COMM_WORKERS 2
+#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
@@ -367,10 +367,10 @@ vector<string> Answers;
 
 // the structures below are only used as intermediate steps while
 // reading the comments files. DO NOT USE THEM ANYWHERE
-//FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
+FINAL_MAP_LONG_LONG *CommentsPersonToPerson;
 //FINAL_MAP_LONG_LONG *CommentToPerson;
 LPConcHashtable *CommentToPerson;
-LPConcHashtable *CommentsPersonToPerson;
+//LPConcHashtable *CommentsPersonToPerson;
 
 FINAL_MAP_INT_INT *PlaceIdToIndex;
 FINAL_MAP_INT_INT *OrgToPlace;
@@ -800,7 +800,7 @@ void readComments(char* inputDir) {
 #endif
 
 	//CommentToPerson = new FINAL_MAP_LONG_LONG();
-	CommentToPerson = new LPConcHashtable(commentsNum);
+	CommentToPerson = new LPConcHashtable(commentsNum>>1);
 
 	// process the whole file in memory
 	// skip the first line
@@ -866,25 +866,18 @@ void *CommRepCommWorkerFunction(void* args){
 		idB = atol(idDivisor+1);
 
 		// get the person ids for each comment id
-		/*
-		personA = (*CommentToPerson)[idA];
-		personB = (*CommentToPerson)[idB];
+		//personA = (*CommentToPerson)[idA];
+		//personB = (*CommentToPerson)[idB];
+
+		personA = CommentToPerson->get(idA);
+		personB = CommentToPerson->get(idB);
 
 		if (personA != personB) {
 			// increase the counter for the comments from A to B
 			long key_a_b = CantorPairingFunction(personA, personB);
 			++CommentsPersonToPerson[tid][key_a_b];
 		}
-		*/
 		//printf("%ld %ld\n", idA, idB);
-
-		personA = CommentToPerson->get(idA);
-		personB = CommentToPerson->get(idB);
-		if (personA != personB) {
-			// increase the counter for the comments from A to B
-			long key_a_b = CantorPairingFunction(personA, personB);
-			CommentsPersonToPerson->inc(key_a_b);
-		}
 
 		startLine = lineEnd + 1;
 	}
@@ -912,8 +905,7 @@ void readCommentReplyOfComment(char* inputDir) {
 	// a portion of the file in parallel
 
 	int commThreads = COMM_WORKERS;
-	//CommentsPersonToPerson = new FINAL_MAP_LONG_LONG[COMM_WORKERS]();
-	CommentsPersonToPerson = new LPConcHashtable((CommentToPerson->arraySize()));
+	CommentsPersonToPerson = new FINAL_MAP_LONG_LONG[COMM_WORKERS]();
 
 	long perThreadPortion = lSize / commThreads;
 	// skip the first line
@@ -980,16 +972,12 @@ void *PostProcessingCommentsJob(void *args){
 				key_a_b = CantorPairingFunction(i, adjacentId);
 				key_b_a = CantorPairingFunction(adjacentId, i);
 				weightAB = weightBA = 0;
-				/*
 				for (int j = 0; j < COMM_WORKERS; j++) {
 					if( CommentsPersonToPerson[j].find(key_a_b) != CommentsPersonToPerson[j].end() )
 						weightAB += CommentsPersonToPerson[j][key_a_b];
 					if( CommentsPersonToPerson[j].find(key_b_a) != CommentsPersonToPerson[j].end() )
 						weightBA += CommentsPersonToPerson[j][key_b_a];
 				}
-				*/
-				weightAB = CommentsPersonToPerson->get(key_a_b);
-				weightBA = CommentsPersonToPerson->get(key_b_a);
 				weights[cAdjacent] = (weightAB < weightBA) ? weightAB : weightBA;
 			}
 			if( adjacents > 1 )
@@ -1047,8 +1035,7 @@ void postProcessComments() {
 	free(worker_threads);
 	// since we have all the data needed in arrays we can delete the hash maps
 	delete CommentToPerson;
-	//delete[] CommentsPersonToPerson;
-	delete CommentsPersonToPerson;
+	delete[] CommentsPersonToPerson;
 }
 
 
@@ -3446,7 +3433,7 @@ int main(int argc, char** argv) {
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
 	// pass 1 to read only the comments file
-	//pthread_t *commentsThread = readCommentsAsync(0);
+	pthread_t *commentsThread = readCommentsAsync(0);
 
 	// Q4 - we read this first in order to read the queries file now
 	readTags(inputDir);
@@ -3542,12 +3529,12 @@ int main(int argc, char** argv) {
 
 
 	// now we can start executing QUERY 1
-	//pthread_join(*commentsThread, NULL);
+	pthread_join(*commentsThread, NULL);
 	//free(commentsThread);
-	readComments(inputDir);
-	readCommentReplyOfComment(inputDir);
+	//readComments(inputDir);
+	//readCommentReplyOfComment(inputDir);
 	//fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
-	postProcessComments();
+	//postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 
 	//executeQuery1Jobs(Q1_WORKER_THREADS);
