@@ -43,6 +43,7 @@ struct lp_threadpool{
 	char headsTime;
 
 	int threadpool_destroyed;
+	int threadpool_started;
 };
 
 

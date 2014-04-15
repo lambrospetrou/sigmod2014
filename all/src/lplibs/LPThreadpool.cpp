@@ -44,6 +44,7 @@ void lp_threadpool_addjob_nolock( lp_threadpool* pool, void *(*func)(int, void *
 void lp_threadpool_startjobs(lp_threadpool* pool){
 	cpu_set_t mask;
 	int threads = pool->nthreads;
+	pool->threadpool_started = 1;
 	//pthread_t *worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * pool->ncores);
 	pthread_t *worker_threads = pool->worker_threads;
 	for (int i = 0; i < threads; i++) {
@@ -67,15 +68,17 @@ void lp_threadpool_addWorker(lp_threadpool *pool){
 		return;
 	}
 	int nextThread = pool->nthreads++;
-	pthread_create(&pool->worker_threads[nextThread], NULL,reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
-	//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
-	cpu_set_t mask;
-	CPU_ZERO(&mask);
-	CPU_SET((nextThread % pool->ncores), &mask);
-	if (pthread_setaffinity_np(pool->worker_threads[nextThread], sizeof(cpu_set_t), &mask)!= 0) {
-		fprintf(stderr,"lp_threadpool_startjobs::Error setting thread affinity core[%d]\n", nextThread);
-	}else{
-		//fprintf(stderr,"lp_threadpool_startjobs::success setting thread affinity tid[%d]\n", nextThread);
+	if( pool->threadpool_started ){
+		pthread_create(&pool->worker_threads[nextThread], NULL,reinterpret_cast<void* (*)(void*)>(lp_tpworker_thread), pool );
+		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
+		cpu_set_t mask;
+		CPU_ZERO(&mask);
+		CPU_SET((nextThread % pool->ncores), &mask);
+		if (pthread_setaffinity_np(pool->worker_threads[nextThread], sizeof(cpu_set_t), &mask)!= 0) {
+			fprintf(stderr,"lp_threadpool_startjobs::Error setting thread affinity core[%d]\n", nextThread);
+		}else{
+			//fprintf(stderr,"lp_threadpool_startjobs::success setting thread affinity tid[%d]\n", nextThread);
+		}
 	}
 	pthread_mutex_unlock(&pool->mutex_pool);
 }
@@ -203,6 +206,7 @@ lp_threadpool* lp_threadpool_init( int threads, int cores ){
 	pool->jobs_head=0;
 	pool->jobs_tail=0;
 	pool->threadpool_destroyed = 0;
+	pool->threadpool_started = 0;
 
 	pool->worker_threads = (pthread_t*) malloc(sizeof(pthread_t) * pool->ncores);
 
