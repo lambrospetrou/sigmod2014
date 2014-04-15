@@ -773,6 +773,7 @@ void readPersonKnowsPerson(char *inputDir) {
 	// check if there are edges to be added for the last person
 	if (!ids.empty()) {
 		PersonStruct *person = &Persons[prevId];
+		std::stable_sort(ids.begin(), ids.end());
 		person->adjacentPersonsIds = (long*) malloc(sizeof(long) * ids.size());
 		for (int i = 0, sz = ids.size(); i < sz; i++) {
 			person->adjacentPersonsIds[i] = ids[i];
@@ -1661,21 +1662,18 @@ void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS) {
 	long i, sz, depth;
 	while (qIndex < qSize) {
 		cPerson = Q_BFS[qIndex++];
-		if( p1 == 5441 && p2 == 5863 && cPerson == 6010 )
-			printf("current: %ld %d\n", cPerson, visited[cPerson]);
 		// we must add the current neighbors into the queue if
 		// the comments are valid
 		long *adjacents = Persons[cPerson].adjacentPersonsIds;
-		int *weights = Persons[cPerson].adjacentPersonWeightsSorted;
+		int *ins = Persons[cPerson].adjacentCommentsIn;
+		int *outs = Persons[cPerson].adjacentCommentsOut;
 		depth = visited[cPerson] + 1;
 		// if there is comments limit
 		if (x != -1) {
 			for (i = 0, sz = Persons[cPerson].adjacents; (i < sz); i++) {
-				if( weights[i] > x ){
+				if( ins[i] > x && outs[i] > x ){
 					if (visited[adjacents[i]] < 0) {
 						if (adjacents[i] == p2) {
-							if( p1 == 5441 && p2 == 5863 )
-								printf("current: %ld %d\n", cPerson, visited[cPerson]);
 							answer = depth;
 							break;
 						}
@@ -3539,7 +3537,7 @@ int main(int argc, char** argv) {
 	//free(commentsThread);
 	readComments(inputDir);
 	readCommentReplyOfComment(inputDir);
-	postProcessComments();
+	//postProcessComments();
 	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 
 	//executeQuery1Jobs(Q1_WORKER_THREADS);
