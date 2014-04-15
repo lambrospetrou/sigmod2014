@@ -29,11 +29,9 @@
 
 #include "lplibs/LPThreadpool.h"
 #include "lplibs/LPBitset.h"
-#include "lplibs/LPSparseBitset.h"
 #include "lplibs/LPSparseArrayGeneric.h"
 #include "lplibs/atomic_ops_if.h"
 
-#include "mm/cache_map.hpp"
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -54,8 +52,8 @@ using std::tr1::hash;
 #define QUERY1_BATCH 50
 
 #define NUM_CORES 8
-#define COMM_WORKERS 2
-#define Q_JOB_WORKERS NUM_CORES
+#define COMM_WORKERS 3
+#define Q_JOB_WORKERS NUM_CORES-COMM_WORKERS
 //#define Q_JOB_WORKERS 1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
@@ -65,7 +63,7 @@ using std::tr1::hash;
 
 #define NUM_THREADS WORKER_THREADS+1
 
-int isLarge = 0;
+int isLarge = 0, isMedium = 0, isSmall = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
 // structs
@@ -79,10 +77,6 @@ typedef std::tr1::unordered_map<long, long, hash<long> > MAP_LONG_LONG;
 typedef std::tr1::unordered_map<int, vector<long>, hash<int> > MAP_INT_VecL;
 typedef std::tr1::unordered_map<long, vector<long>, hash<long> > MAP_LONG_VecL;
 typedef std::tr1::unordered_map<long, char*, hash<long> > MAP_LONG_STRING;
-
-// FAST BUT FIXED SIZE
-typedef mm::cache_map<long,long> CMAP_LONG_LONG;
-typedef mm::cache_map<int,int> CMAP_INT_INT;
 
 // TODO - THE HASHMAP THAT WILL BE USED BELOW IN THE CODE
 typedef MAP_LONG_LONG FINAL_MAP_LONG_LONG;
@@ -581,6 +575,10 @@ void readPersons(char* inputDir) {
 
 	if( N_PERSONS > 20000 ){
 		isLarge = 1;
+	}else if( N_PERSONS < 5000 ){
+		isSmall = 1;
+	}else{
+		isMedium = 1;
 	}
 
 #ifdef DEBUGGING
@@ -835,7 +833,7 @@ void readComments(char* inputDir) {
 	printOut(msg);
 #endif
 
-	//fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 void *CommRepCommWorkerFunction(void* args){
@@ -939,7 +937,7 @@ void readCommentReplyOfComment(char* inputDir) {
 	free(worker_threads);
 	free(buffer);
 
-	//fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 
@@ -1706,7 +1704,6 @@ long findTagLargestComponent(vector<Q2ListNode> &people, unsigned int queryBirth
 	// make the persons for this graph a set
 	long indexValidPersons=0;
 	LPBitset newGraphPersons(N_PERSONS);
-	//LPSparseBitset newGraphPersons;
 	for( unsigned long i=0,sz=people.size(); i<sz && people[i].birth >= queryBirth; i++ ){
 		newGraphPersons.set(people[i].personId);
 		indexValidPersons++;
@@ -2160,7 +2157,6 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 	}
 	Answers[qid] = ss.str();
 
-
 	free(visitedPersons);
 	free(Q);
 }
@@ -2329,22 +2325,6 @@ long calculateGeodesicDistance( unordered_map<long, GraphNode> &newGraph, long c
 	return gd;
 }
 
-struct Q4PersonStructNode{
-	Q4PersonStructNode(long i, long e){
-		id=i;
-		edges=e;
-	}
-	long id;
-	long edges;
-};
-bool DescendingQ4PersonStructPredicate(const Q4PersonStructNode& d1,
-		const Q4PersonStructNode& d2) {
-	// sort in descending order by edges
-	if( d1.edges == d2.edges )
-		return d1.id <= d2.id;
-	return d1.edges > d2.edges;
-}
-
 struct MaxLevels{
 	MaxLevels(): max1(0), max2(0), max3(0){
 
@@ -2442,6 +2422,24 @@ void mergesortLevelDegreeNodes(vector<LevelDegreeNode> *a, long low, long high, 
 	}
 }
 
+long* PersonCurrentDegree[NUM_CORES+1];
+
+struct Q4PersonStructNode{
+	Q4PersonStructNode(long i, long e){
+		id=i;
+		edges=e;
+	}
+	long id;
+	long edges;
+};
+bool DescendingQ4PersonStructPredicate(const Q4PersonStructNode& d1,
+		const Q4PersonStructNode& d2) {
+	// sort in descending order by edges
+	if( d1.edges == d2.edges )
+		return d1.id <= d2.id;
+	return d1.edges > d2.edges;
+}
+
 
 void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	//printf("query 4: k[%d] tag[%*s]\n", k, tag_sz, tag);
@@ -2472,6 +2470,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 	char *visited = ThreadsVisitedArrays[tid-1];
 	memset(visited, 0, N_PERSONS);
 
+	vector<long> TotalEdges;
+
+	long maxAdjacents=0;
+
 	// Now we are clustering the persons in order to make the k-centrality calculation faster
 	unordered_map<long, GraphNode> newGraph; // holds the edges of the new Graph induced
 	vector<vector<LevelDegreeNode> > SubgraphsPersons;
@@ -2484,6 +2486,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			continue;
 		// we have a new cluster now
 		currentComponent++;
+		long totalEdges=0;
 		qIndex=0;
 		qSize=1;
 		Q[0] = cPerson;
@@ -2503,6 +2506,8 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 					continue;
 				// add the edge to the new graph
 				newEdges.push_back(cAdjacent);
+				// count each edge
+				totalEdges++;
 				// if not visited during BFS in this subgraph
 				if( visited[cAdjacent] != 1 ){
 					Q[qSize++] = cAdjacent;
@@ -2511,7 +2516,10 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 			}
 			// we can now add the current person into the components map
 			SubgraphsPersons[currentComponent].push_back(cNode);
+			if( Persons[cPerson].adjacents > maxAdjacents )
+				maxAdjacents = Persons[cPerson].adjacents;
 		}// end of BFS for current subgraph
+		TotalEdges.push_back(totalEdges);
 	}
 
 	// safe to delete the visitedPersons since we got the people for this tag
@@ -2558,6 +2566,107 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 		if( r_p == 0 ){
 			continue;
 		}
+
+
+
+
+		//////////////////////////////////////////////////////////////////////////
+		// VERTEX COVER PREPROCESSING
+		//////////////////////////////////////////////////////////////////////////
+
+		if( !isSmall ){
+
+		// ADD CASE TO DO THIS ONLY WHEN LARGE COMPONENT
+
+		long time_start = getTime();
+
+		long totalEdges = TotalEdges[i];
+
+		unordered_set<long> *PersonPQ = new unordered_set<long>[maxAdjacents+1];
+
+		char *PeopleRemoved = (char*)malloc(N_PERSONS);
+		memset(PeopleRemoved, 0, N_PERSONS);
+
+		if( PersonCurrentDegree[tid] == 0 ){
+			PersonCurrentDegree[tid] = (long*)malloc(sizeof(long)*N_PERSONS);
+		}
+		// in order to get the Maximum edges person each time
+		for( long j=0,szz=currentSubgraph.size(); j<szz; j++ ){
+			PersonCurrentDegree[tid][currentSubgraph[j].personId] = newGraph[currentSubgraph[j].personId].edges.size();
+			PersonPQ[newGraph[currentSubgraph[j].personId].edges.size()].insert(currentSubgraph[j].personId);
+		}
+
+		long currentMaxPerson;
+		long edgesRemoved = 0;
+		int currentMaxGroup = maxAdjacents;
+
+		vector<long> VertexCover;
+
+		long VertexCoverLimit;
+		if( isLarge )
+			VertexCoverLimit = 3*allPersons / (4 * 50);
+		else if( isMedium )
+			VertexCoverLimit = 3*allPersons / (4*3);
+
+
+		// keep iterating until no edges are left
+		while( edgesRemoved < totalEdges ){
+
+			if(VertexCover.size() >= VertexCoverLimit)
+				break;
+
+			// get the next max person
+			while( PersonPQ[currentMaxGroup].empty() )
+				currentMaxGroup--;
+			currentMaxPerson = *(PersonPQ[currentMaxGroup].begin());
+
+			//fprintf(stderr, "max person: [%d] [%d] edgesRemoved[%d] totalEdges[%d]\n", currentMaxPerson, currentMaxGroup, edgesRemoved, totalEdges);
+
+			VertexCover.push_back(currentMaxPerson);
+
+			// set this person as removed
+			PeopleRemoved[currentMaxPerson] = 1;
+			PersonPQ[PersonCurrentDegree[tid][currentMaxPerson]].erase(currentMaxPerson);
+
+			// remove this person edges
+			vector<long> &edges = newGraph[currentMaxPerson].edges;
+			for (long ee = 0, esz = edges.size(); ee < esz; ee++) {
+				cAdjacent = edges[ee];
+				if( PeopleRemoved[cAdjacent] )
+					continue;
+				// remove two edges for this edge
+				edgesRemoved += 2;
+				// move the adjacent person in the previous level set since he now
+				// has one edge less than before
+				PersonPQ[PersonCurrentDegree[tid][cAdjacent]].erase(cAdjacent);
+				--PersonCurrentDegree[tid][cAdjacent];
+				PersonPQ[PersonCurrentDegree[tid][cAdjacent]].insert(cAdjacent);
+			}
+		}
+
+		free(PeopleRemoved);
+		delete[] PersonPQ;
+
+		//fprintf(stderr, "vertex cover [%d] [%d] totalEdges[%d] time[%.6f]\n", currentSubgraph.size(), VertexCover.size(), totalEdges, (getTime()-time_start)/1000000.0);
+
+		currentSubgraph = vector<LevelDegreeNode>();
+		for( int j=0, szz=VertexCover.size(); j<szz; j++ ){
+			currentSubgraph.push_back(LevelDegreeNode(VertexCover[j]));
+			//long gd_real = calculateGeodesicDistance(newGraph, VertexCover[j], -1, GeodesicDistanceVisited, GeodesicBFSQueue, currentSubgraph[j], allPersons);
+			//localResults.push_back(Query4SubNode(gd_real, VertexCover[j], i));
+		}
+
+/*
+		std::stable_sort(localResults.begin(), localResults.end(), Query4SubNodePredicate);
+		int szzz = localResults.size()>=(unsigned int)k ? k : localResults.size();
+		for( int ii=0; ii<szzz; ii++ ){
+			cCentrality = ((r_p * r_p)*1.0) / localResults[ii].geodesic;
+			globalResults.push_back(Query4PersonStruct(localResults[ii].personId, localResults[ii].geodesic, r_p, cCentrality));
+		}
+		continue;
+*/
+		}// end of preprocessing on files not small
+		//////////////////////////////////////////////////////////////////////////
 
 
 		//////////////////// YOU ARE AT EACH SUBGRAPH //////////////////
@@ -3263,7 +3372,7 @@ int main(int argc, char** argv) {
 	// - SORT THE EDGES BASED ON THE COMMENTS from A -> B
 	///////////////////////////////////////////////////////////////////
 	// pass 1 to read only the comments file
-	//pthread_t *commentsThread = readCommentsAsync(1);
+	pthread_t *commentsThread = readCommentsAsync(0);
 
 	// Q4 - we read this first in order to read the queries file now
 	readTags(inputDir);
@@ -3335,11 +3444,11 @@ int main(int argc, char** argv) {
 	// initialize the level counters
 	for( int i=0; i<NUM_CORES+1; i++ ){
 		GlobalLevelCounters[i] = 0;
+		PersonCurrentDegree[i] = 0;
 	}
 
 	// start q3, q4 and query 1 no comments
 	lp_threadpool_startjobs(threadpool);
-
 	synchronize_complete(threadpool);
 	lp_threadpool_destroy_threads(threadpool);
 	fprintf(stderr,"query 1_3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
@@ -3353,17 +3462,19 @@ int main(int argc, char** argv) {
 			}
 			delete[] GlobalLevelCounters[i];
 		}
+		if( PersonCurrentDegree[i] )
+			delete[] PersonCurrentDegree[i];
 	}
 
 
 	// now we can start executing QUERY 1
-	//pthread_join(*commentsThread, NULL);
+	pthread_join(*commentsThread, NULL);
 	//free(commentsThread);
-	readComments(inputDir);
-	readCommentReplyOfComment(inputDir);
+	//readComments(inputDir);
+	//readCommentReplyOfComment(inputDir);
 	//fprintf(stderr, "finished reading all comment files [%.8f]\n", (getTime()-time_global_start)/1000000.0);
-	postProcessComments();
-	//fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	//postProcessComments();
+	fprintf(stderr, "finished post processing comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 
 	//executeQuery1Jobs(Q1_WORKER_THREADS);
 	createQuery1Jobs(threadpool_query1_withcomments, &Query1StructsWithComments);
