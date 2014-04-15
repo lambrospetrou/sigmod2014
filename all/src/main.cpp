@@ -27,11 +27,11 @@
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
 
+#include "lplibs/LPConcHashtable.h"
 #include "lplibs/LPThreadpool.h"
 #include "lplibs/LPBitset.h"
 #include "lplibs/LPSparseArrayGeneric.h"
 #include "lplibs/atomic_ops_if.h"
-
 
 using namespace std;
 using std::tr1::unordered_map;
@@ -49,7 +49,7 @@ using std::tr1::hash;
 #define VALID_PLACE_CHARS 256
 #define LONGEST_LINE_READING 2048
 
-#define QUERY1_BATCH 50
+#define QUERY1_BATCH 20
 
 #define NUM_CORES 8
 #define COMM_WORKERS 2
@@ -3313,20 +3313,80 @@ void readQueries(char *queriesFile) {
 	free(buffer);
 }
 
-int main(int argc, char** argv) {
-/*
-	// TEST FM_SKETCH
-	FM fm[1000];
-	int approx_value[1000];
-	for (int i=0; i<=1000; i++){
-		fm[i].init();
-		for (int j=0; j<i; j++){
-			fm[i].insert(j);
-		}
-		printf("\t%.2lf\t%.0lf\t%.2lf\n", fm[i].count1(), fm[i].count2(), fm[i].count3());
+void *incWorker(void*args){
+	LPConcHashtable *htable = (LPConcHashtable*)args;
+	for( long i=0; i<1000000; i++ ){
+		htable->inc(i);
 	}
-	exit(1);
+	return 0;
+}
+
+int main(int argc, char** argv) {
+
+
+	// TEST THE CONCURRENT HASHTABLE
+	int samplesSize = 1000000;
+	LPConcHashtable htable(samplesSize/5);
+
+	unordered_map<long,long> utable;
+	long time__ = getTime();
+	for( long i=0; i<samplesSize; i++ ){
+		utable[i] = i;
+	}
+	fprintf(stderr, "insertion [%.6f]\n", (getTime()-time__)/1000000.0);
+
+	for( long i=0; i<samplesSize; i++ ){
+		if( utable.find(i) == utable.end() ){
+			fprintf(stderr, "not found [%d]\n", i);
+		}
+	}
+	fprintf(stderr, "read [%.6f]\n", (getTime()-time__)/1000000.0);
+
+	///////
+	long time_ = getTime();
+/*
+	for( long i=0; i<samplesSize; i++ ){
+		htable.set(i, i);
+	}
+	fprintf(stderr, "insertion [%.6f]\n", (getTime()-time_)/1000000.0);
+
+	for( long i=0; i<samplesSize; i++ ){
+		if( htable.get(i) != i ){
+			fprintf(stderr, "not found [%d]\n", i);
+		}
+	}
+	fprintf(stderr, "read [%.6f]\n", (getTime()-time_)/1000000.0);
+
+	for( long i=0; i<samplesSize; i++ ){
+		htable.inc(i);
+	}
+	fprintf(stderr, "increase [%.6f]\n", (getTime()-time_)/1000000.0);
+
+	for( long i=0; i<samplesSize; i++ ){
+		if( htable.get(i) != i+1 ){
+			fprintf(stderr, "not found after inc [%d]\n", i);
+		}
+	}
+	fprintf(stderr, "read [%.6f]\n", (getTime()-time_)/1000000.0);
+
 */
+
+	pthread_t workers[10];
+	for( int nn=0; nn<10; nn++ ){
+		pthread_create(&workers[nn], NULL,reinterpret_cast<void* (*)(void*)>(incWorker), &htable );
+	}
+
+	for( int nn=0; nn<10; nn++ ){
+		pthread_join(workers[nn], NULL);
+	}
+	htable.printLists();
+
+	exit(1);
+
+
+
+
+
 
 	inputDir = argv[1];
 	queryFile = argv[2];
