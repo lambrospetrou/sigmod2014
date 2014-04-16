@@ -61,7 +61,7 @@ using std::tr1::hash;
 
 #define NUM_THREADS WORKER_THREADS+1
 
-#define NUM_REPLY_JOBS NUM_CORES
+#define NUM_REPLY_JOBS (NUM_CORES<<1)
 unsigned int FinishedReplyJobs = 0;
 
 int isLarge = 0, isMedium = 0, isSmall = 0;
@@ -3434,13 +3434,9 @@ int main(int argc, char** argv) {
 
 #endif
 
-	if( !isLarge ){
-		for (long i = 0, sz = Answers.size(); i < sz; i++) {
-			//printf("answer %d: %d\n", i, Answers1[i]);
-			printf("%s\n", Answers[i].c_str());
-		}
-	}else{
-		fprintf(stdout, "fucking time\n");
+	for (long i = 0, sz = Answers.size(); i < sz; i++) {
+		//printf("answer %d: %d\n", i, Answers1[i]);
+		printf("%s\n", Answers[i].c_str());
 	}
 
 	long long time_global_end = getTime();
