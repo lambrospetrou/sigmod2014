@@ -2079,6 +2079,7 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 			if (currentClusterPersons->at(1).numOfTags < minimum.commonTags)
 				continue;
 		}
+		long minThis;
 		// for each person in the cluster
 		for (int i = 0, sz = currentClusterPersons->size() - 1; i < sz; i++) {
 			// we cannot find suitable common tags by this person since his tags are less
@@ -2095,6 +2096,23 @@ void query3(int k, int h, char *name, int name_sz, long qid) {
 				if ((GlobalPQ->size() >= (unsigned int) k)
 						&& (secondPerson->numOfTags < minimum.commonTags))
 					break;
+
+				if( (GlobalPQ->size() >= (unsigned int) k) && (secondPerson->numOfTags == minimum.commonTags) ){
+					if( secondPerson->personId > currentPerson->personId ){
+						// min id of this pair is current
+						minThis = currentPerson->personId;
+					}else{
+						minThis = secondPerson->personId;
+					}
+					// compare with minimum
+					if( minimum.idA < minimum.idB ){
+						if( minThis > minimum.idA )
+							break;
+					}else{
+						if( minThis > minimum.idB )
+							break;
+					}
+				}
 
 				// we now have to calculate the common tags between these two people
 				int cTags = 0;
