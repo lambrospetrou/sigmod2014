@@ -52,14 +52,17 @@ using std::tr1::hash;
 #define QUERY1_BATCH 20
 
 #define NUM_CORES 8
-#define COMM_WORKERS 8
 #define Q_JOB_WORKERS NUM_CORES-1
 #define Q1_WORKER_THREADS NUM_CORES
 #define Q1_THREADPOOL_WORKER_THREADS NUM_CORES
 #define Q2_WORKER_THREADS NUM_CORES
 /////////
+#define COMM_WORKERS 8 // not used
 
 #define NUM_THREADS WORKER_THREADS+1
+
+#define NUM_REPLY_JOBS NUM_CORES
+unsigned int FinishedReplyJobs = 0;
 
 int isLarge = 0, isMedium = 0, isSmall = 0;
 
@@ -588,6 +591,19 @@ static inline long binarySearchVector(vector<long> &array, int value, int low, i
 	return -1;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+// PROTOTYPES
+//
+
+void query1(int p1, int p2, int x, long qid, char *visited, long *Q_BFS);
+
+
+
+
+
+
+
 //////////////////////////////////////////////////////////////////////////////
 
 void readPersons(char* inputDir) {
@@ -819,6 +835,166 @@ void readPersonKnowsPerson(char *inputDir) {
 	N_SUBGRAPHS = calculateAndAssignSubgraphs();
 }
 
+struct Query1WorkerStruct {
+	int p1;
+	int p2;
+	int x;
+	long qid;
+};
+
+vector<Query1WorkerStruct*> Query1Structs;
+vector<Query1WorkerStruct*> Query1StructsWithComments;
+
+
+struct Q1Worker{
+	int start;
+	int end;
+	int tid;
+	vector<Query1WorkerStruct*> *queries;
+};
+
+void* Query1WorkerFunction(int tid, void *args) {
+	Q1Worker *qws = (Q1Worker*)args;
+	Query1WorkerStruct *currentJob;
+
+	for( int i=qws->start, end=qws->end; i<end; i++ ){
+		currentJob = qws->queries->at(i);
+		query1(currentJob->p1, currentJob->p2, currentJob->x, currentJob->qid, ThreadsVisitedArrays[tid-1], ThreadsBFSArrays[tid-1]);
+		free(currentJob);
+	}
+	free(qws);
+	// end of job
+	return 0;
+}
+
+void createQuery1Jobs(lp_threadpool *pool, vector<Query1WorkerStruct*> *queries){
+	int totalJobs = queries->size();
+	Q1Worker *qws;
+	int lastEnd = 0;
+	for ( ; lastEnd<totalJobs ; ) {
+		qws = (Q1Worker*)malloc(sizeof(Q1Worker));
+		qws->start = lastEnd;
+		lastEnd += QUERY1_BATCH;
+		if( lastEnd <= totalJobs )
+			qws->end = lastEnd;
+		else
+			qws->end = totalJobs;
+		qws->queries = queries;
+		lp_threadpool_addjob(pool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerFunction), qws );
+	}
+}
+
+void *CommRepCommWorkerFunction(int tid, void* args){
+	FileWorker *qws = (FileWorker*)args;
+	long idA,idB, personA, personB;
+	// process the whole file in memory
+	char *startLine = qws->start;
+	char *EndOfFile = qws->end;
+
+	//if( tid==0 )
+	//fprintf(stderr, "tid[%d]\n", qws->tid);
+
+	char *idDivisor, *lineEnd;
+	while (startLine < EndOfFile) {
+		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
+		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
+		idA = atol(startLine);
+		idB = atol(idDivisor+1);
+
+		personA = CommentToPersonPid->at( binarySearchVector(*CommentToPersonCid, idA, 0, CommentToPersonCid->size()-1) );
+		personB = CommentToPersonPid->at( binarySearchVector(*CommentToPersonCid, idB, 0, CommentToPersonPid->size()-1) );
+
+		if (personA != personB) {
+			// increase the counter for the comments from A to B
+			idA = binarySearch(Persons[personA].adjacentPersonsIds, personB, 0, Persons[personA].adjacents-1);
+			if( idA != -1 )
+				FAI_U64(&Persons[personA].adjacentCommentsOut[idA]);
+			idB = binarySearch(Persons[personB].adjacentPersonsIds, personA, 0, Persons[personB].adjacents-1);
+			if( idB != -1 )
+				FAI_U64(&Persons[personB].adjacentCommentsIn[idB]);
+		}
+		//printf("%ld %ld\n", idA, idB);
+
+		startLine = lineEnd + 1;
+	}
+
+	unsigned int old = FAI_U64(&FinishedReplyJobs);
+	if( old == NUM_REPLY_JOBS-1 ){
+		fprintf(stderr, "finished reply jobs [%d]!!!\n", old);
+		// we are the last one so create the Query 1 with comments jobs
+		createQuery1Jobs(threadpool, &Query1StructsWithComments);
+		free(qws->buffer);
+		delete CommentToPersonCid;
+		delete CommentToPersonPid;
+		//fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+	}
+	free(qws);
+	return 0;
+}
+
+
+
+void readCommentReplyOfComment(char* inputDir) {
+	char path[1024];
+	///////////////////////////////////////////////////////////////////
+	// READ THE COMMENT REPLIES TO HAVE THE COMMENTS FOR EACH PERSON
+	///////////////////////////////////////////////////////////////////
+	path[0] = '\0';
+	strcat(path, inputDir);
+	strcat(path, CSV_COMMENT_REPLY_OF_COMMENT);
+	FILE *input = fopen(path, "r");
+	if (input == NULL) {
+		printErr("could not open comment_replyOf_Comment.csv!");
+	}
+	long lSize;
+	char *buffer = getFileBytes(input, &lSize);
+	fclose(input);
+
+	// allocate the hashmap for each thread and create a thread that will handle
+	// a portion of the file in parallel
+
+	int commThreads = NUM_REPLY_JOBS;
+
+	long perThreadPortion = lSize / commThreads;
+	// skip the first line
+	char* lastEnd = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
+	//pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*commThreads);
+	for (int i = 1; i < commThreads; i++) {
+		FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
+		qws->start = lastEnd;
+		lastEnd = qws->start + perThreadPortion;
+		lastEnd = (char*) memchr(lastEnd, '\n', LONGEST_LINE_READING)+1;
+		qws->end = lastEnd;
+		qws->tid = i;
+		qws->buffer = buffer;
+		//pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(CommRepCommWorkerFunction), qws );
+
+		lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(CommRepCommWorkerFunction), qws);
+	}
+	// the main thread should also execute the last portion of the file
+	FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
+	qws->start = lastEnd;
+	qws->end = buffer + lSize;
+	qws->tid = 0;
+	qws->buffer = buffer;
+	//CommRepCommWorkerFunction(qws);
+	lp_threadpool_addjob(threadpool,reinterpret_cast<void* (*)(int,void*)>(CommRepCommWorkerFunction), qws);
+
+	// wait for them to finish for now since we are reading files at the same time
+	/*
+	for (int i = 1; i < commThreads; i++) {
+		pthread_join(worker_threads[i], NULL);
+	}
+	free(worker_threads);
+	free(buffer);
+	*/
+
+	// TODO
+	//delete CommentToPersonCid;
+	//delete CommentToPersonPid;
+
+	//fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
+}
 
 void readComments(char* inputDir) {
 	char path[1024];
@@ -886,119 +1062,13 @@ void readComments(char* inputDir) {
 	printOut(msg);
 #endif
 
+	readCommentReplyOfComment(inputDir);
+
 	fprintf(stderr, "finished reading comments [%.8f]\n", (getTime()-time_global_start)/1000000.0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-
-void *CommRepCommWorkerFunction(void* args){
-	FileWorker *qws = (FileWorker*)args;
-	int tid = qws->tid;
-	long idA,idB, personA, personB;
-	// process the whole file in memory
-	char *startLine = qws->start;
-	char *EndOfFile = qws->end;
-
-	//if( tid==0 )
-	//fprintf(stderr, "tid[%d] start[%s] end[%s]\n", tid, qws->start, qws->end);
-
-	long i,sz, *edges;
-
-	char *idDivisor, *lineEnd;
-	while (startLine < EndOfFile) {
-		idDivisor = (char*) memchr(startLine, '|', LONGEST_LINE_READING);
-		lineEnd = (char*) memchr(idDivisor, '\n', LONGEST_LINE_READING);
-		idA = atol(startLine);
-		idB = atol(idDivisor+1);
-
-		personA = CommentToPersonPid->at( binarySearchVector(*CommentToPersonCid, idA, 0, CommentToPersonCid->size()-1) );
-		personB = CommentToPersonPid->at( binarySearchVector(*CommentToPersonCid, idB, 0, CommentToPersonPid->size()-1) );
-
-		if (personA != personB) {
-			// increase the counter for the comments from A to B
-			idA = binarySearch(Persons[personA].adjacentPersonsIds, personB, 0, Persons[personA].adjacents-1);
-			if( idA != -1 )
-				FAI_U64(&Persons[personA].adjacentCommentsOut[idA]);
-			idB = binarySearch(Persons[personB].adjacentPersonsIds, personA, 0, Persons[personB].adjacents-1);
-			if( idB != -1 )
-				FAI_U64(&Persons[personB].adjacentCommentsIn[idB]);
-		}
-		//printf("%ld %ld\n", idA, idB);
-
-		startLine = lineEnd + 1;
-	}
-	free(qws);
-	return 0;
-}
-
-void readCommentReplyOfComment(char* inputDir) {
-	char path[1024];
-	///////////////////////////////////////////////////////////////////
-	// READ THE COMMENT REPLIES TO HAVE THE COMMENTS FOR EACH PERSON
-	///////////////////////////////////////////////////////////////////
-	path[0] = '\0';
-	strcat(path, inputDir);
-	strcat(path, CSV_COMMENT_REPLY_OF_COMMENT);
-	FILE *input = fopen(path, "r");
-	if (input == NULL) {
-		printErr("could not open comment_replyOf_Comment.csv!");
-	}
-	long lSize;
-	char *buffer = getFileBytes(input, &lSize);
-	fclose(input);
-
-	// allocate the hashmap for each thread and create a thread that will handle
-	// a portion of the file in parallel
-
-	int commThreads = COMM_WORKERS;
-	//CommentsPersonToPerson = new FINAL_MAP_LONG_LONG[COMM_WORKERS]();
-
-	long perThreadPortion = lSize / commThreads;
-	// skip the first line
-	char* lastEnd = ((char*) memchr(buffer, '\n', LONGEST_LINE_READING)) + 1;
-	pthread_t *worker_threads = (pthread_t*)malloc(sizeof(pthread_t)*commThreads);
-	//FileWorker *qws;
-	cpu_set_t mask;
-	for (int i = 1; i < commThreads; i++) {
-		FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
-		qws->start = lastEnd;
-		lastEnd = qws->start + perThreadPortion;
-		lastEnd = (char*) memchr(lastEnd, '\n', LONGEST_LINE_READING)+1;
-		qws->end = lastEnd;
-		qws->tid = i;
-		qws->buffer = buffer;
-		pthread_create(&worker_threads[i], NULL,reinterpret_cast<void* (*)(void*)>(CommRepCommWorkerFunction), qws );
-		//fprintf( stderr, "[%ld] thread[%d] added\n", worker_threads[i], i );
-		// TODO - SET AFFINITY
-		/*
-		CPU_ZERO(&mask);
-		CPU_SET( (NUM_CORES - (i+1))-1 , &mask); // NUM_CORES - i = the thread that runs asynchronously
-		if (pthread_setaffinity_np(worker_threads[i], sizeof(cpu_set_t), &mask) != 0) {
-			fprintf(stderr, "postProcessComments::Error setting thread affinity tid[%d]\n", i);
-		}
-		*/
-	}
-	// the main thread should also execute the last portion of the file
-	FileWorker *qws = (FileWorker*)malloc(sizeof(FileWorker));
-	qws->start = lastEnd;
-	qws->end = buffer + lSize;
-	qws->tid = 0;
-	qws->buffer = buffer;
-	CommRepCommWorkerFunction(qws);
-
-	// wait for them to finish for now since we are reading files at the same time
-	for (int i = 1; i < commThreads; i++) {
-		pthread_join(worker_threads[i], NULL);
-	}
-	free(worker_threads);
-	free(buffer);
-
-	delete CommentToPersonCid;
-	delete CommentToPersonPid;
-
-	fprintf(stderr, "finished reading comment reply of comment [%.8f]\n", (getTime()-time_global_start)/1000000.0);
-}
 
 void readPlaces(char *inputDir) {
 	char path[1024];
@@ -2870,54 +2940,7 @@ void query4(int k, char *tag, int tag_sz, long qid, int tid) {
 //////////////////////////////////////////////////////////////
 //////////////////////// WORKER JOBS /////////////////////////
 
-struct Query1WorkerStruct {
-	int p1;
-	int p2;
-	int x;
-	long qid;
-};
 
-vector<Query1WorkerStruct*> Query1Structs;
-vector<Query1WorkerStruct*> Query1StructsWithComments;
-
-void* Query1WorkerPoolFunction(int tid, void *args) {
-	Query1WorkerStruct *qArgs = (Query1WorkerStruct*) args;
-	//printf("tid[%d] [%d]\n", tid, *(int*)args);
-	//char *visited = (char*)malloc(N_PERSONS);
-	//long *Q_BFS = (long*)malloc(sizeof(long)*N_PERSONS);
-
-	query1(qArgs->p1, qArgs->p2, qArgs->x, qArgs->qid, ThreadsVisitedArrays[tid-1], ThreadsBFSArrays[tid-1]);
-
-	//free(visited);
-	//free(Q_BFS);
-	free(qArgs);
-	// end of job
-	return 0;
-}
-
-struct Q1Worker{
-	int start;
-	int end;
-	int tid;
-	vector<Query1WorkerStruct*> *queries;
-};
-
-void* Query1WorkerFunction(int tid, void *args) {
-	Q1Worker *qws = (Q1Worker*)args;
-	Query1WorkerStruct *currentJob;
-
-	for( int i=qws->start, end=qws->end; i<end; i++ ){
-		currentJob = qws->queries->at(i);
-		query1(currentJob->p1, currentJob->p2, currentJob->x, currentJob->qid, ThreadsVisitedArrays[tid-1], ThreadsBFSArrays[tid-1]);
-		free(currentJob);
-		// the following can be omitted for speedups
-		//Query1Structs[i] = 0;
-	}
-	free(qws);
-	//pthread_exit(NULL);
-	// end of job
-	return 0;
-}
 
 void executeQuery1Jobs(int q1threads){
 	int totalJobs = Query1Structs.size();
@@ -2956,23 +2979,6 @@ void executeQuery1Jobs(int q1threads){
 		pthread_join(worker1_threads[i], NULL);
 	}
 	free(worker1_threads);
-}
-
-void createQuery1Jobs(lp_threadpool *pool, vector<Query1WorkerStruct*> *queries){
-	int totalJobs = queries->size();
-	Q1Worker *qws;
-	int lastEnd = 0;
-	for ( ; lastEnd<totalJobs ; ) {
-		qws = (Q1Worker*)malloc(sizeof(Q1Worker));
-		qws->start = lastEnd;
-		lastEnd += QUERY1_BATCH;
-		if( lastEnd <= totalJobs )
-			qws->end = lastEnd;
-		else
-			qws->end = totalJobs;
-		qws->queries = queries;
-		lp_threadpool_addjob_nolock(pool,reinterpret_cast<void* (*)(int,void*)>(Query1WorkerFunction), qws );
-	}
 }
 
 
@@ -3298,14 +3304,6 @@ void readQueries(char *queriesFile) {
 	free(buffer);
 }
 
-// for testing the hashtable
-void *incWorker(void*args){
-	LPConcHashtable *htable = (LPConcHashtable*)args;
-	for( long i=0; i<1000000; i++ ){
-		htable->inc(i);
-	}
-	return 0;
-}
 
 int main(int argc, char** argv) {
 	inputDir = argv[1];
@@ -3323,16 +3321,8 @@ int main(int argc, char** argv) {
 
 	time_global_start = getTime();
 
-
-
 	threadpool = lp_threadpool_init( Q_JOB_WORKERS, NUM_CORES);
-	threadpool_query1_withcomments = lp_threadpool_init( Q1_THREADPOOL_WORKER_THREADS, NUM_CORES);
-
-#ifdef DEBUGGING
-	long time_queries_end = getTime();
-	sprintf(msg, "queries file time: %ld", time_queries_end - time_global_start);
-	printOut(msg);
-#endif
+	//threadpool_query1_withcomments = lp_threadpool_init( Q1_THREADPOOL_WORKER_THREADS, NUM_CORES);
 
 	/////////////////////////////////
 	readPersons(inputDir);
@@ -3353,13 +3343,6 @@ int main(int argc, char** argv) {
 	readQueries(queryFile);
 	///////////////////////////////////
 
-
-#ifdef DEBUGGING
-	long time_persons_end = getTime();
-	sprintf(msg, "persons graph time: %ld", time_persons_end - time_global_start);
-	printOut(msg);
-#endif
-
 	readPlaces(inputDir);
 	readPlacePartOfPlace(inputDir);
 	readPersonLocatedAtPlace(inputDir);
@@ -3368,12 +3351,6 @@ int main(int argc, char** argv) {
 
 	delete PlaceIdToIndex;
 	PlaceIdToIndex = NULL;
-
-#ifdef DEBUGGING
-	long time_places_end = getTime();
-	sprintf(msg, "places process time: %ld", time_places_end - time_global_start);
-	printOut(msg);
-#endif
 
 	// Q3 - last file needed
 	readPersonHasInterestTag(inputDir);
@@ -3399,12 +3376,7 @@ int main(int argc, char** argv) {
 
 	fprintf(stderr, "finished processing all other files [%.6f]\n", (getTime()-time_global_start)/1000000.0);
 
-	//fprintf(stdout, "before starting jobs in threadpool!!!");
-
-	// create the jobs for query 1
-
-	//if( !isLarge )
-		createQuery1Jobs(threadpool, &Query1Structs);
+	createQuery1Jobs(threadpool, &Query1Structs);
 
 	// allocate the visited arrays for the threads
 	for( int i=0; i<NUM_CORES; i++ ){
@@ -3419,9 +3391,17 @@ int main(int argc, char** argv) {
 
 	// start q3, q4 and query 1 no comments
 	lp_threadpool_startjobs(threadpool);
+
+	// now we can start executing QUERY 1
+	pthread_join(*commentsThread, NULL);
+	//free(commentsThread);
+	//readComments(inputDir);
+	//readCommentReplyOfComment(inputDir);
+
 	synchronize_complete(threadpool);
 	lp_threadpool_destroy_threads(threadpool);
 	fprintf(stderr,"query 1_3_4 finished [%.6f]\n", (getTime()-time_global_start)/1000000.0);
+
 
 	// deallocate the arrays needed by query 4 since we do not need them anymore
 	for( int i=0; i<NUM_CORES+1; i++ ){
@@ -3429,18 +3409,16 @@ int main(int argc, char** argv) {
 			delete[] PersonCurrentDegree[i];
 	}
 
-	// now we can start executing QUERY 1
-	pthread_join(*commentsThread, NULL);
-	//free(commentsThread);
-	//readComments(inputDir);
-	readCommentReplyOfComment(inputDir);
+
+
 
 	//executeQuery1Jobs(Q1_WORKER_THREADS);
+	/*
 	createQuery1Jobs(threadpool_query1_withcomments, &Query1StructsWithComments);
 	lp_threadpool_startjobs(threadpool_query1_withcomments);
 	synchronize_complete(threadpool_query1_withcomments);
 	//fprintf(stderr,"query 1 with comments finished %.6fs\n", (getTime()-time_global_start)/1000000.0);
-
+	*/
 
 #ifdef DEBUGGING
 	long time_queries_end = getTime();
@@ -3449,27 +3427,26 @@ int main(int argc, char** argv) {
 
 	/////////////////////////////////
 	long long time_global_end = getTime();
-	sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]",
+	sprintf(msg, "\nTotal time: micros[%lld] seconds[%.6f]\n",
 			time_global_end - time_global_start,
 			(time_global_end - time_global_start) / 1000000.0);
 	printOut(msg);
 
 #endif
 
-	for (long i = 0, sz = Answers.size(); i < sz; i++) {
-		//printf("answer %d: %d\n", i, Answers1[i]);
-		printf("%s\n", Answers[i].c_str());
+	if( !isLarge ){
+		for (long i = 0, sz = Answers.size(); i < sz; i++) {
+			//printf("answer %d: %d\n", i, Answers1[i]);
+			printf("%s\n", Answers[i].c_str());
+		}
+	}else{
+		fprintf(stdout, "fucking time\n");
 	}
 
 	long long time_global_end = getTime();
-	sprintf(msg, "Total time: micros[%lld] seconds[%.6f]\n",
+	fprintf(stderr, "Total time: micros[%lld] seconds[%.6f]\n",
 			time_global_end - time_global_start,
 			(time_global_end - time_global_start) / 1000000.0);
-	printErr(msg);
-
-
-	// destroy the remaining indexes
-	//_destructor();
 }
 
 ////////////////////////////////////////////////////////////////////////

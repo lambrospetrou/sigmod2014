@@ -46,7 +46,6 @@ struct lp_threadpool{
 	int threadpool_started;
 };
 
-
 void lp_threadpool_destroy(lp_threadpool* pool);
 lp_threadpool* lp_threadpool_init( int threads, int cores );
 void lp_threadpool_addWorker(lp_threadpool *pool);

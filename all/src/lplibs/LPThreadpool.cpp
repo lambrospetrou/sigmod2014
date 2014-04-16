@@ -83,7 +83,7 @@ void lp_threadpool_addWorker(lp_threadpool *pool){
 	pthread_mutex_unlock(&pool->mutex_pool);
 }
 
-void inline lp_threadpool_addjob( lp_threadpool* pool, void *(*func)(int, void *), void* args ){
+void lp_threadpool_addjob( lp_threadpool* pool, void *(*func)(int, void *), void* args ){
 
 	// ENTER POOL CRITICAL SECTION
 	pthread_mutex_lock( &pool->mutex_pool );
@@ -119,7 +119,7 @@ void inline lp_threadpool_addjob( lp_threadpool* pool, void *(*func)(int, void *
 	pthread_cond_signal( &pool->cond_jobs );
 }
 
-void inline lp_threadpool_fetchjob( lp_threadpool* pool, lp_tpjob *njob ){
+void lp_threadpool_fetchjob( lp_threadpool* pool, lp_tpjob *njob ){
 	lp_tpjob* job;
 	// lock pool
 	pthread_mutex_lock( &pool->mutex_pool );
@@ -167,12 +167,11 @@ void inline lp_threadpool_fetchjob( lp_threadpool* pool, lp_tpjob *njob ){
 
 	//return job;
 }
-int inline lp_threadpool_uniquetid( lp_threadpool* pool ){
+int  lp_threadpool_uniquetid( lp_threadpool* pool ){
 	// returns an id from 1 to number of threads (eg. threads=12, ids = 1,2,3,4,5,6,7,8,9,10,11,12)
 	int _tid;
 	pthread_mutex_lock( &pool->mutex_pool );
-	_tid = pool->workers_ids;
-	pool->workers_ids = ( ( pool->workers_ids + 1 ) % (pool->nthreads+1) )  ;
+	_tid = pool->workers_ids++;
 	pthread_mutex_unlock( &pool->mutex_pool );
 	return _tid;
 }
@@ -228,7 +227,7 @@ lp_threadpool* lp_threadpool_init( int threads, int cores ){
 
 	return pool;
 }
-void inline lp_threadpool_destroy(lp_threadpool* pool){
+void  lp_threadpool_destroy(lp_threadpool* pool){
 	pthread_cond_destroy( &pool->sleep );
 	pthread_cond_destroy( &pool->cond_jobs );
 	free(pool->worker_threads);

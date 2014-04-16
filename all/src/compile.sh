@@ -1,1 +1,1 @@
-g++ -O3 -march=native -mtune=generic lplibs/LPConcHashtable.cpp lplibs/linkedlist.cpp  lplibs/LPThreadpool.cpp  lplibs/LPSparseArrayGeneric.h lplibs/LPSparseBitset.cpp lplibs/LPBitset.cpp  main.cpp -lpthread -o mainSigmod2014 -w
+g++ -O3 -march=native -mtune=generic -falign-functions=16 -falign-loops=16 lplibs/LPConcHashtable.cpp lplibs/linkedlist.cpp  lplibs/LPThreadpool.cpp  lplibs/LPSparseArrayGeneric.h lplibs/LPSparseBitset.cpp lplibs/LPBitset.cpp  main.cpp -o mainSigmod2014 -w -lpthread
